@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CmdMD — Swiss Style</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #000000;
+            --accent: #ff0000;
+            --grid-color: rgba(255, 0, 0, 0.1);
+            --font-stack: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+
+        /* RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        html, body {
+            overflow-y: auto;
+            height: auto;
+            -webkit-overflow-scrolling: touch;
+            font-family: var(--font-stack);
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.2;
+        }
+
+        /* GRID SYSTEM (12 Col) */
+        .wrapper {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 0;
+            width: 100%;
+            max-width: 100%;
+            border-left: 1px solid var(--fg);
+        }
+
+        /* GRID OVERLAY TOGGLE */
+        .grid-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .grid-overlay.show { opacity: 1; }
+        .grid-col { border-right: 1px solid var(--grid-color); height: 100%; }
+
+        /* TYPOGRAPHY */
+        .headline {
+            font-size: 15vw;
+            line-height: 0.8;
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            word-break: break-all;
+        }
+        .section-title {
+            font-size: 2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 2rem;
+        }
+        p {
+            font-size: 1.5rem;
+            line-height: 1.4;
+            max-width: 30ch;
+        }
+
+        /* LAYOUT HELPERS */
+        .col-span-12 { grid-column: span 12; }
+        .col-span-8 { grid-column: span 8; }
+        .col-span-6 { grid-column: span 6; }
+        .col-span-4 { grid-column: span 4; }
+        .col-span-3 { grid-column: span 3; }
+        
+        .section {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            border-bottom: 1px solid var(--fg);
+            padding: 2rem 0;
+        }
+        
+        .p-4 { padding: 2rem; }
+        .border-r { border-right: 1px solid var(--fg); }
+        
+        /* NAVIGATION */
+        nav {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            border-bottom: 1px solid var(--fg);
+            border-top: 1px solid var(--fg);
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            z-index: 100;
+        }
+        .nav-item {
+            grid-column: span 3;
+            padding: 1rem;
+            border-right: 1px solid var(--fg);
+            font-weight: 700;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .nav-item:last-child { border-right: none; }
+        
+        /* HERO */
+        .hero { padding: 0; }
+        .hero-text {
+            grid-column: span 12;
+            padding: 4rem 2rem;
+            border-bottom: 1px solid var(--fg);
+        }
+        .hero-meta {
+            grid-column: span 4;
+            padding: 2rem;
+            border-right: 1px solid var(--fg);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 300px;
+        }
+
+        /* FEATURES */
+        .feature-item {
+            grid-column: span 4;
+            padding: 2rem;
+            border-right: 1px solid var(--fg);
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .feature-item:nth-child(3n) { border-right: none; }
+        .feature-num { font-size: 4rem; font-weight: 700; color: var(--accent); }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: #fff;
+            padding: 1.5rem 3rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.8; }
+
+        /* RESPONSIVE */
+        @media (max-width: 1024px) {
+            .hero-meta { grid-column: span 6; }
+            .feature-item { grid-column: span 6; }
+            .feature-item:nth-child(2n) { border-right: none; }
+            .feature-item:nth-child(3n) { border-right: 1px solid var(--fg); }
+        }
+        @media (max-width: 768px) {
+            .nav-item { grid-column: span 6; border-bottom: 1px solid var(--fg); }
+            .nav-item:nth-child(2n) { border-right: none; }
+            .hero-meta { grid-column: span 12; border-right: none; border-bottom: 1px solid var(--fg); }
+            .feature-item { grid-column: span 12; border-right: none; border-bottom: 1px solid var(--fg); }
+            .headline { font-size: 20vw; }
+        }
+
+        /* ANIMATION */
+        .reveal { opacity: 0; transition: opacity 1s ease; }
+        .reveal.active { opacity: 1; }
+        
+        /* LANG UTILS */
+        [data-lang="en"] .ko { display: none; }
+        [data-lang="ko"] .en { display: none; }
+        
+        .lang-btn {
+            background: none; border: none; 
+            font-family: inherit; font-weight: 700; 
+            cursor: pointer; text-transform: uppercase;
+        }
+        .lang-btn:hover { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <!-- Grid Overlay -->
+    <div class="grid-overlay" id="gridOverlay">
+        <div class="grid-col"></div><div class="grid-col"></div><div class="grid-col"></div><div class="grid-col"></div>
+        <div class="grid-col"></div><div class="grid-col"></div><div class="grid-col"></div><div class="grid-col"></div>
+        <div class="grid-col"></div><div class="grid-col"></div><div class="grid-col"></div><div class="grid-col"></div>
+    </div>
+
+    <div class="wrapper">
+        <nav>
+            <div class="nav-item">CMDMD <span style="color:var(--accent)">●</span></div>
+            <a href="#features" class="nav-item"><span class="en">Features</span><span class="ko">기능</span></a>
+            <a href="#download" class="nav-item"><span class="en">Download</span><span class="ko">다운로드</span></a>
+            <div class="nav-item">
+                <button class="lang-btn" id="langToggle">EN / KO</button>
+            </div>
+        </nav>
+
+        <section class="section hero">
+            <div class="hero-text reveal">
+                <h1 class="headline">CMDMD<br>NATIVE</h1>
+            </div>
+            <div class="hero-meta reveal">
+                <span class="section-title">001</span>
+                <p>
+                    <span class="en">A Markdown editor for macOS built with pure Swift. No Electron. Zero latency.</span>
+                    <span class="ko">순수 Swift로 제작된 macOS용 마크다운 에디터. Electron 없음. 제로 레이턴시.</span>
+                </p>
+            </div>
+            <div class="hero-meta reveal">
+                <span class="section-title">002</span>
+                <p>
+                    <span class="en">Optimized for Apple Silicon. Startup time: 0ms. Memory usage: Minimal.</span>
+                    <span class="ko">Apple Silicon 최적화. 시작 시간: 0ms. 메모리 사용량: 최소.</span>
+                </p>
+            </div>
+            <div class="hero-meta reveal" style="border-right: none; background: var(--accent); color: #fff;">
+                <span class="section-title">003</span>
+                <a href="#" style="color:#fff; text-decoration:none; font-size:2rem; font-weight:700;">
+                    <span class="en">DOWNLOAD →</span>
+                    <span class="ko">다운로드 →</span>
+                </a>
+            </div>
+        </section>
+
+        <!-- Ticker Style Text -->
+        <section class="section" style="padding: 1rem 0; overflow:hidden; white-space:nowrap;">
+            <div style="grid-column: span 12; font-size: 4rem; font-weight: 700; text-transform: uppercase;">
+                SWIFT NATIVE — CLOUDKIT — MARKDOWN — SWIFT NATIVE — CLOUDKIT — MARKDOWN
+            </div>
+        </section>
+
+        <section id="features" class="section" style="border-bottom: none;">
+            <div class="feature-item reveal">
+                <span class="feature-num">01.</span>
+                <h3 class="section-title">
+                    <span class="en">Speed</span>
+                    <span class="ko">속도</span>
+                </h3>
+                <p>
+                    <span class="en">Native performance. Nothing is faster than native code running on metal.</span>
+                    <span class="ko">네이티브 성능. 메탈에서 실행되는 네이티브 코드보다 빠른 것은 없습니다.</span>
+                </p>
+            </div>
+            <div class="feature-item reveal">
+                <span class="feature-num">02.</span>
+                <h3 class="section-title">
+                    <span class="en">Links</span>
+                    <span class="ko">링크</span>
+                </h3>
+                <p>
+                    <span class="en">Wiki-style linking support. Connect your knowledge base effectively.</span>
+                    <span class="ko">위키 스타일 링크 지원. 지식 베이스를 효과적으로 연결하세요.</span>
+                </p>
+            </div>
+            <div class="feature-item reveal">
+                <span class="feature-num">03.</span>
+                <h3 class="section-title">
+                    <span class="en">Cloud</span>
+                    <span class="ko">클라우드</span>
+                </h3>
+                <p>
+                    <span class="en">Seamless iCloud sync across all your Apple devices.</span>
+                    <span class="ko">모든 Apple 기기 간의 원활한 iCloud 동기화.</span>
+                </p>
+            </div>
+            <div class="feature-item reveal">
+                <span class="feature-num">04.</span>
+                <h3 class="section-title">
+                    <span class="en">Vim</span>
+                    <span class="ko">빔</span>
+                </h3>
+                <p>
+                    <span class="en">Full Vim keybindings for keyboard-centric editing.</span>
+                    <span class="ko">키보드 중심 편집을 위한 완전한 Vim 키 바인딩.</span>
+                </p>
+            </div>
+            <div class="feature-item reveal">
+                <span class="feature-num">05.</span>
+                <h3 class="section-title">
+                    <span class="en">Preview</span>
+                    <span class="ko">미리보기</span>
+                </h3>
+                <p>
+                    <span class="en">Live rendering. No switching modes. Pure writing flow.</span>
+                    <span class="ko">실시간 렌더링. 모드 전환 없음. 순수한 글쓰기 흐름.</span>
+                </p>
+            </div>
+            <div class="feature-item reveal" style="background: #f4f4f4;">
+                <span class="feature-num">06.</span>
+                <h3 class="section-title">
+                    <span class="en">Future</span>
+                    <span class="ko">미래</span>
+                </h3>
+                <p>
+                    <span class="en">Built for the next generation of macOS.</span>
+                    <span class="ko">차세대 macOS를 위해 구축되었습니다.</span>
+                </p>
+            </div>
+        </section>
+
+        <section class="section" style="padding: 6rem 2rem;">
+            <div class="col-span-12" style="text-align: center;">
+                <h2 class="section-title reveal" style="font-size: 3rem; margin-bottom: 4rem;">
+                    <span class="en">INTERNATIONAL TYPOGRAPHIC STYLE</span>
+                    <span class="ko">국제 타이포그래피 스타일</span>
+                </h2>
+                <a href="#" class="btn reveal">
+                    <span class="en">GET THE BETA</span>
+                    <span class="ko">베타 받기</span>
+                </a>
+                <div style="margin-top: 2rem;">
+                    <button id="toggleGrid" style="background:none; border:none; text-decoration:underline; cursor:pointer; font-family:inherit;">
+                        Toggle Grid
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <footer class="section" style="border-bottom:none;">
+            <div class="col-span-12 p-4" style="text-align: center; font-size: 0.8rem; color: #666;">
+                © 2024 CMDMD. SWISS DESIGN PRINCIPLES.
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Language Toggle
+        const langBtn = document.getElementById('langToggle');
+        const html = document.documentElement;
+        const savedLang = localStorage.getItem('lang') || 'en';
+        html.setAttribute('data-lang', savedLang);
+
+        langBtn.addEventListener('click', () => {
+            const current = html.getAttribute('data-lang');
+            const next = current === 'en' ? 'ko' : 'en';
+            html.setAttribute('data-lang', next);
+            localStorage.setItem('lang', next);
+        });
+
+        // Grid Toggle
+        const gridBtn = document.getElementById('toggleGrid');
+        const gridOverlay = document.getElementById('gridOverlay');
+        gridBtn.addEventListener('click', () => {
+            gridOverlay.classList.toggle('show');
+        });
+
+        // Scroll Reveal
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('active');
+            });
+        }, { threshold: 0.1 });
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    </script>
+</body>
+</html>

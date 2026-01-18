@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CmdMD — Brutalist Variations</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: #0a0a0a;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Switcher Bar */
+        .switcher {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+            display: flex;
+            background: #000;
+            border-bottom: 2px solid #333;
+        }
+
+        .switcher-title {
+            padding: 1rem 1.5rem;
+            font-weight: 700;
+            color: #fff;
+            background: #eab308;
+            color: #000;
+            border-right: 2px solid #333;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .switcher-btn {
+            flex: 1;
+            padding: 1rem;
+            border: none;
+            background: transparent;
+            color: #666;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-right: 2px solid #333;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .switcher-btn:last-child {
+            border-right: none;
+        }
+
+        .switcher-btn:hover {
+            background: #111;
+            color: #fff;
+        }
+
+        .switcher-btn.active {
+            background: #fff;
+            color: #000;
+        }
+
+        .switcher-btn[data-style="original"].active { background: #3b82f6; color: #fff; }
+        .switcher-btn[data-style="dark"].active { background: #00ff88; color: #000; }
+        .switcher-btn[data-style="neo"].active { background: #ff66b2; color: #000; }
+        .switcher-btn[data-style="swiss"].active { background: #ff0000; color: #fff; }
+
+        /* Frame Container */
+        .frame-wrap {
+            padding-top: 52px;
+            height: 100vh;
+        }
+
+        .frame-wrap iframe {
+            width: 100%;
+            height: calc(100vh - 52px);
+            border: none;
+            display: none;
+        }
+
+        .frame-wrap iframe.active {
+            display: block;
+        }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .switcher-title { display: none; }
+            .switcher-btn { 
+                padding: 0.75rem 0.5rem; 
+                font-size: 0.65rem;
+            }
+        }
+
+        /* Keyboard hint */
+        .hint {
+            position: fixed;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: #666;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            z-index: 9999;
+        }
+
+        .hint kbd {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin: 0 2px;
+            color: #fff;
+        }
+
+        @media (max-width: 768px) {
+            .hint { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="switcher">
+        <div class="switcher-title">CMDMD_</div>
+        <button class="switcher-btn active" data-style="original">Original</button>
+        <button class="switcher-btn" data-style="dark">Dark</button>
+        <button class="switcher-btn" data-style="neo">Neo</button>
+        <button class="switcher-btn" data-style="swiss">Swiss</button>
+    </nav>
+
+    <div class="frame-wrap">
+        <iframe id="frame-original" src="v1-brutalist.html" class="active"></iframe>
+        <iframe id="frame-dark" src="brutalist-dark.html"></iframe>
+        <iframe id="frame-neo" src="brutalist-neo.html"></iframe>
+        <iframe id="frame-swiss" src="brutalist-swiss.html"></iframe>
+    </div>
+
+    <div class="hint">
+        Press <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> to switch styles
+    </div>
+
+    <script>
+        const buttons = document.querySelectorAll('.switcher-btn');
+        const frames = document.querySelectorAll('.frame-wrap iframe');
+
+        function switchStyle(style) {
+            buttons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.style === style);
+            });
+            frames.forEach(frame => {
+                const frameStyle = frame.id.replace('frame-', '');
+                frame.classList.toggle('active', frameStyle === style);
+            });
+            localStorage.setItem('cmdmd-style', style);
+        }
+
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => switchStyle(btn.dataset.style));
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '1') switchStyle('original');
+            if (e.key === '2') switchStyle('dark');
+            if (e.key === '3') switchStyle('neo');
+            if (e.key === '4') switchStyle('swiss');
+        });
+
+        // Restore preference
+        const saved = localStorage.getItem('cmdmd-style');
+        if (saved) switchStyle(saved);
+    </script>
+</body>
+</html>

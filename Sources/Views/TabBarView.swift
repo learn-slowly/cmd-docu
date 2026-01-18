@@ -1,0 +1,217 @@
+import SwiftUI
+
+struct TabBarView: View {
+    @Environment(AppState.self) private var appState
+    
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(appState.tabs) { tab in
+                    TabItemView(tab: tab)
+                }
+                
+                NewTabButton()
+            }
+            .padding(.horizontal, 4)
+        }
+        .frame(height: 32)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+}
+
+struct TabItemView: View {
+    @Environment(AppState.self) private var appState
+    let tab: EditorTab
+    
+    @State private var isHovering = false
+    
+    private var isActive: Bool {
+        appState.activeTabId == tab.id
+    }
+    
+    private var isDirty: Bool {
+        guard let doc = appState.documents[tab.documentId],
+              let original = appState.originalContents[tab.documentId] else { return false }
+        return doc.content != original
+    }
+    
+    private var isFavorited: Bool {
+        guard let url = tab.fileURL else { return false }
+        return appState.favorites.contains(where: { $0.url == url })
+    }
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            if tab.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+            
+            if isFavorited {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(.yellow)
+            }
+            
+            Text(tab.displayTitle)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .foregroundColor(isActive ? .primary : .secondary)
+            
+            if isDirty {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+            }
+            
+            if isHovering || isActive {
+                Button {
+                    closeTab(tab)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+            } else {
+                Spacer()
+                    .frame(width: 16)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isActive ? Color.accentColor.opacity(0.15) : (isHovering ? Color.gray.opacity(0.1) : Color.clear))
+        )
+        .onTapGesture {
+            appState.activeTabId = tab.id
+        }
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .contextMenu {
+            TabContextMenu(tab: tab)
+        }
+        .draggable(tab.id.uuidString)
+    }
+    
+    private func closeTab(_ tab: EditorTab) {
+        if isDirty && appState.settings.confirmBeforeClosingDirtyTabs {
+            appState.closeTabWithConfirmation(tab)
+        } else {
+            appState.closeTab(tab)
+        }
+    }
+}
+
+struct TabContextMenu: View {
+    @Environment(AppState.self) private var appState
+    let tab: EditorTab
+    
+    private var isFavorited: Bool {
+        guard let url = tab.fileURL else { return false }
+        return appState.favorites.contains(where: { $0.url == url })
+    }
+    
+    var body: some View {
+        Button {
+            appState.closeTab(tab)
+        } label: {
+            Label("Close Tab", systemImage: "xmark")
+        }
+        
+        Button {
+            appState.closeOtherTabs(except: tab)
+        } label: {
+            Label("Close Other Tabs", systemImage: "xmark.square")
+        }
+        
+        Button {
+            appState.closeTabsToRight(of: tab)
+        } label: {
+            Label("Close Tabs to the Right", systemImage: "arrow.right.to.line")
+        }
+        
+        Divider()
+        
+        Button {
+            appState.toggleTabPin(tab)
+        } label: {
+            if tab.isPinned {
+                Label("Unpin Tab", systemImage: "pin.slash")
+            } else {
+                Label("Pin Tab", systemImage: "pin")
+            }
+        }
+        
+        if let url = tab.fileURL {
+            if isFavorited {
+                Button {
+                    if let favorite = appState.favorites.first(where: { $0.url == url }) {
+                        appState.removeFromFavorites(favorite)
+                    }
+                } label: {
+                    Label("Remove from Favorites", systemImage: "star.slash")
+                }
+            } else {
+                Button {
+                    appState.addToFavorites(url)
+                } label: {
+                    Label("Add to Favorites", systemImage: "star")
+                }
+            }
+        }
+        
+        Divider()
+        
+        if let url = tab.fileURL {
+            Button {
+                NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+            } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+            }
+            
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(url.path, forType: .string)
+            } label: {
+                Label("Copy Path", systemImage: "doc.on.doc")
+            }
+        }
+    }
+}
+
+struct NewTabButton: View {
+    @Environment(AppState.self) private var appState
+    
+    var body: some View {
+        Button {
+            appState.createNewTab()
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+        .help("New Tab")
+    }
+}
+
+#Preview {
+    VStack(spacing: 0) {
+        TabBarView()
+        Spacer()
+    }
+    .frame(width: 600, height: 400)
+    .environment(AppState())
+}

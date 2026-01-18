@@ -1,0 +1,45 @@
+# Build outputs
+.build/
+DerivedData/
+*.dSYM/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# App bundle (development)
+CmdMD.app/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment & secrets
+.env
+.env.local
+.env*.local
+
+# Vercel (landing page)
+landing/.vercel
+landing/.env.local
+
+# Archives
+*.zip
+*.tar.gz

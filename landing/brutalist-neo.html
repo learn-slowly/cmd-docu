@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CmdMD — Neo-Brutalist</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f0f0f0;
+            --fg: #1a1a1a;
+            --blue: #3b82f6;
+            --yellow: #fbbf24;
+            --pink: #f472b6;
+            --green: #4ade80;
+            --border: 3px solid #000;
+            --shadow: 6px 6px 0px #000;
+            --font: 'Space Grotesk', sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            overflow-y: auto;
+            height: auto;
+            -webkit-overflow-scrolling: touch;
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--fg);
+        }
+
+        /* UTILITIES */
+        .container { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+        .flex { display: flex; align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .card {
+            background: #fff;
+            border: var(--border);
+            box-shadow: var(--shadow);
+            padding: 2rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-radius: 8px;
+        }
+        .card:hover {
+            transform: translate(-4px, -4px);
+            box-shadow: 10px 10px 0px #000;
+        }
+        
+        /* COLORS VARIANTS */
+        .bg-blue { background: var(--blue); color: #fff; }
+        .bg-yellow { background: var(--yellow); }
+        .bg-pink { background: var(--pink); color: #fff; }
+        .bg-green { background: var(--green); }
+
+        /* TYPOGRAPHY */
+        h1 { font-size: clamp(3rem, 8vw, 6rem); line-height: 0.9; font-weight: 700; margin-bottom: 1.5rem; }
+        h2 { font-size: clamp(2rem, 5vw, 4rem); font-weight: 700; margin-bottom: 2rem; }
+        p { font-size: 1.2rem; line-height: 1.6; max-width: 60ch; }
+
+        /* NAV */
+        nav {
+            padding: 1.5rem;
+            border-bottom: var(--border);
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .logo { 
+            font-size: 1.5rem; 
+            font-weight: 700; 
+            background: var(--fg); 
+            color: #fff; 
+            padding: 0.5rem 1rem; 
+            transform: rotate(-2deg); 
+            display: inline-block;
+        }
+        .nav-btn {
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-left: 1.5rem;
+            text-decoration: none;
+            color: var(--fg);
+            position: relative;
+        }
+        .nav-btn:hover { text-decoration: underline; text-decoration-thickness: 3px; text-decoration-color: var(--pink); }
+
+        /* HERO */
+        header { padding: 6rem 0; text-align: center; }
+        .badge {
+            display: inline-block;
+            background: var(--yellow);
+            border: var(--border);
+            padding: 0.5rem 1rem;
+            font-weight: 700;
+            transform: rotate(2deg);
+            margin-bottom: 2rem;
+            box-shadow: 4px 4px 0 #000;
+        }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-block;
+            background: var(--blue);
+            color: #fff;
+            border: var(--border);
+            padding: 1rem 2.5rem;
+            font-size: 1.2rem;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: var(--shadow);
+            border-radius: 50px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .btn:hover {
+            transform: translate(-2px, -2px) scale(1.05);
+            box-shadow: 8px 8px 0 #000;
+            background: var(--pink);
+        }
+
+        /* TICKER */
+        .marquee {
+            background: var(--green);
+            border-top: var(--border);
+            border-bottom: var(--border);
+            overflow: hidden;
+            white-space: nowrap;
+            padding: 1rem 0;
+        }
+        .marquee-content { display: inline-block; animation: scroll 15s linear infinite; font-size: 2rem; font-weight: 700; }
+        @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+        /* SECTIONS */
+        section { padding: 6rem 0; }
+        .feature-icon { 
+            width: 60px; height: 60px; 
+            border: var(--border); 
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            background: #fff;
+        }
+
+        /* STATS */
+        .stat-card {
+            text-align: center;
+            background: var(--fg);
+            color: #fff;
+        }
+        .stat-val { font-size: 4rem; font-weight: 700; color: var(--yellow); }
+
+        /* FOOTER */
+        footer {
+            background: #fff;
+            border-top: var(--border);
+            padding: 4rem 0;
+            text-align: center;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .grid-2 { grid-template-columns: 1fr; }
+            h1 { font-size: 3.5rem; }
+            .nav-links { display: none; }
+        }
+
+        /* ANIMATION */
+        .reveal { opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .reveal.active { opacity: 1; transform: translateY(0); }
+
+        /* LANG */
+        [data-lang="en"] .ko { display: none; }
+        [data-lang="ko"] .en { display: none; }
+    </style>
+</head>
+<body>
+
+    <nav class="flex justify-between container">
+        <div class="logo">CmdMD</div>
+        <div class="nav-links">
+            <a href="#features" class="nav-btn"><span class="en">Features</span><span class="ko">기능</span></a>
+            <a href="#stats" class="nav-btn"><span class="en">Stats</span><span class="ko">통계</span></a>
+            <button id="lang-btn" style="background:none; border:none; font-weight:700; cursor:pointer; margin-left: 20px; font-family: inherit;">EN/KO</button>
+        </div>
+    </nav>
+
+    <header class="container">
+        <div class="badge reveal">New v1.2</div>
+        <h1 class="reveal">
+            <span class="en">Markdown.<br>But <span style="color:var(--blue)">Fun</span>.</span>
+            <span class="ko">마크다운.<br>하지만 <span style="color:var(--blue)">재밌게</span>.</span>
+        </h1>
+        <p style="margin: 0 auto 3rem;" class="reveal">
+            <span class="en">The fastest native editor for macOS. No Electron junk. Just pure speed and joy.</span>
+            <span class="ko">macOS를 위한 가장 빠른 네이티브 에디터. Electron 쓰레기 없음. 순수한 속도와 즐거움.</span>
+        </p>
+        <a href="#" class="btn reveal">
+            <span class="en">Get It Now</span>
+            <span class="ko">지금 다운로드</span>
+        </a>
+    </header>
+
+    <div class="marquee">
+        <div class="marquee-content">
+            NATIVE APP ★ WIKI LINKS ★ LIVE PREVIEW ★ ICLOUD SYNC ★ NO LOADING SCREENS ★ NATIVE APP ★ WIKI LINKS ★ LIVE PREVIEW ★ ICLOUD SYNC ★ NO LOADING SCREENS ★
+        </div>
+    </div>
+
+    <section id="features" class="container">
+        <h2 class="reveal">
+            <span class="en">Why It Rules</span>
+            <span class="ko">최고인 이유</span>
+        </h2>
+        <div class="grid-2">
+            <div class="card reveal" style="transform: rotate(-1deg);">
+                <div class="feature-icon bg-yellow">⚡️</div>
+                <h3>
+                    <span class="en">Lightning Fast</span>
+                    <span class="ko">번개같은 속도</span>
+                </h3>
+                <p style="margin-top:1rem">
+                    <span class="en">Opens instantly. 0ms lag. Optimised for M1/M2/M3 chips.</span>
+                    <span class="ko">즉시 열립니다. 0ms 랙. M1/M2/M3 칩에 최적화됨.</span>
+                </p>
+            </div>
+            <div class="card reveal" style="transform: rotate(1deg);">
+                <div class="feature-icon bg-blue">🔗</div>
+                <h3>
+                    <span class="en">Wiki Links</span>
+                    <span class="ko">위키 링크</span>
+                </h3>
+                <p style="margin-top:1rem">
+                    <span class="en">Connect notes with [[brackets]]. Build your brain.</span>
+                    <span class="ko">[[괄호]]로 노트를 연결하세요. 두뇌를 구축하세요.</span>
+                </p>
+            </div>
+            <div class="card reveal" style="transform: rotate(1deg);">
+                <div class="feature-icon bg-pink">👀</div>
+                <h3>
+                    <span class="en">Live Preview</span>
+                    <span class="ko">실시간 미리보기</span>
+                </h3>
+                <p style="margin-top:1rem">
+                    <span class="en">See formatting as you type. Beautiful and clean.</span>
+                    <span class="ko">입력하는 대로 서식을 확인하세요. 아름답고 깔끔합니다.</span>
+                </p>
+            </div>
+            <div class="card reveal" style="transform: rotate(-1deg);">
+                <div class="feature-icon bg-green">⌨️</div>
+                <h3>
+                    <span class="en">Keyboard First</span>
+                    <span class="ko">키보드 우선</span>
+                </h3>
+                <p style="margin-top:1rem">
+                    <span class="en">Vim mode included. Never touch the mouse again.</span>
+                    <span class="ko">Vim 모드 포함. 다시는 마우스를 만지지 마세요.</span>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section id="stats" style="background: #fff; border-top: var(--border); border-bottom: var(--border);">
+        <div class="container">
+            <h2 class="reveal" style="text-align:center;">
+                <span class="en">By The Numbers</span>
+                <span class="ko">숫자로 보기</span>
+            </h2>
+            <div class="grid-2" style="grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                <div class="card stat-card reveal">
+                    <div class="stat-val">0ms</div>
+                    <div>Wait Time</div>
+                </div>
+                <div class="card stat-card reveal" style="background: var(--blue);">
+                    <div class="stat-val" style="color:#fff">5MB</div>
+                    <div>Tiny Size</div>
+                </div>
+                <div class="card stat-card reveal" style="background: var(--pink);">
+                    <div class="stat-val" style="color:#fff">100%</div>
+                    <div>Native Swift</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="container" style="text-align: center;">
+        <h2 class="reveal">
+            <span class="en">Don't settle for slow.</span>
+            <span class="ko">느린 것에 안주하지 마세요.</span>
+        </h2>
+        <a href="#" class="btn reveal">
+            <span class="en">Download Free Beta</span>
+            <span class="ko">무료 베타 다운로드</span>
+        </a>
+    </section>
+
+    <footer>
+        <div class="container">
+            <strong>CmdMD</strong> &copy; 2024. Made with ❤️ and Swift.
+        </div>
+    </footer>
+
+    <script>
+        // Language Toggle
+        const langBtn = document.getElementById('lang-btn');
+        const html = document.documentElement;
+        const savedLang = localStorage.getItem('lang') || 'en';
+        html.setAttribute('data-lang', savedLang);
+
+        langBtn.addEventListener('click', () => {
+            const current = html.getAttribute('data-lang');
+            const next = current === 'en' ? 'ko' : 'en';
+            html.setAttribute('data-lang', next);
+            localStorage.setItem('lang', next);
+        });
+
+        // Scroll Reveal
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('active');
+            });
+        }, { threshold: 0.1 });
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    </script>
+</body>
+</html>

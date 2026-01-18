@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CmdMD — Brutalist Markdown Editor</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+
+    <style>
+        :root {
+            /* Palette - Brutalist yet refined */
+            --color-bg: #ffffff;
+            --color-fg: #111111;
+            --color-accent: #3b82f6; /* Tech Blue */
+            --color-highlight: #eab308; /* Industrial Yellow */
+            --color-alert: #ef4444; /* Signal Red */
+            --color-success: #22c55e;
+            --color-muted: #737373;
+            --color-surface: #f4f4f5;
+            
+            /* Typography System */
+            --font-display: 'Space Grotesk', 'Pretendard', sans-serif;
+            --font-body: 'Inter', 'Pretendard', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            
+            /* Spacing */
+            --border-width: 2px;
+            --container-padding: clamp(1rem, 5vw, 4rem);
+            --header-height: 60px;
+        }
+
+        /* Reset & Base */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        html { 
+            font-size: 16px; 
+            scroll-behavior: smooth;
+            height: auto;
+            min-height: 100%;
+            overflow-y: auto; /* Ensure vertical scroll */
+            -webkit-overflow-scrolling: touch; /* iOS smooth scroll */
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--color-bg);
+            color: var(--color-fg);
+            line-height: 1.6;
+            overflow-x: hidden; /* Prevent horizontal overflow */
+            overflow-y: auto; /* Ensure vertical scroll */
+            -webkit-font-smoothing: antialiased;
+            height: auto;
+            position: relative;
+        }
+
+        ::selection {
+            background: var(--color-fg);
+            color: var(--color-bg);
+        }
+
+        a { text-decoration: none; color: inherit; }
+        ul { list-style: none; }
+        img { max-width: 100%; display: block; }
+        button { cursor: pointer; }
+
+        /* Noise Overlay */
+        .noise-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.04;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        /* Utilities */
+        .border-r { border-right: var(--border-width) solid var(--color-fg); }
+        .border-b { border-bottom: var(--border-width) solid var(--color-fg); }
+        .border-t { border-top: var(--border-width) solid var(--color-fg); }
+        .border-l { border-left: var(--border-width) solid var(--color-fg); }
+        
+        .bg-fg { background: var(--color-fg); color: var(--color-bg); }
+        .bg-accent { background: var(--color-accent); color: var(--color-bg); }
+        .bg-surface { background: var(--color-surface); }
+
+        .flex-center { display: flex; align-items: center; justify-content: center; }
+        .flex-col { display: flex; flex-direction: column; }
+        .uppercase { text-transform: uppercase; letter-spacing: 0.02em; }
+        .mono { font-family: var(--font-mono); }
+        
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+            border-left: var(--border-width) solid var(--color-fg);
+            border-right: var(--border-width) solid var(--color-fg);
+        }
+
+        /* Typography Helpers */
+        .text-display {
+            font-family: var(--font-display);
+            font-weight: 700;
+            line-height: 0.9;
+            letter-spacing: -0.02em;
+        }
+
+        .text-xl { font-size: clamp(2rem, 5vw, 4rem); }
+        .text-lg { font-size: clamp(1.5rem, 3vw, 2.5rem); }
+        
+        .outline-text {
+            color: transparent;
+            -webkit-text-stroke: 1.5px var(--color-fg);
+        }
+
+        /* Glitch Effect */
+        .glitch {
+            position: relative;
+            display: inline-block;
+        }
+        .glitch::before, .glitch::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.8;
+            background: var(--color-bg);
+        }
+        .glitch::before {
+            color: var(--color-alert);
+            z-index: -1;
+            clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
+            animation: glitch-anim-1 2.5s infinite linear alternate-reverse;
+            transform: translate(-2px, 2px);
+        }
+        .glitch::after {
+            color: var(--color-accent);
+            z-index: -2;
+            clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
+            animation: glitch-anim-2 3s infinite linear alternate-reverse;
+            transform: translate(2px, -2px);
+        }
+
+        @keyframes glitch-anim-1 {
+            0% { clip-path: inset(20% 0 80% 0); transform: translate(-2px, 1px); }
+            20% { clip-path: inset(60% 0 1% 0); transform: translate(1px, -1px); }
+            40% { clip-path: inset(40% 0 50% 0); transform: translate(-1px, 2px); }
+            60% { clip-path: inset(80% 0 5% 0); transform: translate(2px, -2px); }
+            80% { clip-path: inset(10% 0 60% 0); transform: translate(-2px, 0); }
+            100% { clip-path: inset(30% 0 30% 0); transform: translate(1px, 1px); }
+        }
+        @keyframes glitch-anim-2 {
+            0% { clip-path: inset(10% 0 60% 0); transform: translate(2px, -1px); }
+            20% { clip-path: inset(30% 0 20% 0); transform: translate(-2px, 2px); }
+            40% { clip-path: inset(90% 0 5% 0); transform: translate(1px, -2px); }
+            60% { clip-path: inset(15% 0 80% 0); transform: translate(-1px, 1px); }
+            80% { clip-path: inset(55% 0 10% 0); transform: translate(2px, 0); }
+            100% { clip-path: inset(40% 0 50% 0); transform: translate(-2px, 2px); }
+        }
+
+        /* Animations */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* --- Components --- */
+
+        /* 1. NAVIGATION */
+        .nav-bar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 1000;
+            background: var(--color-bg);
+            display: flex;
+            height: var(--header-height);
+            border-bottom: var(--border-width) solid var(--color-fg);
+        }
+
+        .nav-logo {
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            font-family: var(--font-display);
+            font-weight: 800;
+            font-size: 1.5rem;
+            letter-spacing: -0.05em;
+            border-right: var(--border-width) solid var(--color-fg);
+            background: var(--color-highlight);
+            color: var(--color-fg);
+        }
+
+        .nav-items {
+            display: flex;
+            flex: 1;
+        }
+
+        .nav-item {
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-right: var(--border-width) solid var(--color-fg);
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .nav-item::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--color-fg);
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: -1;
+        }
+
+        .nav-item:hover {
+            color: var(--color-bg);
+        }
+        
+        .nav-item:hover::before {
+            transform: translateY(0);
+        }
+
+        .lang-switch { display: flex; }
+        
+        .lang-btn {
+            border: none;
+            background: none;
+            padding: 0 1.5rem;
+            font-family: var(--font-mono);
+            font-weight: 700;
+            cursor: pointer;
+            border-left: var(--border-width) solid var(--color-fg);
+            transition: all 0.2s;
+        }
+
+        .lang-btn.active {
+            background: var(--color-fg);
+            color: var(--color-bg);
+        }
+
+        /* 2. HERO */
+        .hero {
+            margin-top: var(--header-height);
+            min-height: 90vh;
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            border-bottom: var(--border-width) solid var(--color-fg);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-content {
+            padding: var(--container-padding);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border-right: var(--border-width) solid var(--color-fg);
+            background: var(--color-bg);
+            z-index: 10;
+        }
+
+        .badge-live {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: var(--border-width) solid var(--color-fg);
+            border-radius: 99px;
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 0.75rem;
+            margin-bottom: 2rem;
+            align-self: flex-start;
+            background: var(--color-bg);
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.1);
+        }
+
+        .pulsing-dot {
+            width: 8px; height: 8px;
+            background: var(--color-alert);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        .hero-title {
+            font-size: clamp(4rem, 11vw, 9rem);
+            margin-bottom: 2rem;
+            line-height: 0.85;
+            letter-spacing: -0.04em;
+        }
+        
+        .hero-title span { display: block; }
+        
+        .hero-desc {
+            font-size: clamp(1.1rem, 2vw, 1.4rem);
+            max-width: 40ch;
+            margin-bottom: 3rem;
+            font-weight: 500;
+            color: var(--color-muted);
+            line-height: 1.4;
+        }
+
+        .hero-visual {
+            background: var(--color-surface);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            overflow: hidden;
+            perspective: 1000px; /* Enable 3D */
+        }
+
+        .pattern-grid {
+            position: absolute;
+            inset: 0;
+            background-image: 
+                linear-gradient(var(--color-fg) 1px, transparent 1px),
+                linear-gradient(90deg, var(--color-fg) 1px, transparent 1px);
+            background-size: 40px 40px;
+            opacity: 0.05;
+        }
+
+        .window-mockup {
+            width: 100%;
+            max-width: 500px;
+            background: #1e1e1e;
+            border: 2px solid var(--color-fg);
+            border-radius: 0;
+            box-shadow: 12px 12px 0 var(--color-accent);
+            transform: rotate(-3deg);
+            transition: transform 0.1s ease-out; /* Smoother follow for JS tilt */
+            will-change: transform;
+        }
+
+        /* Remove default hover since we use JS tilt now, or keep as fallback */
+        /* .window-mockup:hover {
+            transform: rotate(0deg) scale(1.02);
+            box-shadow: 16px 16px 0 var(--color-highlight);
+        } */
+
+        .window-header {
+            background: #2d2d2d;
+            padding: 0.75rem;
+            border-bottom: 1px solid #333;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .window-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: #555;
+        }
+
+        .window-dot.red { background: #ff5f56; }
+        .window-dot.yellow { background: #ffbd2e; }
+        .window-dot.green { background: #27c93f; }
+
+        .code-content {
+            padding: 1.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: #d4d4d4;
+            line-height: 1.6;
+        }
+
+        .scroll-indicator {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: bounce 2s infinite;
+            font-size: 2rem;
+        }
+
+        /* 3. TICKER */
+        .ticker-wrap {
+            overflow: hidden;
+            background: var(--color-fg);
+            color: var(--color-bg);
+            border-bottom: var(--border-width) solid var(--color-fg);
+            padding: 1rem 0;
+            position: relative;
+            z-index: 20;
+        }
+
+        .ticker-wrap:hover .ticker {
+            animation-play-state: paused;
+        }
+
+        .ticker {
+            display: flex;
+            white-space: nowrap;
+            animation: ticker 25s linear infinite;
+        }
+
+        @keyframes ticker {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .ticker-item {
+            font-family: var(--font-display);
+            font-size: 2.5rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 0 3rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .star-icon { color: var(--color-highlight); font-size: 1.5rem; }
+
+        /* 4. PROBLEM STATEMENT */
+        .split-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            border-bottom: var(--border-width) solid var(--color-fg);
+        }
+
+        .problem-left {
+            padding: 6rem 4rem;
+            border-right: var(--border-width) solid var(--color-fg);
+            background: var(--color-bg);
+        }
+
+        .problem-right {
+            padding: 6rem 4rem;
+            background: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        .problem-tag {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            color: var(--color-alert);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            display: block;
+        }
+        
+        .solution-tag {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            color: var(--color-success);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            display: block;
+        }
+
+        /* 5. FEATURES DEEP DIVE */
+        .features-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+        }
+
+        .feature-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            border-bottom: var(--border-width) solid var(--color-fg);
+            min-height: 500px;
+        }
+        
+        .feature-row.alt {
+            direction: rtl; /* Switch visual order */
+        }
+        
+        .feature-row.alt .feature-info {
+            direction: ltr; /* Reset text direction */
+            border-right: none;
+            border-left: var(--border-width) solid var(--color-fg);
+        }
+
+        .feature-info {
+            padding: 4rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border-right: var(--border-width) solid var(--color-fg);
+        }
+
+        .feature-visual {
+            background: var(--color-surface);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-icon-box {
+            width: 60px; height: 60px;
+            border: var(--border-width) solid var(--color-fg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            background: var(--color-highlight);
+            box-shadow: 4px 4px 0 var(--color-fg);
+        }
+
+        /* 6. OBSIDIAN COMPATIBILITY */
+        .obsidian-section {
+            padding: 6rem 2rem;
+            background: #1e1e1e; /* Obsidian dark theme */
+            color: #dcddde;
+            border-bottom: var(--border-width) solid var(--color-fg);
+            text-align: center;
+        }
+
+        .obsidian-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .flow-diagram {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 2rem;
+            margin: 4rem 0;
+            flex-wrap: wrap;
+        }
+
+        .flow-card {
+            background: #2f3136;
+            border: 2px solid #484b52;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 250px;
+            position: relative;
+        }
+
+        .flow-arrow {
+            font-size: 2rem;
+            color: #7289da;
+        }
+
+        /* 7. PERFORMANCE TABLE */
+        .perf-section {
+            padding: 6rem 2rem;
+            background: var(--color-bg);
+            border-bottom: var(--border-width) solid var(--color-fg);
+        }
+
+        .perf-table {
+            width: 100%;
+            max-width: 1000px;
+            margin: 4rem auto 0;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+        }
+
+        .perf-table th, .perf-table td {
+            padding: 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .perf-table th {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            text-transform: uppercase;
+        }
+
+        .bar-container {
+            width: 100%;
+            height: 8px;
+            background: #f4f4f5;
+            margin-top: 0.5rem;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            display: block;
+        }
+
+        .bar-cmdmd { background: var(--color-accent); width: 5%; }
+        .bar-electron { background: var(--color-alert); width: 95%; }
+
+        /* 8. HOW IT WORKS */
+        .steps-section {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            border-bottom: var(--border-width) solid var(--color-fg);
+        }
+
+        .step-card {
+            padding: 4rem 2rem;
+            border-right: var(--border-width) solid var(--color-fg);
+            position: relative;
+            background: var(--color-bg);
+            transition: background 0.3s;
+        }
+        
+        .step-card:last-child { border-right: none; }
+        .step-card:hover { background: var(--color-surface); }
+
+        .step-num {
+            font-family: var(--font-display);
+            font-size: 8rem;
+            font-weight: 700;
+            color: transparent;
+            -webkit-text-stroke: 2px var(--color-fg);
+            opacity: 0.1;
+            position: absolute;
+            top: 1rem; right: 2rem;
+            line-height: 1;
+        }
+
+        /* 9. TESTIMONIALS */
+        .quote-section {
+            padding: 6rem 2rem;
+            border-bottom: var(--border-width) solid var(--color-fg);
+            background: var(--color-highlight);
+            text-align: center;
+        }
+
+        .quote-text {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            font-weight: 700;
+            line-height: 1.2;
+            max-width: 1200px;
+            margin: 0 auto 2rem;
+        }
+
+        /* 10. TECH STACK */
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            border-bottom: var(--border-width) solid var(--color-fg);
+        }
+
+        .tech-item {
+            padding: 4rem 2rem;
+            border-right: var(--border-width) solid var(--color-fg);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        
+        .tech-item:last-child { border-right: none; }
+
+        .tech-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+
+        /* 11. FAQ */
+        .faq-section {
+            padding: 6rem 2rem;
+            border-bottom: var(--border-width) solid var(--color-fg);
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            max-width: 1440px;
+            margin: 0 auto;
+            gap: 4rem;
+        }
+
+        .accordion-item {
+            border-bottom: 1px solid var(--color-fg);
+            margin-bottom: 1rem;
+        }
+
+        .accordion-header {
+            width: 100%;
+            text-align: left;
+            background: none;
+            border: none;
+            padding: 1.5rem 0;
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .accordion-content {
+            padding-bottom: 1.5rem;
+            display: none;
+            color: var(--color-muted);
+        }
+        
+        .accordion-header.active + .accordion-content { display: block; }
+        .accordion-header.active .icon { transform: rotate(45deg); }
+
+        /* 12. DOWNLOAD CTA */
+        .cta-section {
+            padding: 8rem 2rem;
+            text-align: center;
+            background: var(--color-fg);
+            color: var(--color-bg);
+            border-bottom: var(--border-width) solid var(--color-fg);
+        }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem 2.5rem;
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 1rem;
+            text-transform: uppercase;
+            border: var(--border-width) solid var(--color-fg);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: var(--color-fg);
+            color: var(--color-bg);
+            box-shadow: 6px 6px 0 var(--color-accent);
+        }
+
+        .btn-primary:hover {
+            transform: translate(-4px, -4px);
+            box-shadow: 10px 10px 0 var(--color-accent);
+        }
+        
+        .btn-inverse {
+            background: var(--color-bg);
+            color: var(--color-fg);
+            box-shadow: 6px 6px 0 var(--color-highlight);
+            border-color: var(--color-bg);
+        }
+        
+        .btn-inverse:hover {
+            transform: translate(-4px, -4px);
+            box-shadow: 10px 10px 0 var(--color-highlight);
+        }
+
+        /* Footer */
+        .footer {
+            padding: 6rem 2rem 2rem;
+            background: var(--color-bg);
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 4rem;
+        }
+
+        .footer-col h4 {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--color-muted);
+            margin-bottom: 1.5rem;
+        }
+        
+        .footer-col ul li { margin-bottom: 0.75rem; }
+        .footer-col a:hover { text-decoration: underline; color: var(--color-accent); }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .hero { grid-template-columns: 1fr; }
+            .hero-visual { display: none; }
+            .hero-content { border-right: none; }
+            .split-section { grid-template-columns: 1fr; }
+            .problem-left { border-right: none; border-bottom: var(--border-width) solid var(--color-fg); }
+            .feature-row, .feature-row.alt { grid-template-columns: 1fr; direction: ltr; }
+            .feature-row.alt .feature-info { border-left: none; border-right: var(--border-width) solid var(--color-fg); }
+            .feature-visual { display: none; }
+            .tech-grid { grid-template-columns: repeat(2, 1fr); }
+            .tech-item:nth-child(2n) { border-right: none; }
+            .steps-section { grid-template-columns: 1fr; }
+            .step-card { border-right: none; border-bottom: var(--border-width) solid var(--color-fg); }
+            .faq-section { grid-template-columns: 1fr; }
+            .footer-grid { grid-template-columns: 1fr 1fr; }
+        }
+
+        @media (max-width: 640px) {
+            .nav-items { display: none; }
+            .hero-title { font-size: 4rem; }
+            .perf-table { display: block; overflow-x: auto; }
+            .footer-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Language Utilities */
+        [data-lang="en"] .ko { display: none !important; }
+        [data-lang="ko"] .en { display: none !important; }
+        
+        /* Syntax Highlighting Colors */
+        .tok-k { color: #f472b6; }
+        .tok-s { color: #a78bfa; }
+        .tok-f { color: #60a5fa; }
+        .tok-c { color: #6b7280; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="noise-overlay"></div>
+
+    <!-- 1. NAVIGATION -->
+    <nav class="nav-bar">
+        <a href="#" class="nav-logo">CMDMD_</a>
+        <div class="nav-items">
+            <a href="#features" class="nav-item">
+                <span class="en">Features</span>
+                <span class="ko">기능</span>
+            </a>
+            <a href="#performance" class="nav-item">
+                <span class="en">Performance</span>
+                <span class="ko">성능</span>
+            </a>
+            <a href="#how-it-works" class="nav-item">
+                <span class="en">How It Works</span>
+                <span class="ko">사용법</span>
+            </a>
+            <a href="#faq" class="nav-item">FAQ</a>
+        </div>
+        <div class="nav-items" style="justify-content: flex-end; flex: 0.5; padding-right: 0;">
+            <div class="lang-switch">
+                <button class="lang-btn active" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="ko">KO</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 2. HERO -->
+    <header class="hero">
+        <div class="hero-content">
+            <div class="badge-live reveal active">
+                <span class="pulsing-dot"></span>
+                <span class="en">v1.2 Available Now</span>
+                <span class="ko">v1.2 지금 사용 가능</span>
+            </div>
+            
+            <h1 class="hero-title text-display reveal active" style="transition-delay: 0.1s;">
+                <span class="outline-text glitch" data-text="MARKDOWN">MARKDOWN</span>
+                <span>WITHOUT</span>
+                <span class="outline-text">LIMITS</span>
+            </h1>
+            
+            <p class="hero-desc reveal active" style="transition-delay: 0.2s;">
+                <span class="en">Native macOS Markdown editor. No Electron. 100% Swift. Designed for performance obsessed developers who hate waiting.</span>
+                <span class="ko">네이티브 macOS 마크다운 에디터. Electron 없음. 100% Swift. 기다림을 싫어하고 성능에 집착하는 개발자를 위해 설계되었습니다.</span>
+            </p>
+            
+            <div class="reveal active" style="transition-delay: 0.3s;">
+                <a href="#download" class="btn btn-primary">
+                    <span class="en">Download Free Beta</span>
+                    <span class="ko">무료 베타 다운로드</span>
+                </a>
+            </div>
+        </div>
+        
+        <div class="hero-visual">
+            <div class="pattern-grid"></div>
+            <div class="window-mockup" id="hero-mockup">
+                <div class="window-header">
+                    <div class="window-dot red"></div>
+                    <div class="window-dot yellow"></div>
+                    <div class="window-dot green"></div>
+                </div>
+                <div class="code-content">
+                    <div><span class="tok-k">import</span> CmdMD</div>
+                    <br>
+                    <div><span class="tok-f">struct</span> <span class="tok-s">Philosophy</span> {</div>
+                    <div style="padding-left: 1.5rem">
+                        <span class="tok-k">let</span> engine = <span class="tok-s">"WebKit + Swift"</span>
+                    </div>
+                    <div style="padding-left: 1.5rem">
+                        <span class="tok-k">let</span> latency = 0.0
+                    </div>
+                    <div style="padding-left: 1.5rem">
+                        <span class="tok-k">let</span> privacy = <span class="tok-k">true</span>
+                    </div>
+                    <div>}</div>
+                    <br>
+                    <div><span class="tok-c">// Ready for high performance...</span></div>
+                </div>
+            </div>
+            <div class="scroll-indicator">↓</div>
+        </div>
+    </header>
+
+    <!-- 3. TICKER -->
+    <div class="ticker-wrap">
+        <div class="ticker">
+            <span class="ticker-item">Native Swift <span class="star-icon">✶</span></span>
+            <span class="ticker-item">Wiki Links <span class="star-icon">✶</span></span>
+            <span class="ticker-item">Live Preview <span class="star-icon">✶</span></span>
+            <span class="ticker-item">Vim Mode <span class="star-icon">✶</span></span>
+            <span class="ticker-item">iCloud Sync <span class="star-icon">✶</span></span>
+            <span class="ticker-item">Native Swift <span class="star-icon">✶</span></span>
+            <span class="ticker-item">Wiki Links <span class="star-icon">✶</span></span>
+            <span class="ticker-item">Live Preview <span class="star-icon">✶</span></span>
+        </div>
+    </div>
+
+    <!-- 4. PROBLEM STATEMENT -->
+    <section class="split-section">
+        <div class="problem-left reveal">
+            <span class="problem-tag">The Problem</span>
+            <h2 class="text-display text-xl mb-4">
+                <span class="en">Electron apps represent <br>everything wrong with <br>modern software.</span>
+                <span class="ko">Electron 앱은 <br>현대 소프트웨어의 <br>모든 문제점을 보여줍니다.</span>
+            </h2>
+            <p class="text-lg" style="color: var(--color-muted);">
+                <span class="en">Slow startup times, heavy memory usage, and non-native interactions breaking your flow.</span>
+                <span class="ko">느린 시작 속도, 과도한 메모리 사용, 흐름을 끊는 비네이티브 상호작용.</span>
+            </p>
+        </div>
+        <div class="problem-right reveal">
+            <div style="max-width: 400px; margin: 0 auto; text-align: left;">
+                <span class="solution-tag">The Solution</span>
+                <h3 class="text-display text-xl">NATIVE.<br>LIGHT.<br>INSTANT.</h3>
+                <p style="margin-top: 2rem; font-family: var(--font-mono); opacity: 0.8;">
+                    > System resources saved: 90%<br>
+                    > Startup delay: 0ms<br>
+                    > Happiness: 100%
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. FEATURES DEEP DIVE -->
+    <section id="features" class="features-grid">
+        
+        <!-- Feature 1 -->
+        <div class="feature-row reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">⚡</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Instant Load</span>
+                    <span class="ko">즉각적인 로딩</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Opens instantly. Parses thousands of words in milliseconds using optimized Swift regex. No splash screens, no spinners.</span>
+                    <span class="ko">즉시 실행됩니다. 최적화된 Swift 정규식을 사용하여 수천 단어를 밀리초 단위로 파싱합니다. 로딩 화면도, 스피너도 없습니다.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <h1 style="font-size: 12rem; font-weight: 800; opacity: 0.05;">0ms</h1>
+            </div>
+        </div>
+
+        <!-- Feature 2 (Alt) -->
+        <div class="feature-row alt reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">🔗</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Wiki Links</span>
+                    <span class="ko">위키 링크</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">First-class support for [[Double Bracket]] linking. Build your personal knowledge graph effortlessly.</span>
+                    <span class="ko">[[이중 괄호]] 링크를 완벽하게 지원합니다. 개인 지식 그래프를 손쉽게 구축하세요.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <div style="background: #fff; border: 2px solid #000; padding: 1rem; transform: rotate(2deg);">
+                    <span style="color: #3b82f6;">[[Project Alpha]]</span> -> <span style="color: #3b82f6;">[[Ideas]]</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="feature-row reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">👁️</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Live Preview</span>
+                    <span class="ko">실시간 미리보기</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Powered by native WKWebView. See your rendered Markdown immediately as you type, without mode switching.</span>
+                    <span class="ko">네이티브 WKWebView로 구동됩니다. 모드 전환 없이 입력하는 즉시 렌더링된 마크다운을 확인하세요.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <div style="font-family: var(--font-mono);">**Bold** -> <strong>Bold</strong></div>
+            </div>
+        </div>
+
+        <!-- Feature 4 (Alt) -->
+        <div class="feature-row alt reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">🎨</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Syntax Highlighting</span>
+                    <span class="ko">구문 강조</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Support for 100+ programming languages. Code blocks look beautiful and are easy to read.</span>
+                    <span class="ko">100개 이상의 프로그래밍 언어 지원. 코드 블록이 아름답게 표시되며 가독성이 뛰어납니다.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <div style="background: #111; color: #fff; padding: 1rem; border-radius: 4px; width: 80%;">
+                    console.log("Hello");
+                </div>
+            </div>
+        </div>
+        
+        <!-- Feature 5 -->
+        <div class="feature-row reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">💡</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Callouts</span>
+                    <span class="ko">콜아웃</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Obsidian-compatible callout blocks. Highlight warnings, tips, and notes with style.</span>
+                    <span class="ko">Obsidian 호환 콜아웃 블록. 경고, 팁, 노트를 스타일리시하게 강조하세요.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 1rem; width: 80%;">
+                    <div style="font-weight: bold; color: #3b82f6; margin-bottom: 0.5rem;">ℹ️ Note</div>
+                    <div style="font-size: 0.9rem;">This is a callout block.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feature 6 (Alt) -->
+        <div class="feature-row alt reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">📂</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Vault Routing</span>
+                    <span class="ko">볼트 라우팅</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Automatically send new files to specific folders based on rules you define. Keep your vault organized.</span>
+                    <span class="ko">정의한 규칙에 따라 새 파일을 특정 폴더로 자동 전송합니다. 볼트를 깔끔하게 정리하세요.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <div style="font-family: var(--font-mono);">/Inbox -> /Notes</div>
+            </div>
+        </div>
+
+        <!-- Feature 7 -->
+        <div class="feature-row reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">☁️</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">iCloud Sync</span>
+                    <span class="ko">iCloud 동기화</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Built on CloudKit. Your notes are available on all your devices instantly, securely, and privately.</span>
+                    <span class="ko">CloudKit 기반. 모든 기기에서 즉시, 안전하게, 그리고 비공개로 노트에 액세스할 수 있습니다.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <span style="font-size: 5rem;">☁️</span>
+            </div>
+        </div>
+
+        <!-- Feature 8 (Alt) -->
+        <div class="feature-row alt reveal">
+            <div class="feature-info">
+                <div class="feature-icon-box">⌘</div>
+                <h3 class="text-display text-lg mb-2">
+                    <span class="en">Command Palette</span>
+                    <span class="ko">커맨드 팔레트</span>
+                </h3>
+                <p style="color: var(--color-muted);">
+                    <span class="en">Press ⌘K to do anything. Navigation, formatting, and file management at your fingertips.</span>
+                    <span class="ko">⌘K를 눌러 모든 작업을 수행하세요. 탐색, 서식 지정, 파일 관리가 손끝에서 이루어집니다.</span>
+                </p>
+            </div>
+            <div class="feature-visual">
+                <div style="background: #fff; border: 2px solid #000; padding: 0.5rem 1rem; border-radius: 4px; box-shadow: 4px 4px 0 #000;">
+                    ⌘ Command K
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. OBSIDIAN COMPATIBILITY -->
+    <section class="obsidian-section reveal">
+        <h2 class="text-display text-xl mb-4">
+            <span class="en">Works with Obsidian</span>
+            <span class="ko">Obsidian과 완벽 호환</span>
+        </h2>
+        <p style="max-width: 600px; margin: 0 auto; color: #999;">
+            <span class="en">CmdMD reads and writes standard Markdown files. Point it at your Obsidian vault and it just works. No database lock-in.</span>
+            <span class="ko">CmdMD는 표준 마크다운 파일을 읽고 씁니다. Obsidian 볼트를 지정하기만 하면 바로 작동합니다. 데이터베이스 잠금이 없습니다.</span>
+        </p>
+
+        <div class="obsidian-container">
+            <div class="flow-diagram">
+                <div class="flow-card">
+                    <h4 style="color: #fff; margin-bottom: 0.5rem;">Obsidian</h4>
+                    <p style="font-size: 0.8rem; color: #999;">Heavy, Plugin-rich</p>
+                </div>
+                <div class="flow-arrow">↔</div>
+                <div class="flow-card" style="border-color: #7289da;">
+                    <h4 style="color: #fff; margin-bottom: 0.5rem;">Markdown Files</h4>
+                    <p style="font-size: 0.8rem; color: #999;">.md (Text)</p>
+                </div>
+                <div class="flow-arrow">↔</div>
+                <div class="flow-card" style="border-color: #fff; background: #000;">
+                    <h4 style="color: #fff; margin-bottom: 0.5rem;">CmdMD</h4>
+                    <p style="font-size: 0.8rem; color: #999;">Fast, Native</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 7. PERFORMANCE -->
+    <section id="performance" class="perf-section">
+        <div class="container" style="border:none;">
+            <h2 class="text-display text-xl mb-4 text-center reveal">
+                <span class="en">Benchmark Results</span>
+                <span class="ko">벤치마크 결과</span>
+            </h2>
+            
+            <table class="perf-table reveal">
+                <thead>
+                    <tr>
+                        <th width="30%">METRIC</th>
+                        <th width="50%">COMPARISON</th>
+                        <th width="20%">CmdMD</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <div style="font-weight: bold;">Startup Time</div>
+                            <div style="font-size: 0.8rem; color: var(--color-muted);">Cold launch to typing</div>
+                        </td>
+                        <td>
+                            <div class="bar-container">
+                                <div class="bar-fill bar-electron" style="width: 100%; opacity: 0.3;"></div>
+                            </div>
+                            <div class="bar-container" style="margin-top: 5px;">
+                                <div class="bar-fill bar-cmdmd" style="width: 5%;"></div>
+                            </div>
+                        </td>
+                        <td style="font-weight: bold; color: var(--color-accent);"><span class="counter" data-target="5">0</span>ms</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="font-weight: bold;">Memory Usage</div>
+                            <div style="font-size: 0.8rem; color: var(--color-muted);">Idle RAM consumption</div>
+                        </td>
+                        <td>
+                            <div class="bar-container">
+                                <div class="bar-fill bar-electron" style="width: 90%; opacity: 0.3;"></div>
+                            </div>
+                            <div class="bar-container" style="margin-top: 5px;">
+                                <div class="bar-fill bar-cmdmd" style="width: 10%;"></div>
+                            </div>
+                        </td>
+                        <td style="font-weight: bold; color: var(--color-accent);"><span class="counter" data-target="15">0</span>MB</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="font-weight: bold;">App Size</div>
+                            <div style="font-size: 0.8rem; color: var(--color-muted);">Disk space required</div>
+                        </td>
+                        <td>
+                            <div class="bar-container">
+                                <div class="bar-fill bar-electron" style="width: 80%; opacity: 0.3;"></div>
+                            </div>
+                            <div class="bar-container" style="margin-top: 5px;">
+                                <div class="bar-fill bar-cmdmd" style="width: 5%;"></div>
+                            </div>
+                        </td>
+                        <td style="font-weight: bold; color: var(--color-accent);"><span class="counter" data-target="5">0</span>MB</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- 8. HOW IT WORKS -->
+    <section id="how-it-works" class="steps-section">
+        <div class="step-card reveal" style="transition-delay: 0s;">
+            <div class="step-num">1</div>
+            <h3 class="text-display text-lg mb-4">OPEN</h3>
+            <p>
+                <span class="en">Open any folder or file. CmdMD scans your directory instantly.</span>
+                <span class="ko">폴더나 파일을 엽니다. CmdMD가 디렉토리를 즉시 스캔합니다.</span>
+            </p>
+        </div>
+        <div class="step-card reveal" style="transition-delay: 0.1s;">
+            <div class="step-num">2</div>
+            <h3 class="text-display text-lg mb-4">EDIT</h3>
+            <p>
+                <span class="en">Write with live preview. Use shortcuts for rapid formatting.</span>
+                <span class="ko">실시간 미리보기로 작성하세요. 단축키로 빠르게 서식을 지정합니다.</span>
+            </p>
+        </div>
+        <div class="step-card reveal" style="transition-delay: 0.2s;">
+            <div class="step-num">3</div>
+            <h3 class="text-display text-lg mb-4">SYNC</h3>
+            <p>
+                <span class="en">Changes are saved to disk immediately. Synced via iCloud.</span>
+                <span class="ko">변경 사항은 즉시 디스크에 저장되며 iCloud를 통해 동기화됩니다.</span>
+            </p>
+        </div>
+    </section>
+
+    <!-- 9. TESTIMONIALS -->
+    <section class="quote-section">
+        <div class="reveal">
+            <div style="font-size: 4rem; line-height: 1;">"</div>
+            <p class="quote-text">
+                <span class="en">Finally, a Markdown editor that feels like a native Mac app, not a web browser in a box.</span>
+                <span class="ko">드디어 웹 브라우저가 아닌 진짜 네이티브 Mac 앱 같은 마크다운 에디터가 나왔습니다.</span>
+            </p>
+            <div style="font-family: var(--font-mono); font-weight: 700;">
+                — SARAH J., iOS DEVELOPER
+            </div>
+        </div>
+    </section>
+
+    <!-- 10. TECH STACK -->
+    <section class="tech-grid">
+        <div class="tech-item reveal">
+            <div class="tech-icon">🍏</div>
+            <div style="font-weight: 700;">SWIFT UI</div>
+        </div>
+        <div class="tech-item reveal" style="transition-delay: 0.1s;">
+            <div class="tech-icon">⚙️</div>
+            <div style="font-weight: 700;">WEBKIT</div>
+        </div>
+        <div class="tech-item reveal" style="transition-delay: 0.2s;">
+            <div class="tech-icon">☁️</div>
+            <div style="font-weight: 700;">CLOUDKIT</div>
+        </div>
+        <div class="tech-item reveal" style="transition-delay: 0.3s;">
+            <div class="tech-icon">⚡</div>
+            <div style="font-weight: 700;">METAL</div>
+        </div>
+    </section>
+
+    <!-- 11. FAQ -->
+    <section id="faq" class="faq-section">
+        <div>
+            <h2 class="text-display text-xl">FAQ</h2>
+            <p style="margin-top: 1rem; color: var(--color-muted);">
+                <span class="en">Common questions about CmdMD.</span>
+                <span class="ko">자주 묻는 질문들.</span>
+            </p>
+        </div>
+        <div>
+            <div class="accordion-item reveal">
+                <button class="accordion-header">
+                    <span class="en">Is it free?</span>
+                    <span class="ko">무료인가요?</span>
+                    <span class="icon">+</span>
+                </button>
+                <div class="accordion-content">
+                    <span class="en">Yes, the core editor is open source and free. Pro features (Cloud Sync) require a small subscription.</span>
+                    <span class="ko">네, 핵심 에디터는 오픈 소스이며 무료입니다. 프로 기능(클라우드 동기화)은 소액의 구독이 필요합니다.</span>
+                </div>
+            </div>
+            <div class="accordion-item reveal">
+                <button class="accordion-header">
+                    <span class="en">Does it support Obsidian plugins?</span>
+                    <span class="ko">Obsidian 플러그인을 지원하나요?</span>
+                    <span class="icon">+</span>
+                </button>
+                <div class="accordion-content">
+                    <span class="en">No. CmdMD focuses on speed and native performance. We support standard Markdown and core Obsidian syntax, but not JS plugins.</span>
+                    <span class="ko">아니요. CmdMD는 속도와 네이티브 성능에 집중합니다. 표준 마크다운과 핵심 Obsidian 문법은 지원하지만, JS 플러그인은 지원하지 않습니다.</span>
+                </div>
+            </div>
+            <div class="accordion-item reveal">
+                <button class="accordion-header">
+                    <span class="en">Is Windows/Linux version planned?</span>
+                    <span class="ko">윈도우/리눅스 버전 계획이 있나요?</span>
+                    <span class="icon">+</span>
+                </button>
+                <div class="accordion-content">
+                    <span class="en">No. We are 100% focused on creating the best experience for macOS.</span>
+                    <span class="ko">아니요. 우리는 macOS에서 최고의 경험을 만드는 데 100% 집중하고 있습니다.</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 12. DOWNLOAD CTA -->
+    <section id="download" class="cta-section">
+        <div class="reveal">
+            <h2 class="text-display text-xl mb-4" style="font-size: clamp(3rem, 8vw, 6rem);">
+                <span class="en">READY TO FLY?</span>
+                <span class="ko">준비 되셨나요?</span>
+            </h2>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <a href="#" class="btn btn-inverse">
+                    <span class="en">DOWNLOAD FOR MAC</span>
+                    <span class="ko">Mac용 다운로드</span>
+                </a>
+                <a href="https://github.com" class="btn btn-inverse" style="background: transparent; color: #fff; border-color: #fff; box-shadow: none;">
+                    GITHUB REPO
+                </a>
+            </div>
+            <p style="margin-top: 2rem; opacity: 0.6; font-family: var(--font-mono); font-size: 0.8rem;">
+                macOS 12.0+ Required • Apple Silicon Optimized
+            </p>
+        </div>
+    </section>
+
+    <!-- 13. FOOTER -->
+    <footer class="footer">
+        <div class="footer-grid">
+            <div class="footer-col">
+                <h2 class="text-display" style="font-size: 2rem; margin-bottom: 1rem;">CMDMD_</h2>
+                <p style="color: var(--color-muted); max-width: 300px;">
+                    <span class="en">Brutally efficient tools for thought. Crafted in Seoul.</span>
+                    <span class="ko">생각을 위한 압도적으로 효율적인 도구. 서울에서 제작됨.</span>
+                </p>
+            </div>
+            <div class="footer-col">
+                <h4>PRODUCT</h4>
+                <ul>
+                    <li><a href="#">Features</a></li>
+                    <li><a href="#">Pricing</a></li>
+                    <li><a href="#">Changelog</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>RESOURCES</h4>
+                <ul>
+                    <li><a href="#">Documentation</a></li>
+                    <li><a href="#">API</a></li>
+                    <li><a href="#">Community</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>LEGAL</h4>
+                <ul>
+                    <li><a href="#">Privacy</a></li>
+                    <li><a href="#">Terms</a></li>
+                </ul>
+            </div>
+        </div>
+        <div style="border-top: 1px solid #e5e5e5; padding-top: 2rem; display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--color-muted);">
+            <span>© 2026 CmdMD Inc.</span>
+            <span>SYSTEM_READY</span>
+        </div>
+    </footer>
+
+    <script>
+        // Language Logic
+        const langBtns = document.querySelectorAll('.lang-btn');
+        const updateLang = (lang) => {
+            document.documentElement.setAttribute('data-lang', lang);
+            localStorage.setItem('lang', lang);
+            langBtns.forEach(b => {
+                if(b.dataset.lang === lang) b.classList.add('active');
+                else b.classList.remove('active');
+            });
+        };
+
+        langBtns.forEach(btn => {
+            btn.addEventListener('click', () => updateLang(btn.dataset.lang));
+        });
+
+        const savedLang = localStorage.getItem('lang');
+        if (savedLang) updateLang(savedLang);
+
+        // Accordion Logic
+        document.querySelectorAll('.accordion-header').forEach(button => {
+            button.addEventListener('click', () => {
+                button.classList.toggle('active');
+                const icon = button.querySelector('.icon');
+                icon.textContent = button.classList.contains('active') ? '-' : '+';
+            });
+        });
+
+        // Reveal Animation Observer
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: "0px 0px -50px 0px"
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('active');
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // --- NEW EFFECTS ---
+
+        // 1. Counter Animation
+        const counters = document.querySelectorAll('.counter');
+        const counterObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if(entry.isIntersecting) {
+                    const counter = entry.target;
+                    const target = +counter.getAttribute('data-target');
+                    const speed = 50; // duration
+                    
+                    const updateCount = () => {
+                        const count = +counter.innerText;
+                        const inc = target / speed;
+                        
+                        if (count < target) {
+                            counter.innerText = Math.ceil(count + (target > 50 ? 5 : 1));
+                            setTimeout(updateCount, 20);
+                        } else {
+                            counter.innerText = target;
+                        }
+                    };
+                    updateCount();
+                    observer.unobserve(counter);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        counters.forEach(c => counterObserver.observe(c));
+
+        // 2. 3D Tilt Effect for Hero Mockup
+        const heroSection = document.querySelector('.hero-visual');
+        const mockup = document.getElementById('hero-mockup');
+
+        if (heroSection && mockup) {
+            heroSection.addEventListener('mousemove', (e) => {
+                const rect = heroSection.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                const rotateX = ((y - centerY) / centerY) * -5; // Max 5deg
+                const rotateY = ((x - centerX) / centerX) * 5; // Max 5deg
+                
+                mockup.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotate(-3deg)`;
+            });
+
+            heroSection.addEventListener('mouseleave', () => {
+                mockup.style.transform = `rotate(-3deg)`;
+            });
+        }
+    </script>
+</body>
+</html>
