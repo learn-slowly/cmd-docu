@@ -303,7 +303,9 @@ struct AddVaultSheet: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     VaultManagerView()
         .environment(AppState())
 }
+#endif

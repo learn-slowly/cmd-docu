@@ -27,5 +27,10 @@ let package = Package(
             ],
             path: "Sources"
         ),
+        .testTarget(
+            name: "CmdMDTests",
+            dependencies: ["CmdMD"],
+            path: "Tests/CmdMDTests"
+        ),
     ]
 )

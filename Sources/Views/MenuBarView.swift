@@ -87,23 +87,24 @@ struct MenuBarView: View {
     
     private func saveAndSendToVault(_ vault: Vault) {
         guard !quickNoteText.isEmpty else { return }
-        
+
         let document = MarkdownDocument(
             title: extractTitle(from: quickNoteText),
             content: quickNoteText,
             isDraft: true
         )
-        
-        appState.currentDocument = document
-        appState.originalContent = quickNoteText
-        
+
         Task {
             var options = SendOptions()
             options.targetVault = vault
+            options.targetFolder = vault.inboxPath
+            options.conflictResolution = appState.settings.conflictResolution
             options.injectFrontmatter = appState.settings.injectFrontmatterByDefault
-            
+
             do {
-                try await appState.sendToVault(options: options)
+                // Pass the document explicitly — quick capture has no active tab,
+                // so routing through currentDocument would silently drop the note.
+                try await appState.sendToVault(document: document, options: options)
                 await MainActor.run {
                     quickNoteText = ""
                 }
@@ -133,7 +134,9 @@ struct MenuBarView: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     MenuBarView()
         .environment(AppState())
 }
+#endif

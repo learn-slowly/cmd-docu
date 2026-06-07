@@ -16,7 +16,11 @@ struct MainEditorView: View {
             
             Group {
                 if let document = appState.currentDocument {
+                    // .id ties the editor/preview subtree to the document identity,
+                    // so switching tabs gives a fresh NSTextView instead of reusing
+                    // one (which bled undo history and scroll state across tabs).
                     DocumentEditorView(document: document)
+                        .id(document.id)
                 } else {
                     WelcomeView()
                 }
@@ -144,27 +148,39 @@ struct EditorPane: View {
     @Environment(AppState.self) private var appState
     @State private var isDropTargeted = false
     
+    /// Resolves the editor font from settings.fontName, falling back to the
+    /// system monospaced font if the named font isn't installed.
+    private func editorFont() -> NSFont {
+        let size = appState.settings.fontSize
+        let name = appState.settings.fontName
+        if !name.isEmpty, let custom = NSFont(name: name, size: size) {
+            return custom
+        }
+        return .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
     var body: some View {
         @Bindable var state = appState
         let theme = appState.settings.editorTheme
-        
+
         VStack(spacing: 0) {
             if appState.settings.showLineNumbers {
                 HStack(spacing: 0) {
                     LineNumbersView(text: appState.currentDocument?.content ?? "", theme: theme)
                         .frame(width: 50)
                         .background(theme.backgroundColor.opacity(0.8))
-                    
+
                     Divider()
-                    
+
                     MarkdownTextEditor(
                         text: Binding(
                             get: { appState.currentDocument?.content ?? "" },
                             set: { appState.updateContent($0) }
                         ),
-                        font: .monospacedSystemFont(ofSize: appState.settings.fontSize, weight: .regular),
+                        font: editorFont(),
                         syntaxHighlighting: true,
                         editorTheme: theme,
+                        softWrap: appState.settings.softWrap,
                         onImageDrop: { imageURL in
                             handleImageDrop(imageURL)
                         }
@@ -176,9 +192,10 @@ struct EditorPane: View {
                         get: { appState.currentDocument?.content ?? "" },
                         set: { appState.updateContent($0) }
                     ),
-                    font: .monospacedSystemFont(ofSize: appState.settings.fontSize, weight: .regular),
+                    font: editorFont(),
                     syntaxHighlighting: true,
                     editorTheme: theme,
+                    softWrap: appState.settings.softWrap,
                     onImageDrop: { imageURL in
                         handleImageDrop(imageURL)
                     }
@@ -288,16 +305,49 @@ struct MarkdownTextEditor: NSViewRepresentable {
     let font: NSFont
     let syntaxHighlighting: Bool
     let editorTheme: EditorTheme
+    let softWrap: Bool
     var onImageDrop: ((URL) -> Void)?
-    
+
     private let highlighter = SyntaxHighlighter()
-    
-    init(text: Binding<String>, font: NSFont, syntaxHighlighting: Bool = true, editorTheme: EditorTheme = .oneDark, onImageDrop: ((URL) -> Void)? = nil) {
+
+    init(text: Binding<String>, font: NSFont, syntaxHighlighting: Bool = true, editorTheme: EditorTheme = .oneDark, softWrap: Bool = true, onImageDrop: ((URL) -> Void)? = nil) {
         self._text = text
         self.font = font
         self.syntaxHighlighting = syntaxHighlighting
         self.editorTheme = editorTheme
+        self.softWrap = softWrap
         self.onImageDrop = onImageDrop
+    }
+
+    /// Clamp previously-selected ranges to the current text, measuring in UTF-16
+    /// code units (NSRange's unit) rather than grapheme clusters — mixing the two
+    /// corrupted selections in documents containing emoji/composed characters.
+    private func clampedRanges(_ ranges: [NSValue], to nsString: NSString) -> [NSValue] {
+        let length = nsString.length
+        return ranges.compactMap { value in
+            let range = value.rangeValue
+            guard range.location <= length else { return nil }
+            let clampedLength = min(range.length, length - range.location)
+            return NSValue(range: NSRange(location: range.location, length: clampedLength))
+        }
+    }
+
+    /// Configures soft-wrap vs. horizontal-scroll behavior for the text view.
+    private func applyWrapMode(to textView: NSTextView, scrollView: NSScrollView) {
+        guard let container = textView.textContainer else { return }
+        let big = CGFloat.greatestFiniteMagnitude
+        if softWrap {
+            scrollView.hasHorizontalScroller = false
+            textView.isHorizontallyResizable = false
+            container.widthTracksTextView = true
+            container.size = NSSize(width: scrollView.contentSize.width, height: big)
+        } else {
+            scrollView.hasHorizontalScroller = true
+            textView.isHorizontallyResizable = true
+            container.widthTracksTextView = false
+            container.size = NSSize(width: big, height: big)
+        }
+        textView.maxSize = NSSize(width: big, height: big)
     }
     
     func makeNSView(context: Context) -> NSScrollView {
@@ -320,7 +370,14 @@ struct MarkdownTextEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.backgroundColor = NSColor(editorTheme.backgroundColor)
         textView.insertionPointColor = NSColor(editorTheme.textColor)
-        
+
+        // Native find/replace bar (⌘F / ⌘⌥F) — previously the app had no
+        // in-document search at all.
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+
+        applyWrapMode(to: textView, scrollView: scrollView)
+
         textView.registerForDraggedTypes([.fileURL, .png, .tiff])
         
         if syntaxHighlighting {
@@ -335,30 +392,25 @@ struct MarkdownTextEditor: NSViewRepresentable {
     
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? NSTextView else { return }
-        
+
         textView.backgroundColor = NSColor(editorTheme.backgroundColor)
         textView.insertionPointColor = NSColor(editorTheme.textColor)
-        
+        textView.font = font
+        applyWrapMode(to: textView, scrollView: nsView)
+
         let currentText = textView.string
         if currentText != text || context.coordinator.currentTheme != editorTheme {
             context.coordinator.currentTheme = editorTheme
             let selectedRanges = textView.selectedRanges
-            
+
             if syntaxHighlighting {
                 let attributed = highlighter.highlight(markdown: text, font: font, theme: editorTheme)
                 textView.textStorage?.setAttributedString(attributed)
             } else {
                 textView.string = text
             }
-            
-            let validRanges = selectedRanges.compactMap { rangeValue -> NSValue? in
-                let range = rangeValue.rangeValue
-                if range.location <= text.count {
-                    let adjustedLength = min(range.length, text.count - range.location)
-                    return NSValue(range: NSRange(location: range.location, length: adjustedLength))
-                }
-                return nil
-            }
+
+            let validRanges = clampedRanges(selectedRanges, to: textView.string as NSString)
             if !validRanges.isEmpty {
                 textView.selectedRanges = validRanges
             }
@@ -375,35 +427,62 @@ struct MarkdownTextEditor: NSViewRepresentable {
         private var isUpdating = false
         private let highlighter = SyntaxHighlighter()
         private var debounceWorkItem: DispatchWorkItem?
-        private var scrollObserver: NSObjectProtocol?
+        private var observers: [NSObjectProtocol] = []
         weak var textView: NSTextView?
-        
+
+        private let unorderedRegex = try! NSRegularExpression(pattern: #"^(\s*)([-*+])\s+(\[[ xX]\]\s+)?(.*)$"#)
+        private let orderedRegex = try! NSRegularExpression(pattern: #"^(\s*)(\d+)([.)])\s+(.*)$"#)
+        private let quoteRegex = try! NSRegularExpression(pattern: #"^(\s*>+\s?)(.*)$"#)
+
         init(_ parent: MarkdownTextEditor) {
             self.parent = parent
             self.currentTheme = parent.editorTheme
             super.init()
-            
-            scrollObserver = NotificationCenter.default.addObserver(
-                forName: .scrollToLine,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let lineNumber = notification.object as? Int else { return }
+
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(forName: .scrollToLine, object: nil, queue: .main) { [weak self] note in
+                guard let lineNumber = note.object as? Int else { return }
                 self?.scrollToLine(lineNumber)
-            }
+            })
+            observers.append(center.addObserver(forName: .showDocumentSearch, object: nil, queue: .main) { [weak self] _ in
+                self?.showFindBar()
+            })
+            observers.append(center.addObserver(forName: .formatBold, object: nil, queue: .main) { [weak self] _ in
+                self?.wrapSelection(token: "**", placeholder: "bold")
+            })
+            observers.append(center.addObserver(forName: .formatItalic, object: nil, queue: .main) { [weak self] _ in
+                self?.wrapSelection(token: "*", placeholder: "italic")
+            })
+            observers.append(center.addObserver(forName: .formatLink, object: nil, queue: .main) { [weak self] _ in
+                self?.insertLink()
+            })
         }
-        
+
         deinit {
-            if let observer = scrollObserver {
-                NotificationCenter.default.removeObserver(observer)
-            }
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
         }
-        
+
+        /// Only the editor that currently owns focus should react to global
+        /// format notifications. Menu-driven shortcuts don't change the window's
+        /// first responder, so an exact match is correct (and avoids acting on an
+        /// unfocused editor).
+        private var isActiveEditor: Bool {
+            guard let textView = textView, let window = textView.window else { return false }
+            return window.firstResponder === textView
+        }
+
+        private func showFindBar() {
+            guard let textView = textView, textView.window != nil else { return }
+            let item = NSMenuItem()
+            item.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
+            textView.performTextFinderAction(item)
+        }
+
         private func scrollToLine(_ lineNumber: Int) {
             guard let textView = textView else { return }
             let text = textView.string
             let lines = text.components(separatedBy: .newlines)
-            
+
             var characterIndex = 0
             for (index, line) in lines.enumerated() {
                 if index + 1 == lineNumber {
@@ -412,20 +491,116 @@ struct MarkdownTextEditor: NSViewRepresentable {
                     textView.setSelectedRange(range)
                     return
                 }
-                characterIndex += line.count + 1
+                characterIndex += (line as NSString).length + 1
             }
         }
-        
+
+        // MARK: - Markdown formatting
+
+        private func wrapSelection(token: String, placeholder: String) {
+            guard isActiveEditor, let textView = textView else { return }
+            let sel = textView.selectedRange()
+            let nsText = textView.string as NSString
+            let selected = nsText.substring(with: sel)
+            let inner = selected.isEmpty ? placeholder : selected
+            let replacement = token + inner + token
+            guard textView.shouldChangeText(in: sel, replacementString: replacement) else { return }
+            textView.textStorage?.replaceCharacters(in: sel, with: replacement)
+            textView.didChangeText()
+            let innerLocation = sel.location + (token as NSString).length
+            textView.setSelectedRange(NSRange(location: innerLocation, length: (inner as NSString).length))
+        }
+
+        private func insertLink() {
+            guard isActiveEditor, let textView = textView else { return }
+            let sel = textView.selectedRange()
+            let nsText = textView.string as NSString
+            let selected = nsText.substring(with: sel)
+            let label = selected.isEmpty ? "text" : selected
+            let replacement = "[\(label)](url)"
+            guard textView.shouldChangeText(in: sel, replacementString: replacement) else { return }
+            textView.textStorage?.replaceCharacters(in: sel, with: replacement)
+            textView.didChangeText()
+            // Select the "url" placeholder for immediate typing.
+            let urlLocation = sel.location + (replacement as NSString).length - 4
+            textView.setSelectedRange(NSRange(location: urlLocation, length: 3))
+        }
+
+        // MARK: - Smart list continuation
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                return handleNewline(in: textView)
+            }
+            return false
+        }
+
+        private func handleNewline(in textView: NSTextView) -> Bool {
+            let sel = textView.selectedRange()
+            guard sel.length == 0 else { return false }
+            let nsText = textView.string as NSString
+            let lineRange = nsText.lineRange(for: NSRange(location: sel.location, length: 0))
+            let lineToCaret = nsText.substring(with: NSRange(location: lineRange.location, length: sel.location - lineRange.location))
+
+            guard let marker = listMarker(for: lineToCaret) else { return false }
+
+            if marker.isEmptyItem {
+                // Enter on an empty list/quote item terminates the list: clear the
+                // marker and leave the caret on the now-blank line.
+                let clearRange = NSRange(location: lineRange.location, length: sel.location - lineRange.location)
+                if textView.shouldChangeText(in: clearRange, replacementString: "") {
+                    textView.textStorage?.replaceCharacters(in: clearRange, with: "")
+                    textView.didChangeText()
+                }
+                return true
+            }
+
+            let insertion = "\n" + marker.continuation
+            guard textView.shouldChangeText(in: sel, replacementString: insertion) else { return false }
+            textView.textStorage?.replaceCharacters(in: sel, with: insertion)
+            textView.didChangeText()
+            let newLocation = sel.location + (insertion as NSString).length
+            textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+            return true
+        }
+
+        private func listMarker(for line: String) -> (continuation: String, isEmptyItem: Bool)? {
+            let nsLine = line as NSString
+            let full = NSRange(location: 0, length: nsLine.length)
+
+            if let m = unorderedRegex.firstMatch(in: line, range: full) {
+                let indent = nsLine.substring(with: m.range(at: 1))
+                let bullet = nsLine.substring(with: m.range(at: 2))
+                let hasTask = m.range(at: 3).location != NSNotFound
+                let rest = nsLine.substring(with: m.range(at: 4)).trimmingCharacters(in: .whitespaces)
+                let continuation = "\(indent)\(bullet) " + (hasTask ? "[ ] " : "")
+                return (continuation, rest.isEmpty)
+            }
+            if let m = orderedRegex.firstMatch(in: line, range: full) {
+                let indent = nsLine.substring(with: m.range(at: 1))
+                let number = Int(nsLine.substring(with: m.range(at: 2))) ?? 0
+                let delimiter = nsLine.substring(with: m.range(at: 3))
+                let rest = nsLine.substring(with: m.range(at: 4)).trimmingCharacters(in: .whitespaces)
+                return ("\(indent)\(number + 1)\(delimiter) ", rest.isEmpty)
+            }
+            if let m = quoteRegex.firstMatch(in: line, range: full) {
+                let prefix = nsLine.substring(with: m.range(at: 1))
+                let rest = nsLine.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespaces)
+                return (prefix, rest.isEmpty)
+            }
+            return nil
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             guard !isUpdating else { return }
-            
+
             let newText = textView.string
             parent.text = newText
-            
+
             if parent.syntaxHighlighting {
                 debounceWorkItem?.cancel()
-                
+
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
                     self.applyHighlighting(to: textView, text: newText)
@@ -434,25 +609,25 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
             }
         }
-        
+
         private func applyHighlighting(to textView: NSTextView, text: String) {
             isUpdating = true
             defer { isUpdating = false }
-            
+
             let selectedRanges = textView.selectedRanges
             let attributed = highlighter.highlight(markdown: text, font: parent.font, theme: parent.editorTheme)
-            
+
             textView.textStorage?.beginEditing()
             textView.textStorage?.setAttributedString(attributed)
             textView.textStorage?.endEditing()
-            
+
+            let nsText = textView.string as NSString
+            let length = nsText.length
             let validRanges = selectedRanges.compactMap { rangeValue -> NSValue? in
                 let range = rangeValue.rangeValue
-                if range.location <= text.count {
-                    let adjustedLength = min(range.length, text.count - range.location)
-                    return NSValue(range: NSRange(location: range.location, length: adjustedLength))
-                }
-                return nil
+                guard range.location <= length else { return nil }
+                let adjustedLength = min(range.length, length - range.location)
+                return NSValue(range: NSRange(location: range.location, length: adjustedLength))
             }
             if !validRanges.isEmpty {
                 textView.selectedRanges = validRanges
@@ -489,14 +664,17 @@ struct MarkdownPreviewView: NSViewRepresentable {
         context.coordinator.webView = webView
         
         let html = renderer.renderToHTML(markdown: markdown, baseURL: baseURL, theme: theme)
+        context.coordinator.lastHTML = html
         webView.loadHTMLString(html, baseURL: baseURL)
-        
+
         return webView
     }
-    
+
     func updateNSView(_ webView: WKWebView, context: Context) {
         let html = renderer.renderToHTML(markdown: markdown, baseURL: baseURL, theme: theme)
-        webView.loadHTMLString(html, baseURL: baseURL)
+        // Debounced + scroll-preserving: previously every keystroke reloaded the
+        // whole WebView, resetting scroll to the top and re-running Mermaid.
+        context.coordinator.scheduleRender(html: html, baseURL: baseURL)
     }
     
     func makeCoordinator() -> Coordinator {
@@ -505,8 +683,11 @@ struct MarkdownPreviewView: NSViewRepresentable {
     
     class Coordinator: NSObject, WKNavigationDelegate {
         weak var webView: WKWebView?
+        var lastHTML: String = ""
+        private var pendingScrollY: Double = 0
+        private var renderDebounce: DispatchWorkItem?
         private var scrollObserver: NSObjectProtocol?
-        
+
         override init() {
             super.init()
             scrollObserver = NotificationCenter.default.addObserver(
@@ -518,20 +699,43 @@ struct MarkdownPreviewView: NSViewRepresentable {
                 self?.scrollToHeading(headingText)
             }
         }
-        
+
         deinit {
             if let observer = scrollObserver {
                 NotificationCenter.default.removeObserver(observer)
             }
         }
-        
+
+        /// Debounces preview rebuilds and restores the prior scroll offset after
+        /// the reload, so typing in split view doesn't jump the preview to the top.
+        func scheduleRender(html: String, baseURL: URL?) {
+            guard html != lastHTML else { return }
+            renderDebounce?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, let webView = self.webView else { return }
+                webView.evaluateJavaScript("window.scrollY") { value, _ in
+                    self.pendingScrollY = (value as? Double) ?? 0
+                    self.lastHTML = html
+                    webView.loadHTMLString(html, baseURL: baseURL)
+                }
+            }
+            renderDebounce = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            if pendingScrollY > 0 {
+                webView.evaluateJavaScript("window.scrollTo(0, \(pendingScrollY));", completionHandler: nil)
+                pendingScrollY = 0
+            }
+        }
+
         private func scrollToHeading(_ headingText: String) {
-            let headingId = headingText
-                .lowercased()
-                .replacingOccurrences(of: " ", with: "-")
-                .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-")).inverted)
-                .joined()
-            
+            // Shared slug function with the renderer so the anchor id matches
+            // (the old per-side normalizations diverged and broke on non-ASCII
+            // headings such as Korean).
+            let headingId = markdownHeadingSlug(headingText)
+
             let js = """
             (function() {
                 var el = document.getElementById('\(headingId)');
@@ -542,7 +746,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
             """
             webView?.evaluateJavaScript(js, completionHandler: nil)
         }
-        
+
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard let url = navigationAction.request.url else {
                 return .allow
@@ -699,8 +903,10 @@ extension Notification.Name {
     static let scrollToHeading = Notification.Name("scrollToHeading")
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     MainEditorView()
         .environment(AppState())
         .frame(width: 800, height: 600)
 }
+#endif

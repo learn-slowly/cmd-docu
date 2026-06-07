@@ -329,6 +329,9 @@ struct Command: Identifiable {
                 Task {
                     var options = SendOptions()
                     options.targetVault = vault
+                    options.targetFolder = vault.inboxPath
+                    options.conflictResolution = appState.settings.conflictResolution
+                    options.injectFrontmatter = appState.settings.injectFrontmatterByDefault
                     try? await appState.sendToVault(options: options)
                 }
             })
@@ -338,7 +341,9 @@ struct Command: Identifiable {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     CommandPaletteView()
         .environment(AppState())
 }
+#endif

@@ -172,7 +172,9 @@ struct SendToVaultSheet: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     SendToVaultSheet()
         .environment(AppState())
 }
+#endif

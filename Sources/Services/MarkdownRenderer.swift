@@ -2,7 +2,55 @@ import Foundation
 import Markdown
 import WebKit
 
+// MARK: - Shared rendering helpers
+
+/// Slugifies heading text into an anchor id. Unicode-aware so non-ASCII headings
+/// (e.g. Korean) produce a real id instead of an empty one. Shared by the
+/// renderer (id emission) and the preview scroll handler so the ids always match.
+func markdownHeadingSlug(_ text: String) -> String {
+    var slug = ""
+    for character in text.lowercased() {
+        if character.isLetter || character.isNumber {
+            slug.append(character)
+        } else if character == " " || character == "-" || character == "_" {
+            slug.append("-")
+        }
+    }
+    while slug.contains("--") {
+        slug = slug.replacingOccurrences(of: "--", with: "-")
+    }
+    return slug.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+}
+
+/// HTML-escapes document-derived text before it is interpolated into the preview
+/// HTML. Prevents stored-XSS via crafted Markdown in the JS-enabled WebView.
+func htmlEscape(_ string: String) -> String {
+    var result = string
+    result = result.replacingOccurrences(of: "&", with: "&amp;")
+    result = result.replacingOccurrences(of: "<", with: "&lt;")
+    result = result.replacingOccurrences(of: ">", with: "&gt;")
+    result = result.replacingOccurrences(of: "\"", with: "&quot;")
+    result = result.replacingOccurrences(of: "'", with: "&#39;")
+    return result
+}
+
+/// Escapes a URL for an href/src attribute and neutralizes script-bearing
+/// schemes (javascript:, vbscript:, data:text/html).
+func sanitizeURL(_ url: String) -> String {
+    let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lower = trimmed.lowercased()
+    if lower.hasPrefix("javascript:") || lower.hasPrefix("vbscript:") || lower.hasPrefix("data:text/html") {
+        return "#"
+    }
+    return htmlEscape(trimmed)
+}
+
 class MarkdownRenderer {
+    private static let internalLinkQueryValueAllowed: CharacterSet = {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=?+")
+        return allowed
+    }()
     
     private let wikiLinkPattern = try! NSRegularExpression(
         pattern: #"(!?)\[\[(?:(.+?)\|)?(.+?)\]\]"#,
@@ -20,17 +68,58 @@ class MarkdownRenderer {
     )
     
     func renderToHTML(markdown: String, baseURL: URL? = nil, theme: PreviewTheme = .github) -> String {
-        var processedMarkdown = markdown
-        
+        // Mask fenced/inline code first so the wiki-link/callout/tag regex passes
+        // don't rewrite Markdown-looking text INSIDE code (e.g. `#define`, `[[x]]`,
+        // a leading `> [!note]` in a shell snippet).
+        var (processedMarkdown, codeTokens) = maskCodeRegions(markdown)
+
         processedMarkdown = processWikiLinks(processedMarkdown, baseURL: baseURL)
         processedMarkdown = processCallouts(processedMarkdown)
         processedMarkdown = processTags(processedMarkdown)
-        
+
+        processedMarkdown = restoreCodeRegions(processedMarkdown, tokens: codeTokens)
+
         let document = Document(parsing: processedMarkdown)
         var htmlVisitor = HTMLVisitor()
         let htmlBody = htmlVisitor.visit(document)
-        
+
         return wrapWithHTML(body: htmlBody, theme: theme)
+    }
+
+    /// Replaces fenced and inline code spans with private-use placeholder tokens
+    /// so downstream regex pre-processing leaves code untouched. Restored before
+    /// the Markdown parse so the code blocks render (and escape) normally.
+    private func maskCodeRegions(_ markdown: String) -> (String, [String: String]) {
+        var tokens: [String: String] = [:]
+        var index = 0
+        var result = markdown
+
+        func mask(_ pattern: String) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+            while true {
+                let ns = result as NSString
+                guard let match = regex.firstMatch(in: result, range: NSRange(location: 0, length: ns.length)) else { break }
+                let token = "\u{E000}CMDMDCODE\(index)\u{E000}"
+                tokens[token] = ns.substring(with: match.range)
+                result = ns.replacingCharacters(in: match.range, with: token)
+                index += 1
+            }
+        }
+
+        // Line-anchored fences (``` at the start of a line, optional indent) so a
+        // stray inline ``` can't pair with a real fence and swallow content
+        // between two separate code blocks.
+        mask("(?m)^[ \\t]*```[\\s\\S]*?^[ \\t]*```")   // fenced code blocks
+        mask("`[^`\n]+`")                                // inline code
+        return (result, tokens)
+    }
+
+    private func restoreCodeRegions(_ markdown: String, tokens: [String: String]) -> String {
+        var result = markdown
+        for (token, original) in tokens {
+            result = result.replacingOccurrences(of: token, with: original)
+        }
+        return result
     }
     
     private func processWikiLinks(_ markdown: String, baseURL: URL?) -> String {
@@ -41,36 +130,36 @@ class MarkdownRenderer {
         let matches = wikiLinkPattern.matches(in: markdown, range: range).reversed()
         
         for match in matches {
-            let fullMatch = nsString.substring(with: match.range)
             let isEmbed = nsString.substring(with: match.range(at: 1)) == "!"
             let alias = match.range(at: 2).location != NSNotFound
                 ? nsString.substring(with: match.range(at: 2))
                 : nil
             let target = nsString.substring(with: match.range(at: 3))
-            
-            let displayText = alias ?? target
-            
+
+            let displayText = htmlEscape(alias ?? target)
+
             if isEmbed {
                 let imgExtensions = ["png", "jpg", "jpeg", "gif", "svg", "webp"]
                 let ext = (target as NSString).pathExtension.lowercased()
-                
+
                 if imgExtensions.contains(ext) {
                     let imgPath = baseURL?.appendingPathComponent(target).path ?? target
                     result = (result as NSString).replacingCharacters(
                         in: match.range,
-                        with: "<img src=\"file://\(imgPath)\" alt=\"\(displayText)\" class=\"embedded-image\" />"
+                        with: "<img src=\"file://\(htmlEscape(imgPath))\" alt=\"\(displayText)\" class=\"embedded-image\" />"
                     )
                 } else {
                     result = (result as NSString).replacingCharacters(
                         in: match.range,
-                        with: "<span class=\"embedded-note\" data-note=\"\(target)\">\(displayText)</span>"
+                        with: "<span class=\"embedded-note\" data-note=\"\(htmlEscape(target))\">\(displayText)</span>"
                     )
                 }
             } else {
-                let href = "cmdmd://open?note=\(target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target)"
+                let encoded = target.addingPercentEncoding(withAllowedCharacters: Self.internalLinkQueryValueAllowed) ?? target
+                let href = "cmdmd://open?note=\(encoded)"
                 result = (result as NSString).replacingCharacters(
                     in: match.range,
-                    with: "<a href=\"\(href)\" class=\"wiki-link\">\(displayText)</a>"
+                    with: "<a href=\"\(htmlEscape(href))\" class=\"wiki-link\">\(displayText)</a>"
                 )
             }
         }
@@ -136,19 +225,23 @@ class MarkdownRenderer {
     
     private func buildCalloutHTML(type: String, title: String, content: [String], isFoldable: Bool, isExpanded: Bool) -> String {
         let icon = calloutIcon(for: type)
-        let contentHTML = content.joined(separator: "\n")
-        
+        let safeType = htmlEscape(type)
+        let safeTitle = htmlEscape(title)
+        // Escape each content line and join with <br> so multi-line callouts keep
+        // their breaks and can't inject markup.
+        let contentHTML = content.map { htmlEscape($0) }.joined(separator: "<br>\n")
+
         if isFoldable {
             return """
-            <details class="callout callout-\(type)" \(isExpanded ? "open" : "")>
-                <summary><span class="callout-icon">\(icon)</span> <span class="callout-title">\(title)</span></summary>
+            <details class="callout callout-\(safeType)" \(isExpanded ? "open" : "")>
+                <summary><span class="callout-icon">\(icon)</span> <span class="callout-title">\(safeTitle)</span></summary>
                 <div class="callout-content">\(contentHTML)</div>
             </details>
             """
         } else {
             return """
-            <div class="callout callout-\(type)">
-                <div class="callout-header"><span class="callout-icon">\(icon)</span> <span class="callout-title">\(title)</span></div>
+            <div class="callout callout-\(safeType)">
+                <div class="callout-header"><span class="callout-icon">\(icon)</span> <span class="callout-title">\(safeTitle)</span></div>
                 <div class="callout-content">\(contentHTML)</div>
             </div>
             """
@@ -184,10 +277,10 @@ class MarkdownRenderer {
         for match in matches {
             let fullMatch = nsString.substring(with: match.range)
             let tagName = nsString.substring(with: match.range(at: 1))
-            
+
             result = (result as NSString).replacingCharacters(
                 in: match.range,
-                with: "<span class=\"tag\" data-tag=\"\(tagName)\">\(fullMatch)</span>"
+                with: "<span class=\"tag\" data-tag=\"\(htmlEscape(tagName))\">\(htmlEscape(fullMatch))</span>"
             )
         }
         
@@ -337,7 +430,7 @@ struct HTMLVisitor: MarkupVisitor {
     }
     
     mutating func visitText(_ text: Text) -> String {
-        text.string
+        htmlEscape(text.string)
     }
     
     mutating func visitEmphasis(_ emphasis: Emphasis) -> String {
@@ -351,43 +444,48 @@ struct HTMLVisitor: MarkupVisitor {
     mutating func visitHeading(_ heading: Heading) -> String {
         let level = heading.level
         let content = heading.children.map { visit($0) }.joined()
-        let id = content
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "[^a-z0-9\\-]", with: "", options: .regularExpression)
+        // Slug from the heading's plain text via the shared, Unicode-aware
+        // function so non-ASCII (e.g. Korean) headings get a usable anchor id
+        // that matches what the preview scroll handler looks up.
+        let id = markdownHeadingSlug(heading.plainText)
         return "<h\(level) id=\"\(id)\">\(content)</h\(level)>\n"
     }
-    
+
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
         let lang = codeBlock.language ?? ""
         let code = codeBlock.code
-        
-        // Special handling for Mermaid diagrams
+
+        // Mermaid: escape too. The browser decodes the entities back to the
+        // original text in the DOM text node, so Mermaid still parses the
+        // diagram correctly while `<script>` can't break out of the container.
         if lang.lowercased() == "mermaid" {
-            // Don't escape HTML for mermaid - it needs raw content
-            return "<div class=\"mermaid\">\(code)</div>\n"
+            return "<div class=\"mermaid\">\(htmlEscape(code))</div>\n"
         }
-        
-        let escapedCode = code.replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-        return "<pre><code class=\"language-\(lang)\">\(escapedCode)</code></pre>\n"
+
+        return "<pre><code class=\"language-\(htmlEscape(lang))\">\(htmlEscape(code))</code></pre>\n"
     }
-    
+
     mutating func visitInlineCode(_ inlineCode: InlineCode) -> String {
-        let code = inlineCode.code.replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-        return "<code>\(code)</code>"
+        "<code>\(htmlEscape(inlineCode.code))</code>"
     }
-    
+
+    mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
+        inlineHTML.rawHTML
+    }
+
+    mutating func visitHTMLBlock(_ html: HTMLBlock) -> String {
+        html.rawHTML
+    }
+
     mutating func visitLink(_ link: Link) -> String {
-        let href = link.destination ?? ""
+        let href = sanitizeURL(link.destination ?? "")
         let content = link.children.map { visit($0) }.joined()
         return "<a href=\"\(href)\">\(content)</a>"
     }
-    
+
     mutating func visitImage(_ image: Image) -> String {
-        let src = image.source ?? ""
-        let alt = image.title ?? ""
+        let src = sanitizeURL(image.source ?? "")
+        let alt = htmlEscape(image.plainText)
         return "<img src=\"\(src)\" alt=\"\(alt)\" />"
     }
     

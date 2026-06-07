@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Yams
 
 // MARK: - Document Model
 struct MarkdownDocument: Identifiable, Equatable, Codable {
@@ -65,6 +66,68 @@ struct MarkdownDocument: Identifiable, Equatable, Codable {
     var characterCount: Int {
         content.count
     }
+
+    /// The complete on-disk representation: frontmatter block (if any) + body.
+    /// `content` is kept body-only after parsing, so this is the single source of
+    /// truth for what gets written to disk / exported / sent. We intentionally do
+    /// NOT guard on `content.hasPrefix("---")`: a body legitimately starting with a
+    /// `---` horizontal rule must not suppress the frontmatter block (that would
+    /// silently drop the document's metadata on save).
+    var fullText: String {
+        guard let frontmatter = frontmatter else { return content }
+        let yaml = frontmatter.toYAML()
+        guard !yaml.isEmpty else { return content }
+        return yaml + "\n\n" + content
+    }
+}
+
+// MARK: - Frontmatter Value (type-preserving for custom keys)
+
+/// Preserves the original YAML type of a custom frontmatter value so that
+/// booleans, numbers, and lists survive a parse -> edit -> serialize round-trip
+/// instead of being flattened to strings or dropped (a data-loss bug against
+/// Obsidian vaults). UI edits set `.string(...)`; untouched keys keep their type.
+enum FrontmatterValue: Equatable, Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case list([String])
+
+    /// Human-readable form used by the Properties editor.
+    var displayString: String {
+        switch self {
+        case .string(let s): return s
+        case .int(let i): return String(i)
+        case .double(let d): return String(d)
+        case .bool(let b): return b ? "true" : "false"
+        case .list(let arr): return arr.joined(separator: ", ")
+        }
+    }
+
+    /// Native value handed to Yams so it emits the correct YAML scalar/sequence.
+    var yamlValue: Any {
+        switch self {
+        case .string(let s): return s
+        case .int(let i): return i
+        case .double(let d): return d
+        case .bool(let b): return b
+        case .list(let arr): return arr
+        }
+    }
+
+    /// Build from a value produced by `Yams.load`. Bool is checked before Int
+    /// to avoid NSNumber bridging collapsing `true`/`false` into 1/0.
+    init(yaml value: Any) {
+        switch value {
+        case let b as Bool: self = .bool(b)
+        case let i as Int: self = .int(i)
+        case let d as Double: self = .double(d)
+        case let arr as [Any]: self = .list(arr.map { String(describing: $0) })
+        case let s as String: self = .string(s)
+        default: self = .string(String(describing: value))
+        }
+    }
 }
 
 // MARK: - Frontmatter
@@ -74,15 +137,15 @@ struct Frontmatter: Equatable, Codable {
     var tags: [String]
     var aliases: [String]
     var cssclass: String?
-    var custom: [String: String]
-    
+    var custom: [String: FrontmatterValue]
+
     init(
         title: String? = nil,
         date: Date? = nil,
         tags: [String] = [],
         aliases: [String] = [],
         cssclass: String? = nil,
-        custom: [String: String] = [:]
+        custom: [String: FrontmatterValue] = [:]
     ) {
         self.title = title
         self.date = date
@@ -91,45 +154,36 @@ struct Frontmatter: Equatable, Codable {
         self.cssclass = cssclass
         self.custom = custom
     }
-    
-    // Generate YAML string
+
+    /// Generate a `---`-delimited YAML block. Values are emitted through Yams so
+    /// quoting/escaping is spec-correct (a stray quote no longer produces invalid
+    /// YAML that wipes the whole block on reload). Keys are emitted in a stable
+    /// order (known keys first, then custom keys sorted) for clean diffs.
     func toYAML() -> String {
-        var lines: [String] = ["---"]
-        
-        if let title = title {
-            lines.append("title: \"\(title)\"")
-        }
-        
+        var entries: [(String, Any)] = []
+        if let title = title, !title.isEmpty { entries.append(("title", title)) }
         if let date = date {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withFullDate]
-            lines.append("date: \(formatter.string(from: date))")
+            entries.append(("date", formatter.string(from: date)))
         }
-        
-        if !tags.isEmpty {
-            lines.append("tags:")
-            for tag in tags {
-                lines.append("  - \(tag)")
+        if !tags.isEmpty { entries.append(("tags", tags)) }
+        if !aliases.isEmpty { entries.append(("aliases", aliases)) }
+        if let cssclass = cssclass, !cssclass.isEmpty { entries.append(("cssclass", cssclass)) }
+        for key in custom.keys.sorted() {
+            if let value = custom[key] { entries.append((key, value.yamlValue)) }
+        }
+
+        guard !entries.isEmpty else { return "" }
+
+        var body = ""
+        for (key, value) in entries {
+            if let fragment = try? Yams.dump(object: [key: value]) {
+                body += fragment
             }
         }
-        
-        if !aliases.isEmpty {
-            lines.append("aliases:")
-            for alias in aliases {
-                lines.append("  - \"\(alias)\"")
-            }
-        }
-        
-        if let cssclass = cssclass {
-            lines.append("cssclass: \(cssclass)")
-        }
-        
-        for (key, value) in custom.sorted(by: { $0.key < $1.key }) {
-            lines.append("\(key): \"\(value)\"")
-        }
-        
-        lines.append("---")
-        return lines.joined(separator: "\n")
+        let trimmed = body.hasSuffix("\n") ? String(body.dropLast()) : body
+        return "---\n\(trimmed)\n---"
     }
 }
 

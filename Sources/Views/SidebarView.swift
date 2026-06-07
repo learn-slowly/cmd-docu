@@ -620,6 +620,7 @@ struct SidebarFooter: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     NavigationSplitView {
         SidebarView()
@@ -628,3 +629,4 @@ struct SidebarFooter: View {
     }
     .environment(AppState())
 }
+#endif

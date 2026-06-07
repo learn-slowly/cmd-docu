@@ -374,7 +374,9 @@ struct SyncSettingsView: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     SettingsView()
         .environment(AppState())
 }
+#endif

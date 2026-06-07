@@ -10,6 +10,11 @@ enum ViewMode: String, CaseIterable, Codable {
     case preview = "Preview"
 }
 
+struct AppLaunchDefaults: Equatable {
+    var viewMode: ViewMode = .preview
+    var sidebarVisible: Bool = false
+}
+
 enum SidebarTab: String, CaseIterable, Codable {
     case files = "Files"
     case favorites = "Favorites"
@@ -408,6 +413,11 @@ extension Color {
 
 @Observable
 final class AppState {
+    /// Weak shared reference so the AppDelegate (created independently via
+    /// @NSApplicationDelegateAdaptor) can consult app state on quit.
+    static weak var shared: AppState?
+    private static let launchDefaults = AppLaunchDefaults()
+
     // Tab System
     var tabs: [EditorTab] = []
     var activeTabId: UUID?
@@ -415,8 +425,8 @@ final class AppState {
     var originalContents: [UUID: String] = [:]
     
     // View State
-    var viewMode: ViewMode = .split
-    var sidebarVisible: Bool = true
+    var viewMode: ViewMode = AppState.launchDefaults.viewMode
+    var sidebarVisible: Bool = AppState.launchDefaults.sidebarVisible
     var inspectorVisible: Bool = false
     var selectedSidebarTab: SidebarTab = .files
     
@@ -492,15 +502,23 @@ final class AppState {
     
     var isDirty: Bool {
         guard let doc = currentDocument else { return false }
-        return doc.content != originalContent
+        return doc.fullText != originalContent
     }
-    
+
     var hasAnyDirtyTabs: Bool {
         tabs.contains { tab in
             guard let doc = documents[tab.documentId],
                   let original = originalContents[tab.documentId] else { return false }
-            return doc.content != original
+            return doc.fullText != original
         }
+    }
+
+    var windowTitle: String {
+        guard let title = currentDocument?.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else {
+            return "CmdMD"
+        }
+        return title
     }
     
     init() {
@@ -508,12 +526,14 @@ final class AppState {
         let appDir = appSupport.appendingPathComponent("CmdMD")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         dataURL = appDir
-        
+
         fileService = FileService()
         vaultService = VaultService(dataDirectory: appDir)
         draftService = DraftService(dataDirectory: appDir)
         exportService = ExportService()
-        
+
+        AppState.shared = self
+
         loadUserData()
         
         NotificationCenter.default.addObserver(
@@ -522,6 +542,15 @@ final class AppState {
             queue: .main
         ) { [weak self] _ in
             self?.showQuickCapture = true
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .openInternalLink,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let url = notification.object as? URL else { return }
+            self?.openInternalURL(url)
         }
     }
     
@@ -545,7 +574,54 @@ final class AppState {
         if panel.runModal() == .OK, let url = panel.url {
             currentFolder = url
             selectedSidebarTab = .files
+            sidebarVisible = true
             loadFileTree()
+        }
+    }
+
+    func openInternalURL(_ url: URL) {
+        guard url.scheme == "cmdmd" else { return }
+
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            if let note = components.queryItems?.first(where: { $0.name == "note" })?.value {
+                openLinkedNote(note)
+                return
+            }
+
+            if let path = components.queryItems?.first(where: { $0.name == "path" })?.value {
+                openDocument(at: URL(fileURLWithPath: path))
+                return
+            }
+        }
+
+        if url.host == "open", let path = url.pathComponents.dropFirst().first {
+            openDocument(at: URL(fileURLWithPath: path))
+        }
+    }
+
+    func openLinkedNote(_ rawTarget: String) {
+        guard let target = LinkedNoteResolver.normalizedTarget(rawTarget) else { return }
+
+        let roots = linkedNoteSearchRoots()
+        let resolver = LinkedNoteResolver(roots: roots)
+
+        if let directURL = resolver.resolveDirectCandidate(named: target) {
+            openDocument(at: directURL, inNewTab: true)
+            return
+        }
+
+        Task {
+            let found = await Task.detached(priority: .userInitiated) {
+                LinkedNoteResolver(roots: roots).resolve(normalizedTarget: target)
+            }.value
+
+            await MainActor.run {
+                if let found {
+                    self.openDocument(at: found, inNewTab: true)
+                } else {
+                    self.showToast("Linked note not found: \(target)")
+                }
+            }
         }
     }
     
@@ -565,11 +641,18 @@ final class AppState {
                 )
                 
                 documents[document.id] = document
-                originalContents[document.id] = document.content
-                
+                originalContents[document.id] = document.fullText
+
                 if inNewTab || tabs.isEmpty {
                     tabs.append(tab)
                 } else if let activeIndex = tabs.firstIndex(where: { $0.id == activeTabId }) {
+                    // Replacing the active tab in place: release the previous
+                    // document and cancel its file watcher so we don't leak file
+                    // descriptors or orphan documents/originalContents entries.
+                    let oldTab = tabs[activeIndex]
+                    stopWatchingFile(for: oldTab.id)
+                    documents.removeValue(forKey: oldTab.documentId)
+                    originalContents.removeValue(forKey: oldTab.documentId)
                     tabs[activeIndex] = tab
                 } else {
                     tabs.append(tab)
@@ -583,7 +666,26 @@ final class AppState {
             }
         }
     }
-    
+
+    private func linkedNoteSearchRoots() -> [URL] {
+        var roots: [URL] = []
+
+        if let documentFolder = currentDocument?.fileURL?.deletingLastPathComponent() {
+            roots.append(documentFolder)
+        }
+        if let currentFolder {
+            roots.append(currentFolder)
+        }
+        roots.append(contentsOf: vaults.map(\.rootPath))
+
+        var seen: Set<String> = []
+        return roots.compactMap { root in
+            let standardized = root.standardizedFileURL
+            guard seen.insert(standardized.path).inserted else { return nil }
+            return standardized
+        }
+    }
+
     private func startWatchingFile(at url: URL, for tabId: UUID) {
         stopWatchingFile(for: tabId)
         
@@ -643,19 +745,19 @@ final class AppState {
             let tabIsDirty: Bool = {
                 guard let doc = documents[tab.documentId],
                       let original = originalContents[tab.documentId] else { return false }
-                return doc.content != original
+                return doc.fullText != original
             }()
-            
+
             guard !tabIsDirty else {
                 showExternalChangeConflict(for: url)
                 return
             }
-            
+
             Task { @MainActor in
                 do {
                     let document = try await fileService.loadDocument(from: url)
                     documents[tab.documentId] = document
-                    originalContents[tab.documentId] = document.content
+                    originalContents[tab.documentId] = document.fullText
                     showToast("Reloaded from disk")
                 } catch {
                     errorMessage = "Failed to reload file: \(error.localizedDescription)"
@@ -674,7 +776,7 @@ final class AppState {
             do {
                 let document = try await fileService.loadDocument(from: url)
                 currentDocument = document
-                originalContent = document.content
+                originalContent = document.fullText
                 showToast("Reloaded")
             } catch {
                 errorMessage = "Failed to reload: \(error.localizedDescription)"
@@ -737,14 +839,21 @@ final class AppState {
     
     @MainActor
     func saveCurrentDocument() async {
-        guard var document = currentDocument else { return }
-        
+        guard let document = currentDocument else { return }
+
         if let url = document.fileURL {
             do {
                 try await fileService.saveDocument(document, to: url)
-                document.modifiedAt = Date()
-                originalContent = document.content
-                currentDocument = document
+                // Update the dirty baseline to exactly what we wrote. We do NOT
+                // reassign the whole captured snapshot back into currentDocument:
+                // doing so would clobber any keystrokes the user made while the
+                // async write was in flight. We only stamp modifiedAt on the
+                // live document.
+                originalContent = document.fullText
+                if var current = currentDocument {
+                    current.modifiedAt = Date()
+                    currentDocument = current
+                }
                 showToast("Saved")
             } catch {
                 errorMessage = "Failed to save: \(error.localizedDescription)"
@@ -753,22 +862,30 @@ final class AppState {
             await saveDocumentAs()
         }
     }
-    
+
     @MainActor
     func saveDocumentAs() async {
-        guard var document = currentDocument else { return }
-        
+        guard let document = currentDocument else { return }
+
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md")!]
         panel.nameFieldStringValue = document.displayTitle + ".md"
-        
+
         if panel.runModal() == .OK, let url = panel.url {
             do {
-                try await fileService.saveDocument(document, to: url)
-                document.fileURL = url
-                document.modifiedAt = Date()
-                originalContent = document.content
-                currentDocument = document
+                var doc = document
+                doc.fileURL = url
+                doc.modifiedAt = Date()
+                try await fileService.saveDocument(doc, to: url)
+                currentDocument = doc
+                originalContent = doc.fullText
+                // Persist the new URL on the tab too, otherwise dedup/watching/
+                // breadcrumb logic that keys off tab.fileURL stays out of sync.
+                if let tabId = activeTabId, let index = tabs.firstIndex(where: { $0.id == tabId }) {
+                    tabs[index].fileURL = url
+                    tabs[index].title = doc.displayTitle
+                    startWatchingFile(at: url, for: tabId)
+                }
                 addToRecentFiles(url)
                 showToast("Saved")
             } catch {
@@ -776,16 +893,50 @@ final class AppState {
             }
         }
     }
-    
+
     func createNewDraft() {
-        let draft = Draft()
-        currentDocument = draft.toDocument()
-        originalContent = ""
+        // Build a real tab (mirroring createNewTab) instead of writing through
+        // the currentDocument setter, which no-ops when there is no active tab —
+        // the reason "New Draft" did nothing on a fresh launch.
+        let document = Draft().toDocument()
+        let tab = EditorTab(
+            documentId: document.id,
+            title: document.displayTitle
+        )
+        documents[document.id] = document
+        originalContents[document.id] = document.fullText
+        tabs.append(tab)
+        activeTabId = tab.id
     }
-    
+
     func updateContent(_ newContent: String) {
         currentDocument?.content = newContent
         currentDocument?.modifiedAt = Date()
+        if let tabId = activeTabId, let index = tabs.firstIndex(where: { $0.id == tabId }) {
+            tabs[index].isDirty = isDirty
+        }
+        scheduleAutosaveIfNeeded()
+    }
+
+    // MARK: - Autosave
+
+    private var autosaveWorkItem: DispatchWorkItem?
+
+    /// Debounced autosave: each edit reschedules, so a save fires only after the
+    /// user pauses for `autosaveInterval` seconds. Only saves file-backed
+    /// documents so it never pops a Save panel unexpectedly.
+    private func scheduleAutosaveIfNeeded() {
+        guard settings.autosaveEnabled, currentDocument?.fileURL != nil else { return }
+        autosaveWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, self.settings.autosaveEnabled,
+                      self.currentDocument?.fileURL != nil, self.isDirty else { return }
+                await self.saveCurrentDocument()
+            }
+        }
+        autosaveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(2, settings.autosaveInterval), execute: work)
     }
     
     func exportAsHTML() {
@@ -841,22 +992,40 @@ final class AppState {
         )
         
         documents[document.id] = document
-        originalContents[document.id] = document.content
+        originalContents[document.id] = document.fullText
         tabs.append(tab)
         activeTabId = tab.id
     }
-    
+
     func createNewTab() {
         let document = MarkdownDocument()
         let tab = EditorTab(
             documentId: document.id,
             title: "Untitled"
         )
-        
+
         documents[document.id] = document
-        originalContents[document.id] = ""
+        originalContents[document.id] = document.fullText
         tabs.append(tab)
         activeTabId = tab.id
+    }
+
+    /// Saves every file-backed dirty tab. Used by the save-on-quit guard.
+    /// Unsaved (no fileURL) tabs are skipped since they'd require a Save panel.
+    @MainActor
+    func saveAllDirtyTabs() async {
+        for tab in tabs {
+            guard let doc = documents[tab.documentId],
+                  let url = doc.fileURL,
+                  let original = originalContents[tab.documentId],
+                  doc.fullText != original else { continue }
+            do {
+                try await fileService.saveDocument(doc, to: url)
+                originalContents[tab.documentId] = doc.fullText
+            } catch {
+                errorMessage = "Failed to save \(tab.displayTitle): \(error.localizedDescription)"
+            }
+        }
     }
     
     func closeTab(_ tab: EditorTab) {
@@ -976,8 +1145,11 @@ final class AppState {
         ) else { return [] }
         
         let lowercaseQuery = query.lowercased()
-        
-        for case let fileURL as URL in enumerator {
+
+        // Pull all URLs up front: iterating an enumerator directly is a
+        // makeIterator call that's unavailable from async contexts in Swift 6.
+        let fileURLs = enumerator.allObjects.compactMap { $0 as? URL }
+        for fileURL in fileURLs {
             guard fileURL.pathExtension.lowercased() == "md" || fileURL.pathExtension.lowercased() == "markdown" else { continue }
             
             do {
@@ -1020,43 +1192,64 @@ final class AppState {
     }
     
     func sendToVault(options: SendOptions) async throws {
-        guard let document = currentDocument,
-              let vault = options.targetVault else {
+        guard let document = currentDocument else {
             throw SendError.noDocumentOrVault
         }
-        
-        var targetURL = vault.rootPath.appendingPathComponent(options.targetFolder)
-        
-        if !FileManager.default.fileExists(atPath: targetURL.path) {
-            try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+        try await sendToVault(document: document, options: options)
+    }
+
+    /// Sends an explicit document. Used directly by menu-bar Quick Capture, which
+    /// has no active tab and therefore can't rely on `currentDocument`.
+    func sendToVault(document: MarkdownDocument, options: SendOptions) async throws {
+        guard let vault = options.targetVault else {
+            throw SendError.noDocumentOrVault
         }
-        
+
+        let targetDir = vault.rootPath.appendingPathComponent(options.targetFolder)
+        if !FileManager.default.fileExists(atPath: targetDir.path) {
+            try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
+        }
+
         let filename = document.displayTitle.replacingOccurrences(of: "/", with: "-") + ".md"
-        targetURL = targetURL.appendingPathComponent(filename)
-        
-        targetURL = resolveConflict(for: targetURL, resolution: options.conflictResolution)
-        
-        var contentToWrite = document.content
-        if options.injectFrontmatter {
-            let frontmatter = Frontmatter(
-                title: document.displayTitle,
-                date: Date(),
-                tags: document.frontmatter?.tags ?? [],
-                custom: ["source": "CmdMD", "created": ISO8601DateFormatter().string(from: Date())]
-            )
-            contentToWrite = frontmatter.toYAML() + "\n\n" + contentToWrite
+        let candidateURL = targetDir.appendingPathComponent(filename)
+
+        guard let targetURL = resolveConflict(for: candidateURL, resolution: options.conflictResolution) else {
+            // .skip on an existing file must leave both target and source intact.
+            showToast("Skipped: \(filename) already exists")
+            return
         }
-        
+
+        let contentToWrite: String
+        if options.injectFrontmatter {
+            // Preserve the document's REAL frontmatter (tags, dates, custom keys)
+            // instead of synthesizing a minimal one that discards user metadata.
+            var frontmatter = document.frontmatter ?? Frontmatter(title: document.displayTitle, date: Date())
+            if frontmatter.title == nil { frontmatter.title = document.displayTitle }
+            if options.addSourceLink, let source = document.fileURL {
+                frontmatter.custom["source"] = .string(source.path)
+            }
+            contentToWrite = frontmatter.toYAML() + "\n\n" + document.content
+        } else {
+            contentToWrite = document.content
+        }
+
         try contentToWrite.write(to: targetURL, atomically: true, encoding: .utf8)
-        
+
         if options.action == .move, let sourceURL = document.fileURL {
             try FileManager.default.removeItem(at: sourceURL)
-            currentDocument = nil
-            originalContent = ""
+            // Detach the in-app tab from the now-deleted source file.
+            if document.id == currentDocument?.id, var current = currentDocument {
+                current.fileURL = nil
+                currentDocument = current
+                if let tabId = activeTabId, let index = tabs.firstIndex(where: { $0.id == tabId }) {
+                    tabs[index].fileURL = nil
+                    stopWatchingFile(for: tabId)
+                }
+            }
         }
-        
+
         showToast("Sent to \(vault.displayName)")
-        
+
         if options.openAfterSend {
             openInObsidian(vault: vault, filePath: targetURL)
         }
@@ -1079,14 +1272,17 @@ final class AppState {
         }
     }
     
-    private func resolveConflict(for url: URL, resolution: FileConflictResolution) -> URL {
+    /// Returns the URL to write to, or `nil` when the write should be skipped
+    /// (the file exists and resolution is `.skip`). Distinguishing skip from
+    /// overwrite is what stops "Skip" from silently clobbering the existing note.
+    private func resolveConflict(for url: URL, resolution: FileConflictResolution) -> URL? {
         guard FileManager.default.fileExists(atPath: url.path) else { return url }
-        
+
         switch resolution {
         case .overwrite:
             return url
         case .skip:
-            return url
+            return nil
         case .rename:
             var counter = 1
             var newURL = url

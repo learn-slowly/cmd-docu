@@ -207,6 +207,7 @@ struct NewTabButton: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     VStack(spacing: 0) {
         TabBarView()
@@ -215,3 +216,4 @@ struct NewTabButton: View {
     .frame(width: 600, height: 400)
     .environment(AppState())
 }
+#endif

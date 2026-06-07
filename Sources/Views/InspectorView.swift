@@ -164,8 +164,9 @@ struct SendSection: View {
             var options = SendOptions()
             options.targetVault = vault
             options.targetFolder = vault.inboxPath
+            options.conflictResolution = appState.settings.conflictResolution
             options.injectFrontmatter = appState.settings.injectFrontmatterByDefault
-            
+
             do {
                 try await appState.sendToVault(options: options)
             } catch {
@@ -457,7 +458,7 @@ struct FrontmatterSection: View {
                                     .textFieldStyle(.plain)
                                     .font(.callout)
                             } else if let value = frontmatter.custom[key] {
-                                Text(value)
+                                Text(value.displayString)
                                     .font(.callout)
                                     .foregroundStyle(.primary)
                             }
@@ -510,11 +511,6 @@ struct FrontmatterSection: View {
                 }
             }
         }
-        .onChange(of: isEditing) { _, newValue in
-            if !newValue {
-                syncFrontmatterToContent()
-            }
-        }
     }
     
     private var dateBinding: Binding<Date> {
@@ -553,10 +549,10 @@ struct FrontmatterSection: View {
     
     private func customBinding(for key: String) -> Binding<String> {
         Binding(
-            get: { document.frontmatter?.custom[key] ?? "" },
+            get: { document.frontmatter?.custom[key]?.displayString ?? "" },
             set: { newValue in
                 updateFrontmatter { fm in
-                    fm.custom[key] = newValue
+                    fm.custom[key] = .string(newValue)
                 }
             }
         )
@@ -583,7 +579,7 @@ struct FrontmatterSection: View {
         let trimmedKey = key.trimmingCharacters(in: .whitespaces).lowercased()
         guard !trimmedKey.isEmpty else { return }
         updateFrontmatter { fm in
-            fm.custom[trimmedKey] = value
+            fm.custom[trimmedKey] = .string(value)
         }
     }
     
@@ -601,33 +597,14 @@ struct FrontmatterSection: View {
         appState.currentDocument = doc
     }
     
-    private func syncFrontmatterToContent() {
-        guard var doc = appState.currentDocument,
-              let frontmatter = doc.frontmatter else { return }
-        
-        var content = doc.content
-        if content.hasPrefix("---") {
-            if let endRange = content.range(of: "---", range: content.index(content.startIndex, offsetBy: 3)..<content.endIndex) {
-                let afterFrontmatter = content[endRange.upperBound...]
-                content = String(afterFrontmatter).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        }
-        
-        doc.content = frontmatter.toYAML() + "\n\n" + content
-        appState.currentDocument = doc
-    }
-    
     private func addFrontmatter() {
         guard var doc = appState.currentDocument else { return }
-        
-        let frontmatter = Frontmatter(
+        // Set the frontmatter model only; the body stays untouched. fullText
+        // composes the YAML block on save.
+        doc.frontmatter = Frontmatter(
             title: doc.displayTitle,
             date: Date()
         )
-        
-        let yaml = frontmatter.toYAML()
-        doc.content = yaml + "\n\n" + doc.content
-        doc.frontmatter = frontmatter
         appState.currentDocument = doc
         isEditing = true
     }
@@ -904,8 +881,10 @@ struct QuickActionsSection: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     InspectorView()
         .environment(AppState())
         .frame(width: 280, height: 600)
 }
+#endif

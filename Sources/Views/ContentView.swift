@@ -24,6 +24,7 @@ struct ContentView: View {
         } detail: {
             MainEditorView()
         }
+        .navigationTitle(appState.windowTitle)
         .inspector(isPresented: $state.inspectorVisible) {
             InspectorView()
                 .inspectorColumnWidth(min: 250, ideal: 280, max: 350)
@@ -166,8 +167,10 @@ extension FocusedValues {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     ContentView()
         .environment(AppState())
         .frame(width: 1200, height: 800)
 }
+#endif

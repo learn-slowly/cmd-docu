@@ -119,6 +119,7 @@ struct ViewModeIndicator: View {
     }
 }
 
+#if !SWIFT_PACKAGE
 #Preview {
     VStack {
         Spacer()
@@ -127,3 +128,4 @@ struct ViewModeIndicator: View {
     .frame(width: 600, height: 100)
     .environment(AppState())
 }
+#endif

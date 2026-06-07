@@ -182,7 +182,7 @@ struct RoutingCondition: Identifiable, Equatable, Codable {
             let key = String(parts[0])
             let expectedValue = String(parts[1])
             if let customValue = document.frontmatter?.custom[key] {
-                return matchValue(customValue, against: expectedValue)
+                return matchValue(customValue.displayString, against: expectedValue)
             }
             return false
         case .filenamePrefix:
