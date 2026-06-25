@@ -19,10 +19,7 @@ struct OmnisearchView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var model = OmnisearchModel()
-    /// Local monitor for ↑/↓ (the focused TextField swallows arrow keys).
-    @State private var keyMonitor: Any?
     @State private var contentSearchTask: Task<Void, Never>?
-    @FocusState private var isSearchFocused: Bool
 
     struct Hit: Identifiable {
         enum Kind {
@@ -102,13 +99,15 @@ struct OmnisearchView: View {
                 Image(systemName: "sparkle.magnifyingglass")
                     .foregroundStyle(Color.cmdsAccent)
 
-                TextField("Search file names and contents…", text: $model.query)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .focused($isSearchFocused)
-                    .onSubmit {
-                        open(at: model.selectedIndex, in: hits)
-                    }
+                PaletteTextField(
+                    text: $model.query,
+                    placeholder: "Search file names and contents…",
+                    onMoveUp: { moveSelection(-1) },
+                    onMoveDown: { moveSelection(1) },
+                    onSubmit: { open(at: model.selectedIndex, in: allHits) },
+                    onCancel: { dismiss() }
+                )
+                .frame(height: 24)
 
                 if model.isSearchingContent {
                     ProgressView()
@@ -138,7 +137,7 @@ struct OmnisearchView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 0, pinnedViews: []) {
+                        VStack(spacing: 0) {
                             let fileCount = fileHits.count
                             if fileCount > 0 {
                                 OmnisearchSectionHeader(title: model.query.isEmpty ? "Recent" : "Files")
@@ -191,17 +190,8 @@ struct OmnisearchView: View {
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
-        .onAppear {
-            isSearchFocused = true
-            installKeyMonitor()
-        }
         .onDisappear {
             contentSearchTask?.cancel()
-            removeKeyMonitor()
-        }
-        .onKeyPress(.escape) {
-            dismiss()
-            return .handled
         }
         .onChange(of: model.query) { _, newQuery in
             model.selectedIndex = 0
@@ -209,32 +199,12 @@ struct OmnisearchView: View {
         }
     }
 
-    /// ↑/↓ via a local monitor (the focused TextField eats arrow keys otherwise).
-    private func installKeyMonitor() {
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            switch event.keyCode {
-            case 125: // down arrow
-                let count = allHits.count
-                if count > 0 {
-                    model.navigatingByKeyboard = true
-                    model.selectedIndex = min(model.selectedIndex + 1, count - 1)
-                }
-                return nil
-            case 126: // up arrow
-                model.navigatingByKeyboard = true
-                model.selectedIndex = max(model.selectedIndex - 1, 0)
-                return nil
-            default:
-                return event
-            }
-        }
-    }
-
-    private func removeKeyMonitor() {
-        if let monitor = keyMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyMonitor = nil
-        }
+    /// Moves the highlight by `delta`, clamped to the hit list.
+    private func moveSelection(_ delta: Int) {
+        let count = allHits.count
+        guard count > 0 else { return }
+        model.navigatingByKeyboard = true
+        model.selectedIndex = min(max(model.selectedIndex + delta, 0), count - 1)
     }
 
     // MARK: Actions

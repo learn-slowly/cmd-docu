@@ -14,10 +14,6 @@ struct CommandPaletteView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var model = CommandPaletteModel()
-    /// Local key monitor for ↑/↓ — a focused single-line TextField swallows the
-    /// arrow keys, so `.onKeyPress` on the parent never sees them.
-    @State private var keyMonitor: Any?
-    @FocusState private var isSearchFocused: Bool
 
     var filteredCommands: [Command] {
         let allCommands = Command.allCommands(appState: appState)
@@ -40,13 +36,15 @@ struct CommandPaletteView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
 
-                TextField("Type a command or file name...", text: $model.query)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .focused($isSearchFocused)
-                    .onSubmit {
-                        executeSelectedCommand()
-                    }
+                PaletteTextField(
+                    text: $model.query,
+                    placeholder: "Type a command or file name…",
+                    onMoveUp: { moveSelection(-1) },
+                    onMoveDown: { moveSelection(1) },
+                    onSubmit: { executeSelectedCommand() },
+                    onCancel: { dismiss() }
+                )
+                .frame(height: 24)
 
                 if !model.query.isEmpty {
                     Button {
@@ -72,7 +70,7 @@ struct CommandPaletteView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    VStack(spacing: 0) {
                         ForEach(Array(filteredCommands.enumerated()), id: \.element.id) { index, command in
                             CommandRow(
                                 command: command,
@@ -107,46 +105,17 @@ struct CommandPaletteView: View {
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
-        .onAppear {
-            isSearchFocused = true
-            installKeyMonitor()
-        }
-        .onDisappear { removeKeyMonitor() }
-        .onKeyPress(.escape) {
-            dismiss()
-            return .handled
-        }
         .onChange(of: model.query) { _, _ in
             model.selectedIndex = 0
         }
     }
 
-    /// ↑/↓ via a local monitor (the focused TextField eats arrow keys otherwise).
-    private func installKeyMonitor() {
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            switch event.keyCode {
-            case 125: // down arrow
-                let count = filteredCommands.count
-                if count > 0 {
-                    model.navigatingByKeyboard = true
-                    model.selectedIndex = min(model.selectedIndex + 1, count - 1)
-                }
-                return nil
-            case 126: // up arrow
-                model.navigatingByKeyboard = true
-                model.selectedIndex = max(model.selectedIndex - 1, 0)
-                return nil
-            default:
-                return event
-            }
-        }
-    }
-
-    private func removeKeyMonitor() {
-        if let monitor = keyMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyMonitor = nil
-        }
+    /// Moves the highlight by `delta`, clamped to the result list.
+    private func moveSelection(_ delta: Int) {
+        let count = filteredCommands.count
+        guard count > 0 else { return }
+        model.navigatingByKeyboard = true
+        model.selectedIndex = min(max(model.selectedIndex + delta, 0), count - 1)
     }
 
     private func executeSelectedCommand() {
