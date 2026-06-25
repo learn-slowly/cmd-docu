@@ -12,6 +12,8 @@ struct OmnisearchView: View {
     @State private var selectedIndex: Int = 0
     /// Auto-scroll follows keyboard navigation only, so hovering doesn't jump the list.
     @State private var navigatingByKeyboard = false
+    /// Local monitor for ↑/↓ (the focused TextField swallows arrow keys).
+    @State private var keyMonitor: Any?
     @State private var contentResults: [SearchResult] = []
     @State private var isSearchingContent = false
     @State private var contentSearchTask: Task<Void, Never>?
@@ -185,17 +187,11 @@ struct OmnisearchView: View {
         .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
         .onAppear {
             isSearchFocused = true
+            installKeyMonitor()
         }
         .onDisappear {
             contentSearchTask?.cancel()
-        }
-        .onKeyPress(.upArrow) {
-            if selectedIndex > 0 { selectedIndex -= 1 }
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            if selectedIndex < allHits.count - 1 { selectedIndex += 1 }
-            return .handled
+            removeKeyMonitor()
         }
         .onKeyPress(.escape) {
             dismiss()
@@ -204,6 +200,34 @@ struct OmnisearchView: View {
         .onChange(of: query) { _, newQuery in
             selectedIndex = 0
             scheduleContentSearch(for: newQuery)
+        }
+    }
+
+    /// ↑/↓ via a local monitor (the focused TextField eats arrow keys otherwise).
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            switch event.keyCode {
+            case 125: // down arrow
+                let count = allHits.count
+                if count > 0 {
+                    navigatingByKeyboard = true
+                    selectedIndex = min(selectedIndex + 1, count - 1)
+                }
+                return nil
+            case 126: // up arrow
+                navigatingByKeyboard = true
+                selectedIndex = max(selectedIndex - 1, 0)
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
         }
     }
 

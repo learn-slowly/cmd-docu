@@ -9,6 +9,9 @@ struct CommandPaletteView: View {
     /// True when the highlight last moved via the keyboard. Auto-scroll only
     /// follows keyboard navigation, so hovering never yanks the list under the cursor.
     @State private var navigatingByKeyboard = false
+    /// Local key monitor for ↑/↓ — a focused single-line TextField swallows the
+    /// arrow keys, so `.onKeyPress` on the parent never sees them.
+    @State private var keyMonitor: Any?
     @FocusState private var isSearchFocused: Bool
 
     var filteredCommands: [Command] {
@@ -99,27 +102,43 @@ struct CommandPaletteView: View {
         .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
         .onAppear {
             isSearchFocused = true
+            installKeyMonitor()
         }
-        .onKeyPress(.upArrow) {
-            if selectedIndex > 0 {
-                navigatingByKeyboard = true
-                selectedIndex -= 1
-            }
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            if selectedIndex < filteredCommands.count - 1 {
-                navigatingByKeyboard = true
-                selectedIndex += 1
-            }
-            return .handled
-        }
+        .onDisappear { removeKeyMonitor() }
         .onKeyPress(.escape) {
             dismiss()
             return .handled
         }
         .onChange(of: searchText) { _, _ in
             selectedIndex = 0
+        }
+    }
+
+    /// ↑/↓ via a local monitor (the focused TextField eats arrow keys otherwise).
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            switch event.keyCode {
+            case 125: // down arrow
+                let count = filteredCommands.count
+                if count > 0 {
+                    navigatingByKeyboard = true
+                    selectedIndex = min(selectedIndex + 1, count - 1)
+                }
+                return nil
+            case 126: // up arrow
+                navigatingByKeyboard = true
+                selectedIndex = max(selectedIndex - 1, 0)
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
         }
     }
 

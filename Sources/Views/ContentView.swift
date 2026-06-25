@@ -46,9 +46,14 @@ struct ContentView: View {
 
             ToolbarItemGroup(placement: .primaryAction) {
                 SendToVaultButton()
-                // The inspector toggle is provided automatically by `.inspector`
-                // at the trailing edge — a second custom button here produced the
-                // stray duplicate control at the top-right.
+
+                // The right-sidebar (inspector) toggle, pinned to the trailing edge.
+                Button {
+                    appState.inspectorVisible.toggle()
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .help("Toggle Inspector (\(appState.keyBinding(for: .toggleInspector).displayString))")
             }
         }
         .sheet(isPresented: $state.showSendToVault, onDismiss: {
@@ -165,7 +170,7 @@ struct SendToVaultButton: View {
                 .keyboardShortcut("t", modifiers: [.command, .control])
             }
         } label: {
-            Label("Send", systemImage: "paperplane")
+            Image(systemName: "paperplane")
         }
         .disabled(appState.currentDocument == nil)
         .help("Send to Vault (⇧⌘T)")
