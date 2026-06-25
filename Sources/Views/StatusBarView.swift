@@ -28,6 +28,13 @@ struct StatusBarView: View {
 
             Spacer()
 
+            if appState.updateAvailable {
+                UpdateBadge()
+
+                Divider()
+                    .frame(height: 12)
+            }
+
             if appState.isDirty {
                 HStack(spacing: 4) {
                     Circle()
@@ -38,7 +45,7 @@ struct StatusBarView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             ViewModeIndicator()
         }
         .padding(.horizontal, 12)
@@ -47,6 +54,33 @@ struct StatusBarView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+}
+
+/// A subtle "update available" pill in the status bar that opens the release page.
+struct UpdateBadge: View {
+    @Environment(AppState.self) private var appState
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            if let url = appState.updateURL { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 10))
+                Text(appState.latestVersion.map { "Update \($0)" } ?? "Update available")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(Color.cmdsAccent)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(isHovering ? Color.cmdsAccentSoft : Color.clear)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("A new version is available — click to open the download page")
     }
 }
 

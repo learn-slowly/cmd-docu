@@ -356,6 +356,7 @@ struct CreatorLinks: View {
 }
 
 struct AboutView: View {
+    @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -374,6 +375,29 @@ struct AboutView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            // Update status / action
+            if appState.updateAvailable {
+                Button {
+                    if let url = appState.updateURL { NSWorkspace.shared.open(url) }
+                } label: {
+                    Label("Update available: \(appState.latestVersion ?? "")", systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.cmdsAccent)
+            } else {
+                Button {
+                    appState.checkForUpdates(userInitiated: true)
+                } label: {
+                    if appState.isCheckingForUpdate {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Check for Updates")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.isCheckingForUpdate)
+            }
 
             Divider().frame(width: 220)
 

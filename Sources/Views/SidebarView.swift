@@ -127,7 +127,7 @@ struct FileTreeView: View {
                     Image(systemName: "folder")
                         .font(.system(size: 36))
                         .foregroundStyle(.secondary)
-                    
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text("No Folder Open")
                             .font(.headline)
@@ -135,7 +135,7 @@ struct FileTreeView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                     Button("Open Folder") {
                         appState.openFolder()
                     }
@@ -144,35 +144,57 @@ struct FileTreeView: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                List {
-                    ForEach(appState.fileTree) { item in
-                        FileTreeItemRow(item: item)
+                VStack(spacing: 0) {
+                    // Search / refresh live in the sidebar header (not the window
+                    // toolbar) so they don't crowd the trailing edge and shove the
+                    // inspector toggle around.
+                    SidebarHeader(
+                        title: appState.currentFolder?.lastPathComponent ?? "Files"
+                    ) {
+                        Button { showSearch = true } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Search in Folder (⇧⌘F)")
+
+                        Button { appState.loadFileTree() } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Refresh")
                     }
+
+                    List {
+                        ForEach(appState.fileTree) { item in
+                            FileTreeItemRow(item: item)
+                        }
+                    }
+                    .listStyle(.sidebar)
                 }
-                .listStyle(.sidebar)
             }
         }
-        .navigationTitle(appState.currentFolder?.lastPathComponent ?? "Files")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 8) {
-                    Button {
-                        showSearch = true
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .disabled(appState.currentFolder == nil)
-                    .help("Search in Folder (⇧⌘F)")
-                    
-                    Button {
-                        appState.loadFileTree()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(appState.currentFolder == nil)
-                }
-            }
+    }
+}
+
+/// Compact in-sidebar header: a section title plus trailing action buttons.
+/// Keeps list actions out of the window toolbar.
+struct SidebarHeader<Actions: View>: View {
+    let title: String
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            actions
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -460,7 +482,10 @@ struct FavoritesListView: View {
     @Environment(AppState.self) private var appState
     
     var body: some View {
-        List {
+        VStack(spacing: 0) {
+            SidebarHeader(title: "Favorites") { EmptyView() }
+
+            List {
             ForEach(appState.favorites) { favorite in
                 FavoriteRow(favorite: favorite)
                     .onTapGesture {
@@ -483,7 +508,7 @@ struct FavoritesListView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Favorites")
+        }
         .overlay {
             if appState.favorites.isEmpty {
                 ContentUnavailableView {
@@ -527,7 +552,18 @@ struct DraftListView: View {
     }
     
     var body: some View {
-        List {
+        VStack(spacing: 0) {
+            SidebarHeader(title: "Drafts") {
+                Button {
+                    appState.createNewDraft()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .help("New Draft (⌘N)")
+            }
+
+            List {
             ForEach(activeDrafts) { draft in
                 DraftRow(draft: draft)
                     .contentShape(Rectangle())
@@ -557,15 +593,6 @@ struct DraftListView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Drafts")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    appState.createNewDraft()
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
         }
         .overlay {
             if activeDrafts.isEmpty {
@@ -620,7 +647,16 @@ struct RecentFilesView: View {
     @Environment(AppState.self) private var appState
     
     var body: some View {
-        List {
+        VStack(spacing: 0) {
+            SidebarHeader(title: "Recents") {
+                Button("Clear") {
+                    appState.clearRecentFiles()
+                }
+                .buttonStyle(.borderless)
+                .disabled(appState.recentFiles.isEmpty)
+            }
+
+            List {
             ForEach(appState.recentFiles, id: \.self) { url in
                 RecentFileRow(url: url)
                     .onTapGesture {
@@ -635,14 +671,6 @@ struct RecentFilesView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Recents")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Clear") {
-                    appState.clearRecentFiles()
-                }
-                .disabled(appState.recentFiles.isEmpty)
-            }
         }
         .overlay {
             if appState.recentFiles.isEmpty {

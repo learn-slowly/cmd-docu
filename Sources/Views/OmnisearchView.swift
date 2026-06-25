@@ -4,18 +4,23 @@ import SwiftUI
 /// (open folder + registered vaults, recents boosted) plus live full-text
 /// matches from the open folder. Enter opens the hit — content matches jump
 /// straight to the matched line.
+/// Reference-type state — the ↑/↓ key monitor is an escaping closure, and mutating
+/// @State through a captured View value won't re-render; an @Observable object does.
+@Observable final class OmnisearchModel {
+    var query = ""
+    var selectedIndex = 0
+    var navigatingByKeyboard = false
+    var contentResults: [SearchResult] = []
+    var isSearchingContent = false
+}
+
 struct OmnisearchView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var query: String = ""
-    @State private var selectedIndex: Int = 0
-    /// Auto-scroll follows keyboard navigation only, so hovering doesn't jump the list.
-    @State private var navigatingByKeyboard = false
+    @State private var model = OmnisearchModel()
     /// Local monitor for ↑/↓ (the focused TextField swallows arrow keys).
     @State private var keyMonitor: Any?
-    @State private var contentResults: [SearchResult] = []
-    @State private var isSearchingContent = false
     @State private var contentSearchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
 
@@ -36,7 +41,7 @@ struct OmnisearchView: View {
     // MARK: Hit assembly
 
     private var fileHits: [Hit] {
-        if query.isEmpty {
+        if model.query.isEmpty {
             // Bare ⇧⌘O = recent files, most useful default.
             return appState.recentFiles.prefix(8).map { url in
                 Hit(
@@ -49,7 +54,7 @@ struct OmnisearchView: View {
             }
         }
 
-        let lowered = query.lowercased()
+        let lowered = model.query.lowercased()
         let recents = Set(appState.recentFiles)
 
         return appState.linkableNotes
@@ -71,7 +76,7 @@ struct OmnisearchView: View {
     }
 
     private var contentHits: [Hit] {
-        contentResults.prefix(12).map { result in
+        model.contentResults.prefix(12).map { result in
             Hit(
                 kind: .content,
                 title: result.fileName,
@@ -89,6 +94,7 @@ struct OmnisearchView: View {
     // MARK: Body
 
     var body: some View {
+        @Bindable var model = model
         let hits = allHits
 
         VStack(spacing: 0) {
@@ -96,15 +102,15 @@ struct OmnisearchView: View {
                 Image(systemName: "sparkle.magnifyingglass")
                     .foregroundStyle(Color.cmdsAccent)
 
-                TextField("Search file names and contents…", text: $query)
+                TextField("Search file names and contents…", text: $model.query)
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .focused($isSearchFocused)
                     .onSubmit {
-                        open(at: selectedIndex, in: hits)
+                        open(at: model.selectedIndex, in: hits)
                     }
 
-                if isSearchingContent {
+                if model.isSearchingContent {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -123,11 +129,11 @@ struct OmnisearchView: View {
 
             if hits.isEmpty {
                 ContentUnavailableView {
-                    Label(query.isEmpty ? "No Recent Files" : "No Matches", systemImage: "sparkle.magnifyingglass")
+                    Label(model.query.isEmpty ? "No Recent Files" : "No Matches", systemImage: "sparkle.magnifyingglass")
                 } description: {
-                    Text(query.isEmpty
+                    Text(model.query.isEmpty
                          ? "Open a folder or some files first — they get indexed for search."
-                         : "No file names or contents match \"\(query)\"")
+                         : "No file names or contents match \"\(model.query)\"")
                 }
             } else {
                 ScrollViewReader { proxy in
@@ -135,18 +141,18 @@ struct OmnisearchView: View {
                         LazyVStack(spacing: 0, pinnedViews: []) {
                             let fileCount = fileHits.count
                             if fileCount > 0 {
-                                OmnisearchSectionHeader(title: query.isEmpty ? "Recent" : "Files")
+                                OmnisearchSectionHeader(title: model.query.isEmpty ? "Recent" : "Files")
                             }
                             ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
                                 if index == fileCount && !contentHits.isEmpty {
                                     OmnisearchSectionHeader(title: "In-file Matches")
                                 }
-                                OmnisearchRow(hit: hit, isSelected: index == selectedIndex)
+                                OmnisearchRow(hit: hit, isSelected: index == model.selectedIndex)
                                     .id(index)
                                     .onHover { hovering in
                                         if hovering {
-                                            navigatingByKeyboard = false
-                                            selectedIndex = index
+                                            model.navigatingByKeyboard = false
+                                            model.selectedIndex = index
                                         }
                                     }
                                     .onTapGesture {
@@ -156,8 +162,8 @@ struct OmnisearchView: View {
                         }
                         .padding(.vertical, 6)
                     }
-                    .onChange(of: selectedIndex) { _, newIndex in
-                        guard navigatingByKeyboard else { return }
+                    .onChange(of: model.selectedIndex) { _, newIndex in
+                        guard model.navigatingByKeyboard else { return }
                         withAnimation {
                             proxy.scrollTo(newIndex, anchor: .center)
                         }
@@ -197,8 +203,8 @@ struct OmnisearchView: View {
             dismiss()
             return .handled
         }
-        .onChange(of: query) { _, newQuery in
-            selectedIndex = 0
+        .onChange(of: model.query) { _, newQuery in
+            model.selectedIndex = 0
             scheduleContentSearch(for: newQuery)
         }
     }
@@ -210,13 +216,13 @@ struct OmnisearchView: View {
             case 125: // down arrow
                 let count = allHits.count
                 if count > 0 {
-                    navigatingByKeyboard = true
-                    selectedIndex = min(selectedIndex + 1, count - 1)
+                    model.navigatingByKeyboard = true
+                    model.selectedIndex = min(model.selectedIndex + 1, count - 1)
                 }
                 return nil
             case 126: // up arrow
-                navigatingByKeyboard = true
-                selectedIndex = max(selectedIndex - 1, 0)
+                model.navigatingByKeyboard = true
+                model.selectedIndex = max(model.selectedIndex - 1, 0)
                 return nil
             default:
                 return event
@@ -244,21 +250,21 @@ struct OmnisearchView: View {
     /// instantly; content hits stream in ~250ms after typing pauses.
     private func scheduleContentSearch(for query: String) {
         contentSearchTask?.cancel()
-        contentResults = []
+        model.contentResults = []
 
         guard query.count >= 2, appState.currentFolder != nil else {
-            isSearchingContent = false
+            model.isSearchingContent = false
             return
         }
 
-        isSearchingContent = true
+        model.isSearchingContent = true
         contentSearchTask = Task {
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
             let results = await appState.searchContent(query: query)
             guard !Task.isCancelled else { return }
-            contentResults = results
-            isSearchingContent = false
+            model.contentResults = results
+            model.isSearchingContent = false
         }
     }
 }

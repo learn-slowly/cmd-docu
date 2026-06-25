@@ -1,14 +1,19 @@
 import SwiftUI
 
+/// Reference-type state for the palette. A class (not @State value) is required
+/// because the ↑/↓ key monitor is an escaping closure — mutating @State through a
+/// captured View value doesn't re-render, but mutating an @Observable object does.
+@Observable final class CommandPaletteModel {
+    var query = ""
+    var selectedIndex = 0
+    var navigatingByKeyboard = false
+}
+
 struct CommandPaletteView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var searchText: String = ""
-    @State private var selectedIndex: Int = 0
-    /// True when the highlight last moved via the keyboard. Auto-scroll only
-    /// follows keyboard navigation, so hovering never yanks the list under the cursor.
-    @State private var navigatingByKeyboard = false
+    @State private var model = CommandPaletteModel()
     /// Local key monitor for ↑/↓ — a focused single-line TextField swallows the
     /// arrow keys, so `.onKeyPress` on the parent never sees them.
     @State private var keyMonitor: Any?
@@ -16,11 +21,11 @@ struct CommandPaletteView: View {
 
     var filteredCommands: [Command] {
         let allCommands = Command.allCommands(appState: appState)
-        guard !searchText.isEmpty else { return allCommands }
+        guard !model.query.isEmpty else { return allCommands }
 
         return allCommands
             .compactMap { command -> (Command, Int)? in
-                guard let score = command.matchScore(for: searchText) else { return nil }
+                guard let score = command.matchScore(for: model.query) else { return nil }
                 return (command, score)
             }
             .sorted { $0.1 > $1.1 }
@@ -28,12 +33,14 @@ struct CommandPaletteView: View {
     }
 
     var body: some View {
+        @Bindable var model = model
+
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
 
-                TextField("Type a command or file name...", text: $searchText)
+                TextField("Type a command or file name...", text: $model.query)
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .focused($isSearchFocused)
@@ -41,9 +48,9 @@ struct CommandPaletteView: View {
                         executeSelectedCommand()
                     }
 
-                if !searchText.isEmpty {
+                if !model.query.isEmpty {
                     Button {
-                        searchText = ""
+                        model.query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -69,26 +76,26 @@ struct CommandPaletteView: View {
                         ForEach(Array(filteredCommands.enumerated()), id: \.element.id) { index, command in
                             CommandRow(
                                 command: command,
-                                isSelected: index == selectedIndex
+                                isSelected: index == model.selectedIndex
                             )
                             .id(index)
                             .contentShape(Rectangle())
                             .onHover { hovering in
                                 if hovering {
-                                    navigatingByKeyboard = false
-                                    selectedIndex = index
+                                    model.navigatingByKeyboard = false
+                                    model.selectedIndex = index
                                 }
                             }
                             .onTapGesture {
-                                selectedIndex = index
+                                model.selectedIndex = index
                                 executeSelectedCommand()
                             }
                         }
                     }
                     .padding(.vertical, 8)
                 }
-                .onChange(of: selectedIndex) { _, newIndex in
-                    guard navigatingByKeyboard else { return }
+                .onChange(of: model.selectedIndex) { _, newIndex in
+                    guard model.navigatingByKeyboard else { return }
                     withAnimation {
                         proxy.scrollTo(newIndex, anchor: .center)
                     }
@@ -109,8 +116,8 @@ struct CommandPaletteView: View {
             dismiss()
             return .handled
         }
-        .onChange(of: searchText) { _, _ in
-            selectedIndex = 0
+        .onChange(of: model.query) { _, _ in
+            model.selectedIndex = 0
         }
     }
 
@@ -121,13 +128,13 @@ struct CommandPaletteView: View {
             case 125: // down arrow
                 let count = filteredCommands.count
                 if count > 0 {
-                    navigatingByKeyboard = true
-                    selectedIndex = min(selectedIndex + 1, count - 1)
+                    model.navigatingByKeyboard = true
+                    model.selectedIndex = min(model.selectedIndex + 1, count - 1)
                 }
                 return nil
             case 126: // up arrow
-                navigatingByKeyboard = true
-                selectedIndex = max(selectedIndex - 1, 0)
+                model.navigatingByKeyboard = true
+                model.selectedIndex = max(model.selectedIndex - 1, 0)
                 return nil
             default:
                 return event
@@ -143,8 +150,8 @@ struct CommandPaletteView: View {
     }
 
     private func executeSelectedCommand() {
-        guard selectedIndex < filteredCommands.count else { return }
-        let command = filteredCommands[selectedIndex]
+        guard model.selectedIndex < filteredCommands.count else { return }
+        let command = filteredCommands[model.selectedIndex]
         dismiss()
         command.action()
     }

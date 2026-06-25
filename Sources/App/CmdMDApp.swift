@@ -24,6 +24,10 @@ struct CmdMDApp: App {
                 Button("About CmdMD") {
                     appState.showAbout = true
                 }
+                Button("Check for Updates…") {
+                    appState.checkForUpdates(userInitiated: true)
+                }
+                .disabled(appState.isCheckingForUpdate)
             }
 
             CommandGroup(replacing: .newItem) {

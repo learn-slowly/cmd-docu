@@ -44,6 +44,12 @@ final class AppState {
     var showQuickCapture: Bool = false
     var showOmnisearch: Bool = false
     var showAbout: Bool = false
+
+    // Update checking (GitHub Releases)
+    var updateAvailable: Bool = false
+    var latestVersion: String?
+    var updateURL: URL?
+    var isCheckingForUpdate: Bool = false
     /// Editor/preview width ratio in split view (runtime-only).
     var splitFraction: CGFloat = 0.5
     /// Non-empty while the Send sheet is operating on a batch of files
@@ -154,6 +160,68 @@ final class AppState {
         settings.keyBindings[shortcut.rawValue] ?? shortcut.defaultBinding
     }
 
+    // MARK: - Update checking
+
+    /// Compares two version strings ("v1.4.4" / "1.4.4") component-wise.
+    static func isVersion(_ a: String, newerThan b: String) -> Bool {
+        func parts(_ s: String) -> [Int] {
+            s.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "v "))
+                .split(separator: ".").map { Int($0.prefix(while: \.isNumber)) ?? 0 }
+        }
+        let pa = parts(a), pb = parts(b)
+        for i in 0..<max(pa.count, pb.count) {
+            let x = i < pa.count ? pa[i] : 0
+            let y = i < pb.count ? pb[i] : 0
+            if x != y { return x > y }
+        }
+        return false
+    }
+
+    /// Checks the GitHub Releases API for a newer version. Silent checks are
+    /// throttled to once every 6h; `userInitiated` checks always run and report.
+    func checkForUpdates(userInitiated: Bool = false) {
+        guard !isCheckingForUpdate else { return }
+
+        let throttleKey = "lastUpdateCheck"
+        if !userInitiated {
+            let last = UserDefaults.standard.double(forKey: throttleKey)
+            if Date().timeIntervalSince1970 - last < 6 * 3600 { return }
+        }
+
+        isCheckingForUpdate = true
+        Task { @MainActor in
+            defer { isCheckingForUpdate = false }
+            let current = AppInfo.version
+            do {
+                var request = URLRequest(url: URL(string: "https://api.github.com/repos/johnfkoo951/CmdMD/releases/latest")!)
+                request.setValue("CmdMD", forHTTPHeaderField: "User-Agent")
+                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+                request.timeoutInterval = 10
+
+                let (data, _) = try await URLSession.shared.data(for: request)
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let tag = json["tag_name"] as? String else {
+                    if userInitiated { showToast("Couldn't check for updates") }
+                    return
+                }
+
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: throttleKey)
+                latestVersion = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                updateURL = URL(string: (json["html_url"] as? String) ?? "https://github.com/johnfkoo951/CmdMD/releases/latest")
+
+                if Self.isVersion(tag, newerThan: current) {
+                    updateAvailable = true
+                    if userInitiated { showToast("Update available: \(latestVersion ?? tag)") }
+                } else {
+                    updateAvailable = false
+                    if userInitiated { showToast("You're on the latest version (\(current))") }
+                }
+            } catch {
+                if userInitiated { showToast("Couldn't check for updates") }
+            }
+        }
+    }
+
     /// Copies the current document's filesystem path to the clipboard (⌥⌘C).
     func copyCurrentFilePath() {
         guard let url = currentDocument?.fileURL else {
@@ -179,6 +247,7 @@ final class AppState {
         loadUserData()
         restoreSessionIfNeeded()
         rebuildNoteIndex()
+        checkForUpdates()   // silent, throttled to once per 6h
 
         NotificationCenter.default.addObserver(
             forName: .showQuickCapture,
