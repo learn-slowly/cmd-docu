@@ -6,25 +6,32 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 16) {
             if let document = appState.currentDocument {
+                if appState.viewMode != .preview {
+                    CursorPositionView()
+
+                    Divider()
+                        .frame(height: 12)
+                }
+
                 WordCountView(document: document)
-                
+
                 Divider()
                     .frame(height: 12)
-                
+
                 CharacterCountView(document: document)
-                
+
                 Divider()
                     .frame(height: 12)
-                
+
                 ReadingTimeView(document: document)
             }
-            
+
             Spacer()
-            
+
             if appState.isDirty {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(Color.orange)
+                        .fill(CMDSBrand.develop)
                         .frame(width: 6, height: 6)
                     Text("Modified")
                         .font(.system(size: 11))
@@ -40,6 +47,16 @@ struct StatusBarView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+}
+
+struct CursorPositionView: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        Text("Ln \(appState.cursorLine), Col \(appState.cursorColumn)")
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundColor(.secondary)
     }
 }
 
@@ -95,18 +112,41 @@ struct ReadingTimeView: View {
 
 struct ViewModeIndicator: View {
     @Environment(AppState.self) private var appState
-    
+    @State private var isHovering = false
+
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: viewModeIcon)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-            Text(appState.viewMode.rawValue)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+        @Bindable var state = appState
+
+        Menu {
+            Picker("View Mode", selection: $state.viewMode) {
+                Label("Source", systemImage: "text.alignleft").tag(ViewMode.source)
+                Label("Split", systemImage: "rectangle.split.2x1").tag(ViewMode.split)
+                Label("Preview", systemImage: "eye").tag(ViewMode.preview)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: viewModeIcon)
+                    .font(.system(size: 10))
+                Text(appState.viewMode.rawValue)
+                    .font(.system(size: 11))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 7))
+            }
+            .foregroundColor(isHovering ? .primary : .secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(isHovering ? Color.secondary.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { isHovering = $0 }
+        .help("Change view mode (⌘1 / ⌘2 / ⌘3)")
     }
-    
+
     private var viewModeIcon: String {
         switch appState.viewMode {
         case .source:

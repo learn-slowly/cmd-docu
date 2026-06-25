@@ -10,12 +10,12 @@ let package = Package(
         .executable(name: "CmdMD", targets: ["CmdMD"])
     ],
     dependencies: [
-        // Markdown parsing
-        .package(url: "https://github.com/apple/swift-markdown.git", from: "0.3.0"),
+        // Markdown parsing (GitHub-Flavored: tables, strikethrough, task lists)
+        .package(url: "https://github.com/apple/swift-markdown.git", from: "0.6.0"),
         // Syntax highlighting for code blocks
-        .package(url: "https://github.com/raspu/Highlightr.git", from: "2.1.2"),
+        .package(url: "https://github.com/raspu/Highlightr.git", from: "2.3.0"),
         // YAML parsing for frontmatter
-        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.6"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.4.0"),
     ],
     targets: [
         .executableTarget(

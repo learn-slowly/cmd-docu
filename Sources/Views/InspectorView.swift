@@ -71,8 +71,15 @@ struct InspectorTabBar: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(selectedTab == tab ? Color.accentColor.opacity(0.1) : Color.clear)
-                    .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(selectedTab == tab ? Color.cmdsAccent : Color.secondary)
+                    .overlay(alignment: .bottom) {
+                        if selectedTab == tab {
+                            Rectangle()
+                                .fill(Color.cmdsAccent)
+                                .frame(height: 2)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -113,9 +120,14 @@ struct SendSection: View {
                             quickSendToVault(vault)
                         } label: {
                             HStack {
-                                Image(systemName: "folder.fill")
-                                    .foregroundStyle(.blue)
-                                Text(vault.displayName)
+                                Image(systemName: "tray.and.arrow.down.fill")
+                                    .foregroundStyle(Color.cmdsAccent)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(vault.displayName)
+                                    Text(appState.effectiveSendFolder(for: vault))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.caption)
@@ -147,7 +159,7 @@ struct SendSection: View {
                 
                 Divider()
                     .padding(.vertical, 8)
-                
+
                 Button {
                     appState.showSendToVault = true
                 } label: {
@@ -155,6 +167,11 @@ struct SendSection: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+
+                Divider()
+                    .padding(.vertical, 8)
+
+                QuickActionsSection()
             }
         }
     }
@@ -163,7 +180,7 @@ struct SendSection: View {
         Task {
             var options = SendOptions()
             options.targetVault = vault
-            options.targetFolder = vault.inboxPath
+            options.targetFolder = appState.effectiveSendFolder(for: vault)
             options.conflictResolution = appState.settings.conflictResolution
             options.injectFrontmatter = appState.settings.injectFrontmatterByDefault
 
@@ -191,7 +208,7 @@ struct InspectorBottomSection: View {
                         Text("Info")
                             .font(.caption)
                     }
-                    .foregroundStyle(showingInfo ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(showingInfo ? Color.cmdsAccent : Color.secondary)
                 }
                 .buttonStyle(.plain)
                 
@@ -244,16 +261,19 @@ struct CompactInfoRow: View {
 
 struct TableOfContentsSection: View {
     let document: MarkdownDocument
-    
+
+    // Shared with the renderer (fence-aware, deduplicating slugger) so a TOC
+    // click always lands on the right anchor — including duplicate and Korean
+    // headings.
     private var headings: [TOCHeading] {
-        extractHeadings(from: document.content)
+        TOCBuilder.extractHeadings(from: document.content)
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Table of Contents", systemImage: "list.bullet.indent")
                 .font(.headline)
-            
+
             if headings.isEmpty {
                 Text("No headings found")
                     .font(.callout)
@@ -266,34 +286,6 @@ struct TableOfContentsSection: View {
                 }
             }
         }
-    }
-    
-    private func extractHeadings(from content: String) -> [TOCHeading] {
-        var headings: [TOCHeading] = []
-        let lines = content.components(separatedBy: .newlines)
-        
-        for (index, line) in lines.enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#") {
-                var level = 0
-                for char in trimmed {
-                    if char == "#" {
-                        level += 1
-                    } else {
-                        break
-                    }
-                }
-                
-                if level >= 1 && level <= 6 {
-                    let text = String(trimmed.dropFirst(level)).trimmingCharacters(in: .whitespaces)
-                    if !text.isEmpty {
-                        headings.append(TOCHeading(level: level, text: text, lineNumber: index + 1))
-                    }
-                }
-            }
-        }
-        
-        return headings
     }
 }
 
@@ -327,9 +319,11 @@ struct TOCHeadingRow: View {
     }
     
     private func scrollToHeading(_ heading: TOCHeading) {
-        NotificationCenter.default.post(name: .scrollToLine, object: heading.lineNumber)
-        if appState.settings.scrollSyncEnabled {
-            NotificationCenter.default.post(name: .scrollToHeading, object: heading.text)
+        if appState.viewMode != .preview {
+            NotificationCenter.default.post(name: .scrollToLine, object: heading.lineNumber)
+        }
+        if appState.viewMode != .source {
+            NotificationCenter.default.post(name: .scrollToHeading, object: heading.slug)
         }
     }
 }
@@ -668,8 +662,8 @@ struct EditableTagChip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Color.blue.opacity(0.1))
-        .foregroundStyle(.blue)
+        .background(Color.cmdsAccentSoft)
+        .foregroundStyle(Color.cmdsAccent)
         .clipShape(Capsule())
     }
 }
@@ -804,21 +798,13 @@ struct FlowLayout: Layout {
 
 struct QuickActionsSection: View {
     @Environment(AppState.self) private var appState
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Quick Actions", systemImage: "bolt")
                 .font(.headline)
-            
+
             VStack(spacing: 8) {
-                Button {
-                    appState.showSendToVault = true
-                } label: {
-                    Label("Send to Vault", systemImage: "paperplane")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.bordered)
-                
                 if let url = appState.currentDocument?.fileURL {
                     Button {
                         openInObsidian(url: url)
@@ -827,7 +813,7 @@ struct QuickActionsSection: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
-                    
+
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     } label: {
@@ -836,7 +822,7 @@ struct QuickActionsSection: View {
                     }
                     .buttonStyle(.bordered)
                 }
-                
+
                 Button {
                     copyAsMarkdown()
                 } label: {
@@ -847,32 +833,23 @@ struct QuickActionsSection: View {
             }
         }
     }
-    
+
     private func openInObsidian(url: URL) {
-        for vault in appState.vaults {
-            if url.path.hasPrefix(vault.rootPath.path) {
-                let relativePath = url.path.replacingOccurrences(of: vault.rootPath.path + "/", with: "")
-                var components = URLComponents(string: "obsidian://open")!
-                components.queryItems = [
-                    URLQueryItem(name: "vault", value: vault.name),
-                    URLQueryItem(name: "file", value: relativePath)
-                ]
-                if let obsidianURL = components.url {
-                    NSWorkspace.shared.open(obsidianURL)
-                }
-                return
-            }
+        // Vault folder names are what Obsidian actually keys on (the display
+        // alias broke links); fall back to a path-based open outside any vault.
+        if let vault = appState.vaults.first(where: { $0.contains(url) }),
+           let obsidianURL = vault.obsidianURL(forFile: url) {
+            NSWorkspace.shared.open(obsidianURL)
+            return
         }
-        
+
         var components = URLComponents(string: "obsidian://open")!
-        components.queryItems = [
-            URLQueryItem(name: "path", value: url.path)
-        ]
+        components.queryItems = [URLQueryItem(name: "path", value: url.path)]
         if let obsidianURL = components.url {
             NSWorkspace.shared.open(obsidianURL)
         }
     }
-    
+
     private func copyAsMarkdown() {
         guard let content = appState.currentDocument?.content else { return }
         NSPasteboard.general.clearContents()

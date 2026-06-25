@@ -18,26 +18,32 @@ struct CmdMDApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
-        .defaultSize(width: 1200, height: 800)
+        .defaultSize(width: appState.settings.defaultWindowWidth, height: appState.settings.defaultWindowHeight)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Draft") {
                     appState.createNewDraft()
                 }
-                .keyboardShortcut("n", modifiers: .command)
-                
+                .appShortcut(appState.keyBinding(for: .newDraft))
+
                 Divider()
-                
+
                 Button("Open File...") {
                     appState.openFile()
                 }
                 .keyboardShortcut("o", modifiers: .command)
-                
+
                 Button("Open Folder...") {
                     appState.openFolder()
                 }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-                
+                .appShortcut(appState.keyBinding(for: .openFolder))
+
+                Button("Reload from Disk") {
+                    appState.reloadCurrentDocument()
+                }
+                .appShortcut(appState.keyBinding(for: .reloadFromDisk))
+                .disabled(appState.currentDocument?.fileURL == nil)
+
                 Divider()
                 
                 Menu("Open Recent") {
@@ -60,14 +66,20 @@ struct CmdMDApp: App {
                 Button("Save") {
                     Task { await appState.saveCurrentDocument() }
                 }
-                .keyboardShortcut("s", modifiers: .command)
+                .appShortcut(appState.keyBinding(for: .save))
                 .disabled(!appState.isDirty)
-                
+
                 Button("Save As...") {
                     Task { await appState.saveDocumentAs() }
                 }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .appShortcut(appState.keyBinding(for: .saveAs))
                 .disabled(appState.currentDocument == nil)
+
+                Button("Copy File Path") {
+                    appState.copyCurrentFilePath()
+                }
+                .appShortcut(appState.keyBinding(for: .copyFilePath))
+                .disabled(appState.currentDocument?.fileURL == nil)
                 
                 Divider()
                 
@@ -92,33 +104,33 @@ struct CmdMDApp: App {
                 Button("Source Only") {
                     appState.viewMode = .source
                 }
-                .keyboardShortcut("1", modifiers: .command)
-                
+                .appShortcut(appState.keyBinding(for: .sourceMode))
+
                 Button("Split View") {
                     appState.viewMode = .split
                 }
-                .keyboardShortcut("2", modifiers: .command)
-                
+                .appShortcut(appState.keyBinding(for: .splitMode))
+
                 Button("Preview Only") {
                     appState.viewMode = .preview
                 }
-                .keyboardShortcut("3", modifiers: .command)
-                
+                .appShortcut(appState.keyBinding(for: .previewMode))
+
                 Divider()
-                
+
                 Button("Toggle Sidebar") {
                     withAnimation {
                         appState.sidebarVisible.toggle()
                     }
                 }
-                .keyboardShortcut("b", modifiers: [.command, .control])
-                
+                .appShortcut(appState.keyBinding(for: .toggleSidebar))
+
                 Button("Toggle Inspector") {
                     withAnimation {
                         appState.inspectorVisible.toggle()
                     }
                 }
-                .keyboardShortcut("i", modifiers: [.command, .option])
+                .appShortcut(appState.keyBinding(for: .toggleInspector))
                 
                 Divider()
                 
@@ -188,11 +200,18 @@ struct CmdMDApp: App {
             }
 
             CommandMenu("Find") {
+                Button("Omnisearch...") {
+                    appState.showOmnisearch = true
+                }
+                .appShortcut(appState.keyBinding(for: .omnisearch))
+
+                Divider()
+
                 Button("Find in Document...") {
                     NotificationCenter.default.post(name: .showDocumentSearch, object: nil)
                 }
-                .keyboardShortcut("f", modifiers: .command)
-                
+                .appShortcut(appState.keyBinding(for: .findInDocument))
+
                 Button("Find in Folder...") {
                     appState.selectedSidebarTab = .files
                     appState.sidebarVisible = true
@@ -204,12 +223,25 @@ struct CmdMDApp: App {
                 Button("Send to Vault...") {
                     appState.showSendToVault = true
                 }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .appShortcut(appState.keyBinding(for: .sendToVault))
                 .disabled(appState.currentDocument == nil)
-                
+
+                Button("Auto-Route Send") {
+                    appState.autoRouteCurrentDocument()
+                }
+                .appShortcut(appState.keyBinding(for: .autoRoute))
+                .disabled(appState.currentDocument == nil)
+
                 Divider()
-                
-                Button("Manage Vaults...") {
+
+                Button("Quick Capture") {
+                    appState.showQuickCapture = true
+                }
+                .appShortcut(appState.keyBinding(for: .quickCapture))
+
+                Divider()
+
+                Button("Manage Vaults, Templates & Rules...") {
                     appState.showVaultManager = true
                 }
             }
@@ -218,19 +250,21 @@ struct CmdMDApp: App {
                 Button("Command Palette") {
                     appState.showCommandPalette = true
                 }
-                .keyboardShortcut("k", modifiers: .command)
+                .appShortcut(appState.keyBinding(for: .commandPalette))
             }
         }
         
         Settings {
             SettingsView()
                 .environment(appState)
+                .tint(.cmdsAccent)
         }
-        
+
         // Menu bar quick capture
-        MenuBarExtra("CmdMD", systemImage: "doc.text") {
+        MenuBarExtra("CmdMD", systemImage: "book.fill") {
             MenuBarView()
                 .environment(appState)
+                .tint(.cmdsAccent)
         }
         .menuBarExtraStyle(.window)
     }
@@ -298,6 +332,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Guards against quitting with unsaved changes. Previously ⌘Q (or quitting
     /// the resident menu-bar app) discarded all dirty tabs silently.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        AppState.shared?.saveSession()
+
         guard let appState = AppState.shared,
               appState.settings.confirmBeforeClosingDirtyTabs,
               appState.hasAnyDirtyTabs else {

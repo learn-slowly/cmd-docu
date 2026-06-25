@@ -44,3 +44,6 @@ landing/.env.local
 # Archives
 *.zip
 *.tar.gz
+
+# Tooling scratch
+.omo/

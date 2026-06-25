@@ -31,19 +31,19 @@ struct CompletionRowView: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: iconForType(item.type))
-                .foregroundStyle(isSelected ? .white : colorForType(item.type))
+                .foregroundStyle(isSelected ? Color.cmdsAccentOn : colorForType(item.type))
                 .frame(width: 20)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.displayText)
                     .font(.body)
-                    .foregroundStyle(isSelected ? .white : .primary)
+                    .foregroundStyle(isSelected ? Color.cmdsAccentOn : .primary)
                     .lineLimit(1)
-                
+
                 if let detail = item.detail {
                     Text(detail)
                         .font(.caption)
-                        .foregroundStyle(isSelected ? .white.opacity(0.8) : .secondary)
+                        .foregroundStyle(isSelected ? Color.cmdsAccentOn.opacity(0.8) : .secondary)
                         .lineLimit(1)
                 }
             }
@@ -52,22 +52,20 @@ struct CompletionRowView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor : Color.clear)
+        .background(isSelected ? Color.cmdsAccent : Color.clear)
     }
-    
-    private func iconForType(_ type: CompletionItem.CompletionType) -> String {
+
+    private func iconForType(_ type: CompletionContext.Kind) -> String {
         switch type {
         case .wikiLink: return "doc.text"
         case .tag: return "tag"
-        case .template: return "doc.on.doc"
         }
     }
-    
-    private func colorForType(_ type: CompletionItem.CompletionType) -> Color {
+
+    private func colorForType(_ type: CompletionContext.Kind) -> Color {
         switch type {
-        case .wikiLink: return .purple
-        case .tag: return .blue
-        case .template: return .orange
+        case .wikiLink: return .cmdsAccent
+        case .tag: return CMDSBrand.connect
         }
     }
 }
@@ -127,8 +125,9 @@ class CompletionWindowController: NSObject {
     }
     
     func dismiss() {
-        window?.parent?.removeChildWindow(window!)
-        window?.orderOut(nil)
+        guard let window else { return }
+        window.parent?.removeChildWindow(window)
+        window.orderOut(nil)
         items = []
         selectedIndex = 0
     }

@@ -7,8 +7,10 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
 EXECUTABLE="$MACOS_DIR/$APP_NAME"
 PLIST="$CONTENTS_DIR/Info.plist"
+APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
 ZIP_FILE="$DIST_DIR/$APP_NAME-macos.zip"
 
 echo "Building $APP_NAME release..."
@@ -22,10 +24,22 @@ if [[ ! -x "$BUILT_EXECUTABLE" ]]; then
 fi
 
 rm -rf "$APP_DIR" "$ZIP_FILE"
-mkdir -p "$MACOS_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 cp "$BUILT_EXECUTABLE" "$EXECUTABLE"
 chmod 755 "$EXECUTABLE"
+
+if [[ -f "$APP_ICON" ]]; then
+  cp "$APP_ICON" "$RESOURCES_DIR/AppIcon.icns"
+else
+  echo "Warning: $APP_ICON not found; bundling without an app icon." >&2
+fi
+
+# Brand book glyph used by in-app logo (Welcome / Onboarding heroes).
+BOOK_GLYPH="$ROOT_DIR/Resources/cmds-book-white.png"
+if [[ -f "$BOOK_GLYPH" ]]; then
+  cp "$BOOK_GLYPH" "$RESOURCES_DIR/cmds-book-white.png"
+fi
 
 cat > "$PLIST" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -60,6 +74,10 @@ cat > "$PLIST" <<'PLIST'
   </array>
   <key>CFBundleExecutable</key>
   <string>CmdMD</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>com.cmdmd.app</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -69,7 +87,7 @@ cat > "$PLIST" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>1.4.1</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -82,7 +100,7 @@ cat > "$PLIST" <<'PLIST'
     </dict>
   </array>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>7</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSPrincipalClass</key>

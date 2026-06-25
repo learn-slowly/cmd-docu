@@ -266,10 +266,3 @@ struct DraftAttachment: Identifiable, Equatable, Codable {
     }
 }
 
-// MARK: - Recent File
-struct RecentFile: Identifiable, Equatable, Codable {
-    var id: URL { url }
-    let url: URL
-    let accessedAt: Date
-    let title: String
-}

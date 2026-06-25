@@ -15,7 +15,10 @@ struct Vault: Identifiable, Equatable, Codable, Hashable {
         id: UUID = UUID(),
         name: String,
         rootPath: URL,
-        inboxPath: String = "Inbox",
+        // Empty means "use the app-wide default send folder"
+        // (see AppState.effectiveSendFolder). A non-empty value is a
+        // vault-specific Inbox that takes priority over the global default.
+        inboxPath: String = "",
         templateId: UUID? = nil,
         bookmarkData: Data? = nil,
         createdAt: Date = Date(),
@@ -34,9 +37,35 @@ struct Vault: Identifiable, Equatable, Codable, Hashable {
     var inboxURL: URL {
         rootPath.appendingPathComponent(inboxPath)
     }
-    
+
     var displayName: String {
         name.isEmpty ? rootPath.lastPathComponent : name
+    }
+
+    /// Obsidian identifies a vault by its folder name; `name` is only a display
+    /// alias inside CmdMD. Using the alias broke obsidian:// links for renamed
+    /// vault entries.
+    var obsidianVaultName: String {
+        rootPath.lastPathComponent
+    }
+
+    /// Builds an obsidian://open URL, optionally targeting a file inside the vault.
+    func obsidianURL(forFile fileURL: URL? = nil) -> URL? {
+        var components = URLComponents()
+        components.scheme = "obsidian"
+        components.host = "open"
+        var items = [URLQueryItem(name: "vault", value: obsidianVaultName)]
+        if let fileURL {
+            let relativePath = fileURL.path.replacingOccurrences(of: rootPath.path + "/", with: "")
+            items.append(URLQueryItem(name: "file", value: relativePath))
+        }
+        components.queryItems = items
+        return components.url
+    }
+
+    /// True when `fileURL` lives inside this vault.
+    func contains(_ fileURL: URL) -> Bool {
+        fileURL.standardizedFileURL.path.hasPrefix(rootPath.standardizedFileURL.path + "/")
     }
 }
 
@@ -62,18 +91,39 @@ struct VaultTemplate: Identifiable, Equatable, Codable {
     }
     
     func generateFilename(title: String, date: Date = Date()) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = formatter.string(from: date)
-        
+        let pattern = filenamePattern.isEmpty ? "{{title}}" : filenamePattern
+        return Self.substitute(pattern, title: title, date: date)
+    }
+
+    /// Renders the template body for a document. `{{content}}` marks where the
+    /// document body goes; a template without it gets the body appended so user
+    /// content is never silently dropped.
+    func renderContent(for document: MarkdownDocument, date: Date = Date()) -> String {
+        guard !content.isEmpty else { return document.content }
+        var rendered = Self.substitute(content, title: document.displayTitle, date: date)
+        if rendered.contains("{{content}}") {
+            rendered = rendered.replacingOccurrences(of: "{{content}}", with: document.content)
+        } else {
+            rendered += "\n\n" + document.content
+        }
+        return rendered
+    }
+
+    private static func substitute(_ pattern: String, title: String, date: Date) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+
         let timestampFormatter = DateFormatter()
         timestampFormatter.dateFormat = "HHmmss"
-        let timestamp = timestampFormatter.string(from: date)
-        
-        return filenamePattern
+
+        return pattern
             .replacingOccurrences(of: "{{title}}", with: title)
-            .replacingOccurrences(of: "{{date}}", with: dateStr)
-            .replacingOccurrences(of: "{{timestamp}}", with: timestamp)
+            .replacingOccurrences(of: "{{date}}", with: dateFormatter.string(from: date))
+            .replacingOccurrences(of: "{{time}}", with: timeFormatter.string(from: date))
+            .replacingOccurrences(of: "{{timestamp}}", with: timestampFormatter.string(from: date))
     }
 }
 

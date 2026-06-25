@@ -33,9 +33,9 @@ struct TabItemView: View {
     }
     
     private var isDirty: Bool {
-        guard let doc = appState.documents[tab.documentId],
-              let original = appState.originalContents[tab.documentId] else { return false }
-        return doc.content != original
+        // fullText (frontmatter + body) — comparing body alone missed
+        // property-only edits, leaving the dirty dot off after editing tags.
+        appState.isTabDirty(tab)
     }
     
     private var isFavorited: Bool {
@@ -64,7 +64,7 @@ struct TabItemView: View {
             
             if isDirty {
                 Circle()
-                    .fill(Color.orange)
+                    .fill(CMDSBrand.develop)
                     .frame(width: 6, height: 6)
             }
             
@@ -88,8 +88,16 @@ struct TabItemView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isActive ? Color.accentColor.opacity(0.15) : (isHovering ? Color.gray.opacity(0.1) : Color.clear))
+                .fill(isActive ? Color.cmdsAccentSoft : (isHovering ? Color.gray.opacity(0.1) : Color.clear))
         )
+        .overlay(alignment: .bottom) {
+            // Brand underline marks the active tab.
+            if isActive {
+                Rectangle()
+                    .fill(Color.cmdsAccent)
+                    .frame(height: 2)
+            }
+        }
         .onTapGesture {
             appState.activeTabId = tab.id
         }
@@ -100,6 +108,12 @@ struct TabItemView: View {
             TabContextMenu(tab: tab)
         }
         .draggable(tab.id.uuidString)
+        .dropDestination(for: String.self) { items, _ in
+            // Drag-to-reorder: dropping tab A onto tab B inserts A before B.
+            guard let idString = items.first, let sourceId = UUID(uuidString: idString) else { return false }
+            appState.moveTab(id: sourceId, before: tab.id)
+            return true
+        }
     }
     
     private func closeTab(_ tab: EditorTab) {
