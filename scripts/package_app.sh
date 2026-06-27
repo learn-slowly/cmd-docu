@@ -117,7 +117,7 @@ cat > "$PLIST" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.4.7</string>
+  <string>1.4.8</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -130,7 +130,7 @@ cat > "$PLIST" <<'PLIST'
     </dict>
   </array>
   <key>CFBundleVersion</key>
-  <string>13</string>
+  <string>14</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSPrincipalClass</key>
