@@ -48,6 +48,16 @@ final class AppState {
     var showOmnisearch: Bool = false
     var showAbout: Bool = false
 
+    // Claude 연동
+    var claudePanelVisible: Bool = false
+    var claudePanelWidth: CGFloat = 340
+    var claudePrompt: String = ""
+    var claudeResponse: String?
+    var claudeError: String?
+    var claudeBusy: Bool = false
+    /// 마크다운 에디터의 현재 선택영역 텍스트(없으면 빈 문자열). 질의 컨텍스트 우선순위 1.
+    var currentSelectionText: String = ""
+
     // Update checking (GitHub Releases)
     var updateAvailable: Bool = false
     var latestVersion: String?
@@ -83,6 +93,7 @@ final class AppState {
     private let fileService: FileService
     private let exportService: ExportService
     private let kordocService = KordocService()
+    private let claudeService = ClaudeService()
     private let dataURL: URL
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
@@ -177,6 +188,63 @@ final class AppState {
     /// The active binding for an action — user override or the default.
     func keyBinding(for shortcut: AppShortcut) -> KeyBinding {
         settings.keyBindings[shortcut.rawValue] ?? shortcut.defaultBinding
+    }
+
+    // MARK: - Claude 연동
+
+    /// 질의 컨텍스트를 고른다(순수 함수). 선택영역 > 마크다운 본문 > 오피스 변환 마크다운 > 빈 문자열.
+    static func claudeContext(selection: String, markdown: String?, officeMarkdown: String?) -> String {
+        let sel = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !sel.isEmpty { return sel }
+        if let md = markdown, !md.isEmpty { return md }
+        if let om = officeMarkdown, !om.isEmpty { return om }
+        return ""
+    }
+
+    /// ClaudeError를 사용자용 한국어 안내로 변환한다(순수 함수).
+    static func claudeErrorMessage(_ error: Error) -> String {
+        switch error {
+        case ClaudeError.toolNotFound:
+            return "claude CLI를 찾을 수 없습니다. 설치 후 터미널에서 `claude`로 로그인하고 다시 시도하세요."
+        case ClaudeError.notLoggedIn:
+            return "Claude Code 로그인이 필요합니다. 터미널에서 `claude`를 실행해 로그인한 뒤 다시 시도하세요."
+        case ClaudeError.creditExhausted:
+            return "Claude 사용량(크레딧)이 소진되었습니다. 잠시 후 다시 시도하세요."
+        case ClaudeError.timeout:
+            return "응답이 너무 오래 걸려 중단했습니다."
+        case ClaudeError.failed(let m):
+            return "Claude 호출에 실패했습니다: \(m)"
+        default:
+            return "Claude 호출에 실패했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    /// 현재 문서(또는 선택영역)를 프롬프트와 함께 claude에 보내고 응답을 패널에 표시한다.
+    func askClaude() {
+        let prompt = claudePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !claudeBusy else { return }
+
+        let officeMarkdown: String? = {
+            guard let tab = activeTab, case .loaded(let result)? = officeStates[tab.id] else { return nil }
+            return result.markdown
+        }()
+        let context = Self.claudeContext(selection: currentSelectionText,
+                                         markdown: currentDocument?.content,
+                                         officeMarkdown: officeMarkdown)
+
+        claudeBusy = true
+        claudeError = nil
+        claudeResponse = nil
+
+        Task { @MainActor in
+            do {
+                let answer = try await claudeService.ask(prompt: prompt, context: context)
+                claudeResponse = answer
+            } catch {
+                claudeError = Self.claudeErrorMessage(error)
+            }
+            claudeBusy = false
+        }
     }
 
     // MARK: - Update checking
