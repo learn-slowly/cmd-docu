@@ -285,7 +285,7 @@ final class AppState {
     func openFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md")!,
-                                     .png, .jpeg, .heic, .webP, .gif]
+                                     .png, .jpeg, .heic, .webP, .gif, .pdf]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
@@ -394,12 +394,13 @@ final class AppState {
             return
         }
 
-        // 이미지: MarkdownDocument/워처/originalContents 없이 탭만.
-        if DocumentKind(from: url) == .image {
+        // 이미지·PDF: MarkdownDocument/워처/originalContents 없이 탭만.
+        let kind = DocumentKind(from: url)
+        if kind == .image || kind == .pdf {
             let tab = EditorTab(
                 fileURL: url,
                 title: url.deletingPathExtension().lastPathComponent,
-                kind: .image
+                kind: kind
             )
             placeTab(tab, inNewTab: inNewTab)
             addToRecentFiles(url)
@@ -630,13 +631,13 @@ final class AppState {
         fileTree = buildFileTree(at: folder)
     }
 
-    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지.
-    /// 이미지 확장자는 DocumentKind.imageExtensions(단일 판별원)를 따른다.
-    /// (PDF·오피스 등은 해당 Phase에서 여기 추가한다.)
+    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF.
+    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions(단일 판별원)를 따른다.
     static func isListableInFileTree(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown" || ext == "txt"
             || DocumentKind.imageExtensions.contains(ext)
+            || DocumentKind.pdfExtensions.contains(ext)
     }
 
     private func buildFileTree(at url: URL, depth: Int = 0) -> [FileTreeItem] {
