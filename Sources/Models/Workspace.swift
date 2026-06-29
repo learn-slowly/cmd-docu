@@ -162,7 +162,7 @@ struct FileTreeItem: Identifiable, Hashable {
 // MARK: - Search
 
 /// 검색 결과 한 건의 종류 — 파일명 매칭 / 텍스트 줄 / PDF 페이지.
-enum SearchMatchKind {
+enum SearchMatchKind: Equatable {
     case filename
     case line
     case pdfPage

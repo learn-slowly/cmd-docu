@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import UniformTypeIdentifiers
+import PDFKit
 
 @Observable
 final class AppState {
@@ -1109,6 +1110,29 @@ final class AppState {
         }
     }
 
+    /// 파일명에 query(대소문자 무시)가 들어있으면 .filename 결과를 만든다.
+    static func filenameMatch(_ url: URL, query: String) -> SearchResult? {
+        guard !query.isEmpty else { return nil }
+        let name = url.lastPathComponent
+        guard let range = name.range(of: query, options: .caseInsensitive) else { return nil }
+        return SearchResult(fileURL: url, lineNumber: 0, lineContent: name,
+                            matchRange: range, kind: .filename)
+    }
+
+    /// text의 각 줄에서 query(대소문자 무시) 첫 위치를 찾아 .line 결과(줄번호 1-base)로.
+    static func contentLineMatches(in text: String, fileURL: URL, query: String) -> [SearchResult] {
+        guard !query.isEmpty else { return [] }
+        var results: [SearchResult] = []
+        let lines = text.components(separatedBy: .newlines)
+        for (index, line) in lines.enumerated() {
+            if let range = line.range(of: query, options: .caseInsensitive) {
+                results.append(SearchResult(fileURL: fileURL, lineNumber: index + 1,
+                                            lineContent: line, matchRange: range, kind: .line))
+            }
+        }
+        return results
+    }
+
     private func performSearch(query: String, in folder: URL) async -> [SearchResult] {
         var results: [SearchResult] = []
         let fileManager = FileManager.default
@@ -1119,33 +1143,52 @@ final class AppState {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return [] }
 
-        let lowercaseQuery = query.lowercased()
         let maxResults = 500
+        let textExtensions: Set<String> = ["md", "markdown", "txt"]
 
         // Pull all URLs up front: iterating an enumerator directly is a
         // makeIterator call that's unavailable from async contexts in Swift 6.
         let fileURLs = enumerator.allObjects.compactMap { $0 as? URL }
+
         for fileURL in fileURLs {
-            guard fileURL.pathExtension.lowercased() == "md" || fileURL.pathExtension.lowercased() == "markdown" else { continue }
+            guard Self.isListableInFileTree(fileURL) else { continue }
 
-            do {
-                let content = try String(contentsOf: fileURL, encoding: .utf8)
-                let lines = content.components(separatedBy: .newlines)
+            // 1) 파일명 매칭(모든 종류: md/txt·이미지·pdf)
+            if let nameHit = Self.filenameMatch(fileURL, query: query) {
+                results.append(nameHit)
+                if results.count >= maxResults { return results }
+            }
 
-                for (index, line) in lines.enumerated() {
-                    if let range = line.lowercased().range(of: lowercaseQuery) {
-                        results.append(SearchResult(
-                            fileURL: fileURL,
-                            lineNumber: index + 1,
-                            lineContent: line,
-                            matchRange: range
-                        ))
+            let ext = fileURL.pathExtension.lowercased()
+
+            // 2) 텍스트 본문(md/markdown/txt)
+            if textExtensions.contains(ext) {
+                if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+                    for hit in Self.contentLineMatches(in: content, fileURL: fileURL, query: query) {
+                        results.append(hit)
                         if results.count >= maxResults { return results }
                     }
                 }
-            } catch {
-                continue
+            // 3) PDF 본문(페이지별 추출 → .pdfPage)
+            } else if DocumentKind.pdfExtensions.contains(ext) {
+                if let pdf = PDFDocument(url: fileURL) {
+                    for pageIndex in 0..<pdf.pageCount {
+                        guard let page = pdf.page(at: pageIndex),
+                              let pageText = page.string else { continue }
+                        for hit in Self.contentLineMatches(in: pageText, fileURL: fileURL, query: query) {
+                            results.append(SearchResult(
+                                fileURL: fileURL,
+                                lineNumber: pageIndex + 1,        // 페이지 번호(1-base)
+                                lineContent: hit.lineContent,
+                                matchRange: hit.matchRange,
+                                kind: .pdfPage
+                            ))
+                            if results.count >= maxResults { return results }
+                        }
+                    }
+                }
             }
+            // 이미지: 본문 없음 — 파일명 매칭만(위 1번)
         }
 
         return results
