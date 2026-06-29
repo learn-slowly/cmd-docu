@@ -21,7 +21,7 @@ struct CmdMDApp: App {
         .defaultSize(width: appState.settings.defaultWindowWidth, height: appState.settings.defaultWindowHeight)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About CmdMD") {
+                Button("About cmd-docu") {
                     appState.showAbout = true
                 }
                 Button("Check for Updates…") {
@@ -271,7 +271,7 @@ struct CmdMDApp: App {
         }
 
         // Menu bar quick capture
-        MenuBarExtra("CmdMD", systemImage: "book.fill") {
+        MenuBarExtra("cmd-docu", systemImage: "book.fill") {
             MenuBarView()
                 .environment(appState)
                 .tint(.cmdsAccent)

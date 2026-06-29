@@ -9,17 +9,15 @@ struct MainEditorView: View {
                 TabBarView()
             }
 
-            if let document = appState.currentDocument, let fileURL = document.fileURL {
+            if let fileURL = appState.currentTabFileURL {
                 SimpleBreadcrumbView(fileURL: fileURL, folderURL: appState.currentFolder)
             }
 
             Group {
-                if let document = appState.currentDocument {
-                    // The editor + preview panes persist across tab switches and
-                    // update in place (keyed by document id inside the panes), so a
-                    // switch no longer tears down the NSTextView / spawns a new
-                    // WKWebView — that recreation was the tab-switch delay. Undo,
-                    // scroll, and selection are reset on a real document switch.
+                if appState.currentTabKind == .image, let url = appState.currentTabFileURL {
+                    ImageReaderView(url: url)
+                } else if let document = appState.currentDocument {
+                    // 탭 전환 시 NSTextView / WKWebView를 재생성하지 않도록 패널을 유지 — 성능 최적화.
                     DocumentEditorView(document: document)
                 } else {
                     WelcomeView()
@@ -390,7 +388,7 @@ struct WelcomeView: View {
                         BrandLogo(size: 92, showWordmark: true)
 
                         VStack(spacing: 4) {
-                            Text("CmdMD")
+                            Text("cmd-docu")
                                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
                             Text("Fast Markdown review · Obsidian vault router")

@@ -220,7 +220,7 @@ struct OnboardingView: View {
                 BrandLogo(size: 84, showWordmark: true)
 
                 VStack(spacing: 4) {
-                    Text("Welcome to CmdMD")
+                    Text("Welcome to cmd-docu")
                         .font(.title2.bold())
                     Text("리뷰 우선 마크다운 에디터 · Obsidian 볼트 라우터")
                         .font(.callout)
@@ -364,7 +364,7 @@ struct AboutView: View {
             BrandLogo(size: 76, showWordmark: true)
 
             VStack(spacing: 3) {
-                Text("CmdMD")
+                Text("cmd-docu")
                     .font(.title2.bold())
                 Text(AppInfo.versionLabel)
                     .font(.caption)

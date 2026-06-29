@@ -24,6 +24,12 @@ Native Swift / SwiftUI · macOS 14+ · CMDS‑branded, light & dark.
 
 ---
 
+> **이 저장소는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPACE)의 포크 `cmd-docu`입니다.**
+> 원본의 마크다운 리더 위에 이미지 보기를 더했고, 한글/오피스 문서 처리·Claude 연동·내용 검색을 향해 개발 중인 개인용 도구입니다.
+> 원작자와 라이선스(MIT) 고지는 그대로 유지합니다. 원본과 무관하며 원작자의 보증을 받지 않았습니다.
+
+---
+
 ## Why CmdMD
 
 Most Markdown apps open into an editor. CmdMD opens into a **rendered preview** — reading

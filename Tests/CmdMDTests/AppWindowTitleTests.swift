@@ -5,7 +5,7 @@ final class AppWindowTitleTests: XCTestCase {
     func testWindowTitleFallsBackToAppNameWithoutDocument() {
         let appState = AppState()
 
-        XCTAssertEqual(appState.windowTitle, "CmdMD")
+        XCTAssertEqual(appState.windowTitle, "cmd-docu")
     }
 
     func testWindowTitleUsesActiveDocumentDisplayTitle() {

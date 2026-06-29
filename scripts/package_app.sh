@@ -79,7 +79,7 @@ cat > "$PLIST" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>CmdMD</string>
+  <string>cmd-docu</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -109,11 +109,11 @@ cat > "$PLIST" <<'PLIST'
   <key>CFBundleIconName</key>
   <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
-  <string>com.cmdmd.app</string>
+  <string>work.cmdspace.cmddocu</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>CmdMD</string>
+  <string>cmd-docu</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -122,7 +122,7 @@ cat > "$PLIST" <<'PLIST'
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>com.cmdmd.app</string>
+      <string>work.cmdspace.cmddocu</string>
       <key>CFBundleURLSchemes</key>
       <array>
         <string>cmdmd</string>
