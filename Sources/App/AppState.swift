@@ -124,11 +124,24 @@ final class AppState {
     }
 
     var windowTitle: String {
-        guard let title = currentDocument?.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-              !title.isEmpty else {
-            return "cmd-docu"
+        if let title = currentDocument?.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
+            return title
         }
-        return title
+        if let url = currentTabFileURL {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        return "cmd-docu"
+    }
+
+    /// 활성 탭의 종류(없으면 마크다운).
+    var currentTabKind: DocumentKind {
+        tabs.first(where: { $0.id == activeTabId })?.kind ?? .markdown
+    }
+
+    /// 활성 탭의 파일 URL(이미지 뷰 배선용).
+    var currentTabFileURL: URL? {
+        tabs.first(where: { $0.id == activeTabId })?.fileURL
     }
 
     var defaultVault: Vault? {
@@ -271,7 +284,8 @@ final class AppState {
 
     func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md")!]
+        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md")!,
+                                     .png, .jpeg, .heic, .webP, .gif]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
@@ -357,12 +371,42 @@ final class AppState {
         }
     }
 
+    /// 새 탭을 추가하거나 활성 탭을 교체(교체 시 옛 탭 자원 정리).
+    private func placeTab(_ tab: EditorTab, inNewTab: Bool) {
+        if inNewTab || tabs.isEmpty {
+            tabs.append(tab)
+        } else if let activeIndex = tabs.firstIndex(where: { $0.id == activeTabId }) {
+            let oldTab = tabs[activeIndex]
+            stopWatchingFile(for: oldTab.id)
+            documents.removeValue(forKey: oldTab.documentId)
+            originalContents.removeValue(forKey: oldTab.documentId)
+            tabs[activeIndex] = tab
+        } else {
+            tabs.append(tab)
+        }
+        activeTabId = tab.id
+    }
+
     @MainActor
     private func loadAndActivateDocument(at url: URL, inNewTab: Bool) async {
         if let existingTab = tabs.first(where: { $0.fileURL == url }) {
             activeTabId = existingTab.id
             return
         }
+
+        // 이미지: MarkdownDocument/워처/originalContents 없이 탭만.
+        if DocumentKind(from: url) == .image {
+            let tab = EditorTab(
+                fileURL: url,
+                title: url.deletingPathExtension().lastPathComponent,
+                kind: .image
+            )
+            placeTab(tab, inNewTab: inNewTab)
+            addToRecentFiles(url)
+            saveSession()
+            return
+        }
+
         do {
             let document = try await fileService.loadDocument(from: url)
             let tab = EditorTab(
@@ -370,26 +414,9 @@ final class AppState {
                 fileURL: url,
                 title: document.displayTitle
             )
-
             documents[document.id] = document
             originalContents[document.id] = document.fullText
-
-            if inNewTab || tabs.isEmpty {
-                tabs.append(tab)
-            } else if let activeIndex = tabs.firstIndex(where: { $0.id == activeTabId }) {
-                // Replacing the active tab in place: release the previous
-                // document and cancel its file watcher so we don't leak file
-                // descriptors or orphan documents/originalContents entries.
-                let oldTab = tabs[activeIndex]
-                stopWatchingFile(for: oldTab.id)
-                documents.removeValue(forKey: oldTab.documentId)
-                originalContents.removeValue(forKey: oldTab.documentId)
-                tabs[activeIndex] = tab
-            } else {
-                tabs.append(tab)
-            }
-
-            activeTabId = tab.id
+            placeTab(tab, inNewTab: inNewTab)
             addToRecentFiles(url)
             startWatchingFile(at: url, for: tab.id)
             harvestTags(from: document)
