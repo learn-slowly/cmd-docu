@@ -36,4 +36,16 @@ final class AppClaudeTests: XCTestCase {
         let m = AppState.claudeErrorMessage(ClaudeError.creditExhausted)
         XCTAssertTrue(m.contains("크레딧") || m.contains("사용량"))
     }
+
+    func testAskClaudeShortcutExistsWithDefaultBinding() {
+        XCTAssertTrue(AppShortcut.allCases.contains(.askClaude))
+        let b = AppShortcut.askClaude.defaultBinding
+        XCTAssertEqual(b.key, "a")
+        XCTAssertTrue(b.command)
+        XCTAssertTrue(b.shift)
+    }
+
+    func testAskClaudeShortcutHasTitle() {
+        XCTAssertFalse(AppShortcut.askClaude.title.isEmpty)
+    }
 }

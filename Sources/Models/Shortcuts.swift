@@ -85,6 +85,7 @@ enum AppShortcut: String, CaseIterable, Identifiable {
     case findInDocument
     case reloadFromDisk
     case openFolder
+    case askClaude
 
     var id: String { rawValue }
 
@@ -107,6 +108,7 @@ enum AppShortcut: String, CaseIterable, Identifiable {
         case .findInDocument: return "Find in Document"
         case .reloadFromDisk: return "Reload from Disk"
         case .openFolder:     return "Open Folder…"
+        case .askClaude:      return "Ask Claude"
         }
     }
 
@@ -129,6 +131,7 @@ enum AppShortcut: String, CaseIterable, Identifiable {
         case .findInDocument:  return KeyBinding(key: "f", command: true)
         case .reloadFromDisk:  return KeyBinding(key: "r", command: true, option: true)
         case .openFolder:      return KeyBinding(key: "o", command: true, option: true)
+        case .askClaude:       return KeyBinding(key: "a", command: true, shift: true)
         }
     }
 }

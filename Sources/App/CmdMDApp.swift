@@ -141,7 +141,12 @@ struct CmdMDApp: App {
                     }
                 }
                 .appShortcut(appState.keyBinding(for: .toggleInspector))
-                
+
+                Button("Ask Claude") {
+                    appState.claudePanelVisible = true
+                }
+                .appShortcut(appState.keyBinding(for: .askClaude))
+
                 Divider()
                 
                 Button("Toggle Tab Bar") {

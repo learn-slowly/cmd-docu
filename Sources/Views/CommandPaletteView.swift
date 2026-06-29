@@ -259,6 +259,16 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "Ask Claude",
+                subtitle: "Ask Claude about the open document",
+                icon: "sparkles",
+                shortcut: appState.keyBinding(for: .askClaude).displayString,
+                keywords: ["claude", "ai", "ask", "assistant", "chat"]
+            ) {
+                appState.claudePanelVisible = true
+            },
+
+            Command(
                 title: "Save",
                 subtitle: "Save the current document",
                 icon: "square.and.arrow.down",
