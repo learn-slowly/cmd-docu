@@ -15,6 +15,8 @@ final class AppState {
     var activeTabId: UUID?
     var documents: [UUID: MarkdownDocument] = [:]
     var originalContents: [UUID: String] = [:]
+    /// kordoc 오피스 변환 상태(키 = EditorTab.id). office 탭은 MarkdownDocument가 없다.
+    var officeStates: [UUID: OfficeState] = [:]
 
     // View State
     var viewMode: ViewMode = AppState.launchDefaults.viewMode
@@ -61,6 +63,8 @@ final class AppState {
     var folderSearchText: String = ""
     var searchResults: [SearchResult] = []
     var isSearching: Bool = false
+    /// 사이드바 폴더 검색 Task(새 검색 시작 시 이전 것을 취소해 낡은 결과 덮어쓰기 방지).
+    private var folderSearchTask: Task<Void, Never>?
 
     // Status
     var errorMessage: String?
@@ -78,6 +82,7 @@ final class AppState {
     // Services
     private let fileService: FileService
     private let exportService: ExportService
+    private let kordocService = KordocService()
     private let dataURL: URL
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
@@ -285,8 +290,10 @@ final class AppState {
 
     func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md")!,
-                                     .png, .jpeg, .heic, .webP, .gif, .pdf]
+        var types: [UTType] = [.plainText, UTType(filenameExtension: "md")!,
+                               .png, .jpeg, .heic, .webP, .gif, .pdf]
+        types += DocumentKind.officeExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
@@ -392,6 +399,7 @@ final class AppState {
             stopWatchingFile(for: oldTab.id)
             documents.removeValue(forKey: oldTab.documentId)
             originalContents.removeValue(forKey: oldTab.documentId)
+            officeStates.removeValue(forKey: oldTab.id)
             tabs[activeIndex] = tab
         } else {
             tabs.append(tab)
@@ -406,9 +414,9 @@ final class AppState {
             return
         }
 
-        // 이미지·PDF: MarkdownDocument/워처/originalContents 없이 탭만.
+        // 이미지·PDF·오피스: MarkdownDocument/워처/originalContents 없이 탭만.
         let kind = DocumentKind(from: url)
-        if kind == .image || kind == .pdf {
+        if kind != .markdown {
             let tab = EditorTab(
                 fileURL: url,
                 title: url.deletingPathExtension().lastPathComponent,
@@ -416,6 +424,9 @@ final class AppState {
             )
             placeTab(tab, inNewTab: inNewTab)
             addToRecentFiles(url)
+            if kind == .office {
+                retryOfficeConversion(tabID: tab.id, fileURL: url)
+            }
             saveSession()
             return
         }
@@ -643,13 +654,14 @@ final class AppState {
         fileTree = buildFileTree(at: folder)
     }
 
-    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF.
-    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions(단일 판별원)를 따른다.
+    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF + 오피스.
+    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions, 오피스는 DocumentKind.officeExtensions(단일 판별원)를 따른다.
     static func isListableInFileTree(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown" || ext == "txt"
             || DocumentKind.imageExtensions.contains(ext)
             || DocumentKind.pdfExtensions.contains(ext)
+            || DocumentKind.officeExtensions.contains(ext)
     }
 
     private func buildFileTree(at url: URL, depth: Int = 0) -> [FileTreeItem] {
@@ -948,6 +960,7 @@ final class AppState {
         stopWatchingFile(for: tab.id)
         documents.removeValue(forKey: tab.documentId)
         originalContents.removeValue(forKey: tab.documentId)
+        officeStates.removeValue(forKey: tab.id)
 
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs.remove(at: index)
@@ -1101,20 +1114,61 @@ final class AppState {
         saveUserData()
     }
 
+    // MARK: - Office Conversion
+
+    /// office 탭 변환을 시작/재시도한다(로딩 표시 후 비동기 변환).
+    @MainActor
+    func retryOfficeConversion(tabID: UUID, fileURL: URL) {
+        officeStates[tabID] = .loading
+        Task { @MainActor in
+            do {
+                let result = try await kordocService.convert(fileURL: fileURL)
+                guard tabs.contains(where: { $0.id == tabID }) else { return }
+                officeStates[tabID] = .loaded(result)
+            } catch {
+                guard tabs.contains(where: { $0.id == tabID }) else { return }
+                officeStates[tabID] = .failed(Self.officeErrorMessage(error))
+            }
+        }
+    }
+
+    static func officeErrorMessage(_ error: Error) -> String {
+        switch error {
+        case KordocError.toolNotFound:
+            return "kordoc 실행에 필요한 Node(18+)/kordoc을 찾을 수 없습니다. 터미널에서 `npx kordoc` 또는 `npm i -g kordoc` 후 다시 시도하세요."
+        case KordocError.timeout:
+            return "문서 변환 시간이 초과됐습니다. 다시 시도해 주세요."
+        case KordocError.decodeFailed:
+            return "변환 결과를 해석하지 못했습니다."
+        case KordocError.conversionFailed(let m):
+            return "문서 변환에 실패했습니다.\n\(m)"
+        default:
+            return "문서를 열 수 없습니다: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Folder Search
 
     func searchInFolder(query: String) {
+        // 새 검색을 시작하기 전 이전 검색 Task를 취소한다(느린 변환이 늦게 끝나
+        // 낡은 결과로 현재 검색어 결과를 덮어쓰는 정합성 버그 방지).
+        folderSearchTask?.cancel()
         guard let folder = currentFolder, !query.isEmpty else {
             searchResults = []
+            isSearching = false
             return
         }
 
         isSearching = true
         searchResults = []
 
-        Task {
-            let results = await performSearch(query: query, in: folder)
+        folderSearchTask = Task { [weak self] in
+            guard let self else { return }
+            let results = await self.performSearch(query: query, in: folder)
+            if Task.isCancelled { return }
             await MainActor.run {
+                // 결과가 늦게 와도 그 사이 검색어가 바뀌었으면 덮어쓰지 않음.
+                guard self.folderSearchText == query else { return }
                 self.searchResults = results
                 self.isSearching = false
             }
@@ -1146,7 +1200,8 @@ final class AppState {
 
     private func performSearch(query: String, in folder: URL,
                               includeFilenames: Bool = true,
-                              includePDFBody: Bool = true) async -> [SearchResult] {
+                              includePDFBody: Bool = true,
+                              includeOfficeBody: Bool = true) async -> [SearchResult] {
         var results: [SearchResult] = []
         let fileManager = FileManager.default
 
@@ -1202,6 +1257,20 @@ final class AppState {
                         }
                     }
                 }
+            // 4) 오피스 본문(kordoc → 마크다운 → 줄 매칭 → .officeBody) — Omnisearch는 끔(변환 방지)
+            } else if includeOfficeBody, DocumentKind.officeExtensions.contains(ext) {
+                if let md = try? await kordocService.markdown(for: fileURL) {
+                    for hit in Self.contentLineMatches(in: md, fileURL: fileURL, query: query) {
+                        results.append(SearchResult(
+                            fileURL: fileURL,
+                            lineNumber: hit.lineNumber,
+                            lineContent: hit.lineContent,
+                            matchRange: hit.matchRange,
+                            kind: .officeBody
+                        ))
+                        if results.count >= maxResults { return results }
+                    }
+                }
             }
             // 이미지: 본문 없음 — 파일명 매칭만(위 1번)
         }
@@ -1221,7 +1290,8 @@ final class AppState {
     func searchContent(query: String) async -> [SearchResult] {
         guard let folder = currentFolder, !query.isEmpty else { return [] }
         return await performSearch(query: query, in: folder,
-                                   includeFilenames: false, includePDFBody: false)
+                                   includeFilenames: false, includePDFBody: false,
+                                   includeOfficeBody: false)
     }
 
     // MARK: - Vaults
@@ -1527,6 +1597,12 @@ final class AppState {
             try? data.write(to: dataURL.appendingPathComponent("drafts.json"))
         }
     }
+}
+
+enum OfficeState {
+    case loading
+    case loaded(KordocResult)
+    case failed(String)
 }
 
 enum SendError: LocalizedError {

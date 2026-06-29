@@ -18,6 +18,10 @@ struct MainEditorView: View {
                     ImageReaderView(url: url)
                 } else if appState.currentTabKind == .pdf, let url = appState.currentTabFileURL {
                     PDFReaderView(url: url)
+                } else if appState.currentTabKind == .office,
+                          let url = appState.currentTabFileURL,
+                          let tabID = appState.activeTabId {
+                    OfficeReaderView(tabID: tabID, fileURL: url)
                 } else if let document = appState.currentDocument {
                     // 탭 전환 시 NSTextView / WKWebView를 재생성하지 않도록 패널을 유지 — 성능 최적화.
                     DocumentEditorView(document: document)
