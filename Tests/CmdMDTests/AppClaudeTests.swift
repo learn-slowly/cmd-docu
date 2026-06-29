@@ -48,4 +48,16 @@ final class AppClaudeTests: XCTestCase {
     func testAskClaudeShortcutHasTitle() {
         XCTAssertFalse(AppShortcut.askClaude.title.isEmpty)
     }
+
+    func testSelectionUsedForMarkdownKind() {
+        XCTAssertEqual(AppState.claudeSelection(forKind: .markdown, selection: "선택"), "선택")
+    }
+
+    func testSelectionIgnoredForOfficeKind() {
+        XCTAssertEqual(AppState.claudeSelection(forKind: .office, selection: "선택"), "")
+    }
+
+    func testSelectionIgnoredForPdfKind() {
+        XCTAssertEqual(AppState.claudeSelection(forKind: .pdf, selection: "선택"), "")
+    }
 }

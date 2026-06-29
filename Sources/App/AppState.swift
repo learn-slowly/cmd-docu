@@ -192,6 +192,12 @@ final class AppState {
 
     // MARK: - Claude 연동
 
+    /// 선택영역은 마크다운 탭에서만 컨텍스트로 쓴다. 다른 종류 탭에선 이전 마크다운
+    /// 선택이 새지 않도록 빈 문자열로 친다.
+    static func claudeSelection(forKind kind: DocumentKind, selection: String) -> String {
+        kind == .markdown ? selection : ""
+    }
+
     /// 질의 컨텍스트를 고른다(순수 함수). 선택영역 > 마크다운 본문 > 오피스 변환 마크다운 > 빈 문자열.
     static func claudeContext(selection: String, markdown: String?, officeMarkdown: String?) -> String {
         let sel = selection.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -228,7 +234,8 @@ final class AppState {
             guard let tab = activeTab, case .loaded(let result)? = officeStates[tab.id] else { return nil }
             return result.markdown
         }()
-        let context = Self.claudeContext(selection: currentSelectionText,
+        let selection = Self.claudeSelection(forKind: currentTabKind, selection: currentSelectionText)
+        let context = Self.claudeContext(selection: selection,
                                          markdown: currentDocument?.content,
                                          officeMarkdown: officeMarkdown)
 
@@ -239,7 +246,11 @@ final class AppState {
         Task { @MainActor in
             do {
                 let answer = try await claudeService.ask(prompt: prompt, context: context)
-                claudeResponse = answer
+                if answer.isEmpty {
+                    claudeError = "Claude가 빈 응답을 반환했습니다. 다시 시도해 주세요."
+                } else {
+                    claudeResponse = answer
+                }
             } catch {
                 claudeError = Self.claudeErrorMessage(error)
             }
@@ -321,6 +332,9 @@ final class AppState {
     }
 
     init() {
+        // 서브프로세스 stdin write가 broken pipe를 만나도 SIGPIPE로 앱이 죽지 않게 한다.
+        signal(SIGPIPE, SIG_IGN)
+
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("CmdMD")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)

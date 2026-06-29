@@ -68,8 +68,10 @@ actor ClaudeService {
         let stdinHandle = stdinPipe.fileHandleForWriting
         let stdinData = stdin.data(using: .utf8) ?? Data()
         Task.detached {
-            if !stdinData.isEmpty { stdinHandle.write(stdinData) }
-            stdinHandle.closeFile()
+            // claude가 stdin을 읽기 전에 종료하면 broken pipe가 날 수 있다.
+            // 던지는 API를 써서 NSException 대신 Swift 에러로 받아 무시한다.
+            if !stdinData.isEmpty { try? stdinHandle.write(contentsOf: stdinData) }
+            try? stdinHandle.close()
         }
 
         // 타임아웃 감시(협조적 폴링).
