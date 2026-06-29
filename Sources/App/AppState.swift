@@ -63,6 +63,8 @@ final class AppState {
     var folderSearchText: String = ""
     var searchResults: [SearchResult] = []
     var isSearching: Bool = false
+    /// 사이드바 폴더 검색 Task(새 검색 시작 시 이전 것을 취소해 낡은 결과 덮어쓰기 방지).
+    private var folderSearchTask: Task<Void, Never>?
 
     // Status
     var errorMessage: String?
@@ -1148,17 +1150,25 @@ final class AppState {
     // MARK: - Folder Search
 
     func searchInFolder(query: String) {
+        // 새 검색을 시작하기 전 이전 검색 Task를 취소한다(느린 변환이 늦게 끝나
+        // 낡은 결과로 현재 검색어 결과를 덮어쓰는 정합성 버그 방지).
+        folderSearchTask?.cancel()
         guard let folder = currentFolder, !query.isEmpty else {
             searchResults = []
+            isSearching = false
             return
         }
 
         isSearching = true
         searchResults = []
 
-        Task {
-            let results = await performSearch(query: query, in: folder)
+        folderSearchTask = Task { [weak self] in
+            guard let self else { return }
+            let results = await self.performSearch(query: query, in: folder)
+            if Task.isCancelled { return }
             await MainActor.run {
+                // 결과가 늦게 와도 그 사이 검색어가 바뀌었으면 덮어쓰지 않음.
+                guard self.folderSearchText == query else { return }
                 self.searchResults = results
                 self.isSearching = false
             }
