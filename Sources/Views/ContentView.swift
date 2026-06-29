@@ -90,6 +90,9 @@ struct ContentView: View {
         .sheet(isPresented: $state.showAbout) {
             AboutView()
         }
+        .sheet(item: $state.officeSaveConfirm) { request in
+            OfficeSaveConfirmView(request: request)
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(

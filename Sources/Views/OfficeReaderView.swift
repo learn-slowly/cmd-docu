@@ -90,7 +90,6 @@ private struct OfficeEditorPane: View {
     }
 
     var body: some View {
-        @Bindable var state = appState
         let settings = appState.settings
         let theme = settings.editorTheme.resolved(forDark: colorScheme == .dark)
         MarkdownTextEditor(
