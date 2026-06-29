@@ -15,6 +15,8 @@ final class AppState {
     var activeTabId: UUID?
     var documents: [UUID: MarkdownDocument] = [:]
     var originalContents: [UUID: String] = [:]
+    /// kordoc 오피스 변환 상태(키 = EditorTab.id). office 탭은 MarkdownDocument가 없다.
+    var officeStates: [UUID: OfficeState] = [:]
 
     // View State
     var viewMode: ViewMode = AppState.launchDefaults.viewMode
@@ -78,6 +80,7 @@ final class AppState {
     // Services
     private let fileService: FileService
     private let exportService: ExportService
+    private let kordocService = KordocService()
     private let dataURL: URL
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
@@ -394,6 +397,7 @@ final class AppState {
             stopWatchingFile(for: oldTab.id)
             documents.removeValue(forKey: oldTab.documentId)
             originalContents.removeValue(forKey: oldTab.documentId)
+            officeStates.removeValue(forKey: oldTab.id)
             tabs[activeIndex] = tab
         } else {
             tabs.append(tab)
@@ -408,9 +412,9 @@ final class AppState {
             return
         }
 
-        // 이미지·PDF: MarkdownDocument/워처/originalContents 없이 탭만.
+        // 이미지·PDF·오피스: MarkdownDocument/워처/originalContents 없이 탭만.
         let kind = DocumentKind(from: url)
-        if kind == .image || kind == .pdf {
+        if kind != .markdown {
             let tab = EditorTab(
                 fileURL: url,
                 title: url.deletingPathExtension().lastPathComponent,
@@ -418,6 +422,9 @@ final class AppState {
             )
             placeTab(tab, inNewTab: inNewTab)
             addToRecentFiles(url)
+            if kind == .office {
+                retryOfficeConversion(tabID: tab.id, fileURL: url)
+            }
             saveSession()
             return
         }
@@ -951,6 +958,7 @@ final class AppState {
         stopWatchingFile(for: tab.id)
         documents.removeValue(forKey: tab.documentId)
         originalContents.removeValue(forKey: tab.documentId)
+        officeStates.removeValue(forKey: tab.id)
 
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs.remove(at: index)
@@ -1102,6 +1110,36 @@ final class AppState {
     func removeFromFavorites(_ favorite: FavoriteItem) {
         favorites.removeAll { $0.id == favorite.id }
         saveUserData()
+    }
+
+    // MARK: - Office Conversion
+
+    /// office 탭 변환을 시작/재시도한다(로딩 표시 후 비동기 변환).
+    func retryOfficeConversion(tabID: UUID, fileURL: URL) {
+        officeStates[tabID] = .loading
+        Task { @MainActor in
+            do {
+                let result = try await kordocService.convert(fileURL: fileURL)
+                officeStates[tabID] = .loaded(result)
+            } catch {
+                officeStates[tabID] = .failed(Self.officeErrorMessage(error))
+            }
+        }
+    }
+
+    static func officeErrorMessage(_ error: Error) -> String {
+        switch error {
+        case KordocError.toolNotFound:
+            return "kordoc 실행에 필요한 Node(18+)/kordoc을 찾을 수 없습니다. 터미널에서 `npx kordoc` 또는 `npm i -g kordoc` 후 다시 시도하세요."
+        case KordocError.timeout:
+            return "문서 변환 시간이 초과됐습니다. 다시 시도해 주세요."
+        case KordocError.decodeFailed:
+            return "변환 결과를 해석하지 못했습니다."
+        case KordocError.conversionFailed(let m):
+            return "문서 변환에 실패했습니다.\n\(m)"
+        default:
+            return "문서를 열 수 없습니다: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Folder Search
@@ -1530,6 +1568,12 @@ final class AppState {
             try? data.write(to: dataURL.appendingPathComponent("drafts.json"))
         }
     }
+}
+
+enum OfficeState {
+    case loading
+    case loaded(KordocResult)
+    case failed(String)
 }
 
 enum SendError: LocalizedError {
