@@ -136,12 +136,12 @@ final class AppState {
 
     /// 활성 탭의 종류(없으면 마크다운).
     var currentTabKind: DocumentKind {
-        tabs.first(where: { $0.id == activeTabId })?.kind ?? .markdown
+        activeTab?.kind ?? .markdown
     }
 
     /// 활성 탭의 파일 URL(이미지 뷰 배선용).
     var currentTabFileURL: URL? {
-        tabs.first(where: { $0.id == activeTabId })?.fileURL
+        activeTab?.fileURL
     }
 
     var defaultVault: Vault? {

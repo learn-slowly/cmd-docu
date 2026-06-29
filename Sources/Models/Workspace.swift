@@ -77,7 +77,9 @@ struct EditorTab: Identifiable, Equatable, Codable {
         return title.isEmpty ? "Untitled" : title
     }
 
-    // 구버전 세션 JSON엔 `kind` 키가 없으므로 기본 .markdown 으로 디코딩.
+    // EditorTab은 현재 세션에 직접 직렬화되지 않는다(세션은 URL 목록만 저장).
+    // 이 커스텀 디코더는 추후 EditorTab을 직접 저장하게 될 때를 대비한 방어로,
+    // `kind` 키가 없으면 .markdown 으로 폴백한다.
     // (커스텀 init(from:)만 제공하면 encode(to:)는 합성된다.)
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
