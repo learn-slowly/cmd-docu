@@ -36,6 +36,7 @@ struct PDFReaderView: NSViewRepresentable {
         var matches: [PDFSelection] = []
         var matchIndex: Int = 0
         var lastQuery: String = ""
+        var didSetDividerPosition = false
 
         /// url로 문서를 로드해 container의 뷰 트리를 구성한다. 재호출 가능(탭 전환·재시도).
         /// 실패해도 container 자체는 유지하고 플레이스홀더만 넣으므로, 이후 유효 URL 전환이 정상 복구된다.
@@ -92,15 +93,42 @@ struct PDFReaderView: NSViewRepresentable {
             search.target = self
             search.action = #selector(searchChanged(_:))
             self.searchField = search
+            // 검색이 가로폭을 차지하도록(버튼은 고정).
+            search.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-            // 우측: 검색 + PDFView 세로 스택.
-            let rightStack = NSStackView(views: [search, pdfView])
+            // 회전 버튼 2개(검색 우측).
+            let rotateLeftButton = NSButton(
+                image: NSImage(systemSymbolName: "rotate.left", accessibilityDescription: "왼쪽으로 회전") ?? NSImage(),
+                target: self,
+                action: #selector(rotateLeft(_:))
+            )
+            rotateLeftButton.bezelStyle = .texturedRounded
+            rotateLeftButton.translatesAutoresizingMaskIntoConstraints = false
+            rotateLeftButton.setContentHuggingPriority(.required, for: .horizontal)
+
+            let rotateRightButton = NSButton(
+                image: NSImage(systemSymbolName: "rotate.right", accessibilityDescription: "오른쪽으로 회전") ?? NSImage(),
+                target: self,
+                action: #selector(rotateRight(_:))
+            )
+            rotateRightButton.bezelStyle = .texturedRounded
+            rotateRightButton.translatesAutoresizingMaskIntoConstraints = false
+            rotateRightButton.setContentHuggingPriority(.required, for: .horizontal)
+
+            // 상단 가로바: 검색 + 회전 버튼.
+            let topBar = NSStackView(views: [search, rotateLeftButton, rotateRightButton])
+            topBar.orientation = .horizontal
+            topBar.spacing = 6
+            topBar.translatesAutoresizingMaskIntoConstraints = false
+
+            // 우측: 상단 가로바 + PDFView 세로 스택.
+            let rightStack = NSStackView(views: [topBar, pdfView])
             rightStack.orientation = .vertical
             rightStack.spacing = 0
             rightStack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 0, right: 0)
             rightStack.translatesAutoresizingMaskIntoConstraints = false
             rightStack.setHuggingPriority(.defaultLow, for: .vertical)
-            search.setContentHuggingPriority(.required, for: .vertical)
+            topBar.setContentHuggingPriority(.required, for: .vertical)
 
             // 분할: 썸네일 | 우측.
             let split = NSSplitView()
@@ -117,9 +145,12 @@ struct PDFReaderView: NSViewRepresentable {
                 split.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 split.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             ])
-            // 썸네일 패널 초기 폭.
-            DispatchQueue.main.async {
-                split.setPosition(160, ofDividerAt: 0)
+            // 썸네일 패널 초기 폭(최초 1회만; 사용자가 드래그한 폭을 탭 전환 때 유지).
+            if !didSetDividerPosition {
+                didSetDividerPosition = true
+                DispatchQueue.main.async {
+                    split.setPosition(160, ofDividerAt: 0)
+                }
             }
         }
 
@@ -150,6 +181,16 @@ struct PDFReaderView: NSViewRepresentable {
             let current = matches[matchIndex]
             pdfView.setCurrentSelection(current, animate: true)
             pdfView.scrollSelectionToVisible(nil)
+        }
+
+        /// 현재 페이지를 왼쪽/오른쪽으로 90도 회전.
+        /// PDFView의 rotatePageLeft/Right 공개 API는 버전 의존이 있어, PDFPage.rotation을 직접 조정한다.
+        @objc func rotateLeft(_ sender: Any?) { rotate(by: -90) }
+        @objc func rotateRight(_ sender: Any?) { rotate(by: 90) }
+        private func rotate(by degrees: Int) {
+            guard let pdfView, let page = pdfView.currentPage else { return }
+            page.rotation += degrees           // PDFPage.rotation은 90단위, 음수/360+ 허용
+            pdfView.layoutDocumentView()
         }
     }
 }
