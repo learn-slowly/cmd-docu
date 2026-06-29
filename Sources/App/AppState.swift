@@ -1763,7 +1763,8 @@ enum OfficeState {
     case failed(String)
 }
 
-/// 편집 저장 확인 시트를 구동하는 요청. output은 사용자가 위치 변경 시 갱신된다.
+/// 편집 저장 확인 시트를 구동하는 요청. output은 제안 기본 경로이며,
+/// 시트의 로컬 상태가 이를 시드로 받아 '위치 변경'을 반영한다.
 struct OfficeSaveRequest: Identifiable {
     let id = UUID()
     let tabID: UUID

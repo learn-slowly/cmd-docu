@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// 서식 보존 저장 전 출력 경로를 제안·확인한다. 원본은 건드리지 않고 새 파일로 저장한다.
 struct OfficeSaveConfirmView: View {
@@ -57,8 +58,12 @@ struct OfficeSaveConfirmView: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = output.lastPathComponent
         panel.directoryURL = output.deletingLastPathComponent()
+        if let type = UTType(filenameExtension: request.fileURL.pathExtension) {
+            panel.allowedContentTypes = [type]
+        }
         if panel.runModal() == .OK, let url = panel.url {
-            output = url
+            // 사용자가 원본 자체를 고르면 원본을 덮어쓰지 않도록 옆 새 경로로 바꾼다.
+            output = KordocWriteService.isSameFile(url, request.fileURL) ? url.uniquified() : url
         }
     }
 }

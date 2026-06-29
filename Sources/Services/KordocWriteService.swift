@@ -11,9 +11,20 @@ enum KordocWriteError: Error {
 actor KordocWriteService {
     private let timeout: TimeInterval = 120
 
+    /// 두 URL이 (심볼릭 링크·상대 요소 정규화 후) 같은 파일을 가리키는가.
+    static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        a.standardizedFileURL.resolvingSymlinksInPath().path
+            == b.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     /// 편집 마크다운을 임시 .md로 적고 `kordoc patch <원본> <임시.md> -o <출력>`을 실행한다.
     func patch(original: URL, editedMarkdown: String, output: URL) async throws {
         guard let npx = KordocService.resolveNpxPath() else { throw KordocWriteError.toolNotFound }
+
+        // 원본을 절대 덮어쓰지 않는다 — 출력이 원본과 같은 파일이면 거부한다.
+        guard !Self.isSameFile(original, output) else {
+            throw KordocWriteError.patchFailed("출력 경로가 원본과 같습니다. 다른 경로를 선택하세요.")
+        }
 
         // kordoc patch는 편집본을 파일로 받는다 — 임시 .md로 적는다.
         let tmpMd = FileManager.default.temporaryDirectory
