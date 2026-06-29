@@ -1115,13 +1115,16 @@ final class AppState {
     // MARK: - Office Conversion
 
     /// office 탭 변환을 시작/재시도한다(로딩 표시 후 비동기 변환).
+    @MainActor
     func retryOfficeConversion(tabID: UUID, fileURL: URL) {
         officeStates[tabID] = .loading
         Task { @MainActor in
             do {
                 let result = try await kordocService.convert(fileURL: fileURL)
+                guard tabs.contains(where: { $0.id == tabID }) else { return }
                 officeStates[tabID] = .loaded(result)
             } catch {
+                guard tabs.contains(where: { $0.id == tabID }) else { return }
                 officeStates[tabID] = .failed(Self.officeErrorMessage(error))
             }
         }
