@@ -15,7 +15,8 @@ struct ContentView: View {
     
     var body: some View {
         @Bindable var state = appState
-        
+
+        HStack(spacing: 0) {
         NavigationSplitView(columnVisibility: Binding(
             get: { appState.sidebarVisible ? .all : .detailOnly },
             set: { appState.sidebarVisible = $0 != .detailOnly }
@@ -106,6 +107,29 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: appState.toastMessage)
         .focusedSceneValue(\.document, appState.currentDocument)
+
+            if appState.claudePanelVisible {
+                Divider()
+                    .frame(width: 6)
+                    .background(Color.gray.opacity(0.001)) // 히트 영역 확보
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let next = appState.claudePanelWidth - value.translation.width
+                                appState.claudePanelWidth = min(600, max(280, next))
+                            }
+                    )
+
+                ClaudePanelView()
+                    .frame(width: appState.claudePanelWidth)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: appState.claudePanelVisible)
     }
 }
 
