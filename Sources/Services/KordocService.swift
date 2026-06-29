@@ -11,6 +11,8 @@ enum KordocError: Error {
 /// kordoc 자체는 구현하지 않는다(외부 도구). 실패는 throw로만 — 크래시 금지.
 actor KordocService {
     private let timeout: TimeInterval = 120
+    /// 변환 마크다운 세션 캐시(키=경로, 값=수정시각+마크다운). 같은 파일 재검색 시 재변환 방지.
+    private var markdownCache: [String: (mtime: Date, markdown: String)] = [:]
 
     func convert(fileURL: URL) async throws -> KordocResult {
         guard let npx = Self.resolveNpxPath() else { throw KordocError.toolNotFound }
@@ -57,6 +59,20 @@ actor KordocService {
             throw KordocError.decodeFailed
         }
         return result
+    }
+
+    /// 변환된 마크다운만 반환(캐시 사용). 파일 수정시각이 바뀌면 재변환한다.
+    func markdown(for fileURL: URL) async throws -> String {
+        let key = fileURL.path(percentEncoded: false)
+        let mtime = (try? FileManager.default.attributesOfItem(atPath: key))?[.modificationDate] as? Date
+        if let mtime, let hit = markdownCache[key], hit.mtime == mtime {
+            return hit.markdown
+        }
+        let result = try await convert(fileURL: fileURL)
+        if let mtime {
+            markdownCache[key] = (mtime, result.markdown)
+        }
+        return result.markdown
     }
 
     /// GUI 앱(.app)은 로그인 셸 PATH를 상속하지 않으므로 npx 절대경로를 탐지한다.
