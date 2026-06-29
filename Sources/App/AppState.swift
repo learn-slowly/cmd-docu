@@ -1190,7 +1190,8 @@ final class AppState {
 
     private func performSearch(query: String, in folder: URL,
                               includeFilenames: Bool = true,
-                              includePDFBody: Bool = true) async -> [SearchResult] {
+                              includePDFBody: Bool = true,
+                              includeOfficeBody: Bool = true) async -> [SearchResult] {
         var results: [SearchResult] = []
         let fileManager = FileManager.default
 
@@ -1246,6 +1247,20 @@ final class AppState {
                         }
                     }
                 }
+            // 4) 오피스 본문(kordoc → 마크다운 → 줄 매칭 → .officeBody) — Omnisearch는 끔(변환 방지)
+            } else if includeOfficeBody, DocumentKind.officeExtensions.contains(ext) {
+                if let md = try? await kordocService.markdown(for: fileURL) {
+                    for hit in Self.contentLineMatches(in: md, fileURL: fileURL, query: query) {
+                        results.append(SearchResult(
+                            fileURL: fileURL,
+                            lineNumber: hit.lineNumber,
+                            lineContent: hit.lineContent,
+                            matchRange: hit.matchRange,
+                            kind: .officeBody
+                        ))
+                        if results.count >= maxResults { return results }
+                    }
+                }
             }
             // 이미지: 본문 없음 — 파일명 매칭만(위 1번)
         }
@@ -1265,7 +1280,8 @@ final class AppState {
     func searchContent(query: String) async -> [SearchResult] {
         guard let folder = currentFolder, !query.isEmpty else { return [] }
         return await performSearch(query: query, in: folder,
-                                   includeFilenames: false, includePDFBody: false)
+                                   includeFilenames: false, includePDFBody: false,
+                                   includeOfficeBody: false)
     }
 
     // MARK: - Vaults
