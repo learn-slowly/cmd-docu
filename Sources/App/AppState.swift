@@ -58,6 +58,12 @@ final class AppState {
     /// 마크다운 에디터의 현재 선택영역 텍스트(없으면 빈 문자열). 질의 컨텍스트 우선순위 1.
     var currentSelectionText: String = ""
 
+    // kordoc patch 편집 상태
+    var officeEditing: Set<UUID> = []
+    var officeEditBuffers: [UUID: String] = [:]
+    var officePatchInProgress: Set<UUID> = []
+    var officeSaveConfirm: OfficeSaveRequest?
+
     // Update checking (GitHub Releases)
     var updateAvailable: Bool = false
     var latestVersion: String?
@@ -94,6 +100,7 @@ final class AppState {
     private let exportService: ExportService
     private let kordocService = KordocService()
     private let claudeService = ClaudeService()
+    private let kordocWriteService = KordocWriteService()
     private let dataURL: URL
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
@@ -198,6 +205,65 @@ final class AppState {
         let folder = original.deletingLastPathComponent()
         let name = ext.isEmpty ? "\(base) (편집)" : "\(base) (편집).\(ext)"
         return folder.appendingPathComponent(name).uniquified()
+    }
+
+    // MARK: - kordoc patch 편집 저장
+
+    /// 변환 마크다운을 편집 버퍼로 복사하고 편집모드로 들어간다(이미 버퍼가 있으면 유지).
+    @MainActor
+    func beginOfficeEdit(tabID: UUID) {
+        guard case .loaded(let result)? = officeStates[tabID] else { return }
+        if officeEditBuffers[tabID] == nil {
+            officeEditBuffers[tabID] = result.markdown
+        }
+        officeEditing.insert(tabID)
+    }
+
+    /// 편집을 취소하고 버퍼를 버린다.
+    @MainActor
+    func cancelOfficeEdit(tabID: UUID) {
+        officeEditing.remove(tabID)
+        officeEditBuffers[tabID] = nil
+    }
+
+    /// 기본 출력 경로를 제안해 저장 확인 시트를 띄운다(아직 쓰지 않는다).
+    @MainActor
+    func requestOfficeSave(tabID: UUID, fileURL: URL) {
+        officeSaveConfirm = OfficeSaveRequest(tabID: tabID, fileURL: fileURL,
+                                              output: Self.patchedOutputURL(for: fileURL))
+    }
+
+    /// 확인된 출력 경로로 kordoc patch를 실행한다. 원본은 건드리지 않는다.
+    @MainActor
+    func confirmOfficeSave(tabID: UUID, fileURL: URL, output: URL) {
+        guard let edited = officeEditBuffers[tabID],
+              !officePatchInProgress.contains(tabID) else { return }
+        officeSaveConfirm = nil
+        officePatchInProgress.insert(tabID)
+        Task { @MainActor in
+            do {
+                try await kordocWriteService.patch(original: fileURL, editedMarkdown: edited, output: output)
+                toastMessage = "서식 보존 저장됨: \(output.lastPathComponent)"
+                officeEditing.remove(tabID)
+                officeEditBuffers[tabID] = nil
+            } catch {
+                errorMessage = Self.kordocWriteErrorMessage(error)
+            }
+            officePatchInProgress.remove(tabID)
+        }
+    }
+
+    static func kordocWriteErrorMessage(_ error: Error) -> String {
+        switch error {
+        case KordocWriteError.toolNotFound:
+            return "kordoc 실행에 필요한 Node(18+)/kordoc을 찾을 수 없습니다. 터미널에서 `npx kordoc` 또는 `npm i -g kordoc` 후 다시 시도하세요."
+        case KordocWriteError.timeout:
+            return "서식 보존 저장이 너무 오래 걸려 중단했습니다."
+        case KordocWriteError.patchFailed(let m):
+            return "서식 보존 저장에 실패했습니다.\n\(m)"
+        default:
+            return "저장에 실패했습니다: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Claude 연동
@@ -1695,6 +1761,14 @@ enum OfficeState {
     case loading
     case loaded(KordocResult)
     case failed(String)
+}
+
+/// 편집 저장 확인 시트를 구동하는 요청. output은 사용자가 위치 변경 시 갱신된다.
+struct OfficeSaveRequest: Identifiable {
+    let id = UUID()
+    let tabID: UUID
+    let fileURL: URL
+    var output: URL
 }
 
 enum SendError: LocalizedError {
