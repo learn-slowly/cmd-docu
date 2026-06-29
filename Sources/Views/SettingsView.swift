@@ -116,11 +116,11 @@ struct GeneralSettingsView: View {
                 Link(destination: AppInfo.github) {
                     Label("GitHub repository", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
-                Button("About CmdMD…") { appState.showAbout = true }
+                Button("About cmd-docu…") { appState.showAbout = true }
             } header: {
                 Text("About")
             } footer: {
-                Text("CmdMD · © 2026 CMDSPACE · MIT License")
+                Text("cmd-docu — CmdMD fork · © 2026 CMDSPACE · MIT License")
                     .font(.caption)
             }
         }

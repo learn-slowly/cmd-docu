@@ -126,7 +126,7 @@ final class AppState {
     var windowTitle: String {
         guard let title = currentDocument?.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else {
-            return "CmdMD"
+            return "cmd-docu"
         }
         return title
     }

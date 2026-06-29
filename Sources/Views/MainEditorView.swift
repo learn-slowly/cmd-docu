@@ -390,7 +390,7 @@ struct WelcomeView: View {
                         BrandLogo(size: 92, showWordmark: true)
 
                         VStack(spacing: 4) {
-                            Text("CmdMD")
+                            Text("cmd-docu")
                                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
                             Text("Fast Markdown review · Obsidian vault router")

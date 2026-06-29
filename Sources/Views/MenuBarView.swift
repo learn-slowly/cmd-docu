@@ -15,7 +15,7 @@ struct MenuBarView: View {
                     NSApp.activate(ignoringOtherApps: true)
                     NSApp.windows.first(where: { $0.canBecomeMain })?.makeKeyAndOrderFront(nil)
                 } label: {
-                    Label("Open CmdMD", systemImage: "macwindow")
+                    Label("Open cmd-docu", systemImage: "macwindow")
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
