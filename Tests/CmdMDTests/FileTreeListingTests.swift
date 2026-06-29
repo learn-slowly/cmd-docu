@@ -28,9 +28,15 @@ final class FileTreeListingTests: XCTestCase {
         XCTAssertTrue(listable("REPORT.PDF"))
     }
 
+    func testOfficeFilesAreListed() {
+        for ext in ["hwp", "hwpx", "docx", "xlsx"] {
+            XCTAssertTrue(listable("doc.\(ext)"), "\(ext) should be listed")
+        }
+    }
+
     func testUnsupportedFilesAreNotListed() {
-        for ext in ["hwp", "docx", "xlsx", "zip"] {
-            XCTAssertFalse(listable("doc.\(ext)"), "\(ext) should not be listed yet")
+        for ext in ["zip", "mp3", "exe"] {
+            XCTAssertFalse(listable("doc.\(ext)"), "\(ext) should not be listed")
         }
     }
 }

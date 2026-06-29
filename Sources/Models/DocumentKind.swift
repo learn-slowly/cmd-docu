@@ -5,6 +5,7 @@ enum DocumentKind: String, Codable {
     case markdown
     case image
     case pdf
+    case office
 }
 
 extension DocumentKind {
@@ -14,13 +15,18 @@ extension DocumentKind {
     /// 보기를 네이티브 PDF 뷰로 가르는 확장자 집합(소문자).
     static let pdfExtensions: Set<String> = ["pdf"]
 
-    /// 확장자(대소문자 무시)로 종류를 정한다. 이미지·PDF가 아니면 마크다운(현행 기본 동작).
+    /// kordoc으로 마크다운 변환해 보는 한글·오피스 확장자(소문자).
+    static let officeExtensions: Set<String> = ["hwp", "hwpx", "hwpml", "doc", "docx", "xls", "xlsx"]
+
+    /// 확장자(대소문자 무시): 이미지 → PDF → 오피스 → 마크다운(기본).
     init(from url: URL) {
         let ext = url.pathExtension.lowercased()
         if DocumentKind.imageExtensions.contains(ext) {
             self = .image
         } else if DocumentKind.pdfExtensions.contains(ext) {
             self = .pdf
+        } else if DocumentKind.officeExtensions.contains(ext) {
+            self = .office
         } else {
             self = .markdown
         }

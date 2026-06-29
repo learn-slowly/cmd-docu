@@ -285,8 +285,10 @@ final class AppState {
 
     func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md")!,
-                                     .png, .jpeg, .heic, .webP, .gif, .pdf]
+        var types: [UTType] = [.plainText, UTType(filenameExtension: "md")!,
+                               .png, .jpeg, .heic, .webP, .gif, .pdf]
+        types += DocumentKind.officeExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
@@ -643,13 +645,14 @@ final class AppState {
         fileTree = buildFileTree(at: folder)
     }
 
-    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF.
-    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions(단일 판별원)를 따른다.
+    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF + 오피스.
+    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions, 오피스는 DocumentKind.officeExtensions(단일 판별원)를 따른다.
     static func isListableInFileTree(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown" || ext == "txt"
             || DocumentKind.imageExtensions.contains(ext)
             || DocumentKind.pdfExtensions.contains(ext)
+            || DocumentKind.officeExtensions.contains(ext)
     }
 
     private func buildFileTree(at url: URL, depth: Int = 0) -> [FileTreeItem] {

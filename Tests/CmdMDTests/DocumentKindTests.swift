@@ -45,4 +45,21 @@ final class DocumentKindTests: XCTestCase {
             XCTAssertEqual(kind("a.\(ext)"), .pdf)
         }
     }
+
+    func testOfficeExtensionsMapToOffice() {
+        for ext in ["hwp", "hwpx", "hwpml", "doc", "docx", "xls", "xlsx"] {
+            XCTAssertEqual(kind("file.\(ext)"), .office, "\(ext) should be office")
+        }
+    }
+
+    func testOfficeUppercaseMapsToOffice() {
+        XCTAssertEqual(kind("문서.HWP"), .office)
+        XCTAssertEqual(kind("Sheet.XLSX"), .office)
+    }
+
+    func testPdfStillPdfAndImageUnchanged() {
+        XCTAssertEqual(kind("a.pdf"), .pdf)
+        XCTAssertEqual(kind("a.png"), .image)
+        XCTAssertEqual(kind("a.md"), .markdown)
+    }
 }
