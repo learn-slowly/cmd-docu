@@ -1144,7 +1144,9 @@ final class AppState {
         return results
     }
 
-    private func performSearch(query: String, in folder: URL) async -> [SearchResult] {
+    private func performSearch(query: String, in folder: URL,
+                              includeFilenames: Bool = true,
+                              includePDFBody: Bool = true) async -> [SearchResult] {
         var results: [SearchResult] = []
         let fileManager = FileManager.default
 
@@ -1162,10 +1164,11 @@ final class AppState {
         let fileURLs = enumerator.allObjects.compactMap { $0 as? URL }
 
         for fileURL in fileURLs {
+            if Task.isCancelled { return results }
             guard Self.isListableInFileTree(fileURL) else { continue }
 
-            // 1) 파일명 매칭(모든 종류: md/txt·이미지·pdf)
-            if let nameHit = Self.filenameMatch(fileURL, query: query) {
+            // 1) 파일명 매칭(모든 종류: md/txt·이미지·pdf) — Omnisearch는 끔
+            if includeFilenames, let nameHit = Self.filenameMatch(fileURL, query: query) {
                 results.append(nameHit)
                 if results.count >= maxResults { return results }
             }
@@ -1180,10 +1183,11 @@ final class AppState {
                         if results.count >= maxResults { return results }
                     }
                 }
-            // 3) PDF 본문(페이지별 추출 → .pdfPage)
-            } else if DocumentKind.pdfExtensions.contains(ext) {
+            // 3) PDF 본문(페이지별 추출 → .pdfPage) — Omnisearch는 끔(실시간 추출 방지)
+            } else if includePDFBody, DocumentKind.pdfExtensions.contains(ext) {
                 if let pdf = PDFDocument(url: fileURL) {
                     for pageIndex in 0..<pdf.pageCount {
+                        if Task.isCancelled { return results }
                         guard let page = pdf.page(at: pageIndex),
                               let pageText = page.string else { continue }
                         for hit in Self.contentLineMatches(in: pageText, fileURL: fileURL, query: query) {
@@ -1212,9 +1216,12 @@ final class AppState {
     }
 
     /// Content search over the open folder, used by Omnisearch.
+    /// Omnisearch는 타이핑 중 실시간 검색이라 파일명·PDF 본문은 제외하고
+    /// 텍스트 줄(.line) 결과만 받는다(성능·라벨/scrollToLine 정합).
     func searchContent(query: String) async -> [SearchResult] {
         guard let folder = currentFolder, !query.isEmpty else { return [] }
-        return await performSearch(query: query, in: folder)
+        return await performSearch(query: query, in: folder,
+                                   includeFilenames: false, includePDFBody: false)
     }
 
     // MARK: - Vaults
