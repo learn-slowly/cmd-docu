@@ -291,6 +291,8 @@ struct SearchResultsList: View {
                                                           scrollToPDFPage: result.lineNumber)
                                 case .filename:
                                     appState.openDocument(at: result.fileURL, inNewTab: true)
+                                case .officeBody:
+                                    appState.openDocument(at: result.fileURL, inNewTab: true)
                                 }
                             }
                     }
@@ -319,6 +321,7 @@ struct SearchResultRow: View {
         case .filename: return "이름"
         case .line:     return "Line \(result.lineNumber)"
         case .pdfPage:  return "p.\(result.lineNumber)"
+        case .officeBody: return "내용"
         }
     }
 

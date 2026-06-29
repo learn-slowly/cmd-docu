@@ -25,4 +25,12 @@ final class SearchResultKindTests: XCTestCase {
         XCTAssertEqual(p.kind, .pdfPage)
         XCTAssertEqual(p.lineNumber, 5)
     }
+
+    func testOfficeBodyKindPreserved() {
+        let s = SearchResult(fileURL: URL(fileURLWithPath: "/tmp/report.hwp"),
+                             lineNumber: 7, lineContent: "예산 내용 줄",
+                             matchRange: rangeIn("예산 내용 줄"), kind: .officeBody)
+        XCTAssertEqual(s.kind, .officeBody)
+        XCTAssertEqual(s.lineNumber, 7)
+    }
 }
