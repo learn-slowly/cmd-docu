@@ -286,6 +286,9 @@ struct EditorPane: View {
             onSelectionChange: { line, column in
                 appState.updateCursorPosition(line: line, column: column)
             },
+            onSelectedTextChange: { selected in
+                appState.currentSelectionText = selected
+            },
             completionsProvider: { context in
                 CompletionService.completions(
                     for: context,

@@ -213,6 +213,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
     let scrollSyncEnabled: Bool
     var onImageDrop: ((URL) -> Void)?
     var onSelectionChange: ((Int, Int) -> Void)?
+    var onSelectedTextChange: ((String) -> Void)?
     var completionsProvider: ((CompletionContext) -> [CompletionItem])?
 
     /// Clamp previously-selected ranges to the current text, measuring in UTF-16
@@ -665,9 +666,15 @@ struct MarkdownTextEditor: NSViewRepresentable {
         }
 
         private func reportSelection(of textView: NSTextView) {
+            let range = textView.selectedRange()
+            if let onSelectedTextChange = parent.onSelectedTextChange {
+                let selected = range.length > 0
+                    ? (textView.string as NSString).substring(with: range)
+                    : ""
+                onSelectedTextChange(selected)
+            }
             guard let onSelectionChange = parent.onSelectionChange else { return }
-            let location = textView.selectedRange().location
-            let (line, column) = lineIndex.lineAndColumn(at: location)
+            let (line, column) = lineIndex.lineAndColumn(at: range.location)
             onSelectionChange(line, column)
         }
 
