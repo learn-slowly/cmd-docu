@@ -1,6 +1,6 @@
 import Foundation
 
-/// 파일 확장자 → 문서 종류 단일 판별원. PDF·오피스는 이후 Phase에서 케이스만 추가한다.
+/// 파일 확장자 → 문서 종류 단일 판별원.
 enum DocumentKind: String, Codable {
     case markdown
     case image
