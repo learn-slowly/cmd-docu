@@ -4,6 +4,8 @@ struct ContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.colorScheme) private var systemColorScheme
     @State private var hostWindow: NSWindow?
+    /// 드래그 시작 시점의 Claude 패널 너비(제스처 동안 고정 기준).
+    @State private var claudeDragStartWidth: CGFloat?
     
     private var effectiveColorScheme: ColorScheme? {
         switch appState.settings.theme {
@@ -119,8 +121,13 @@ struct ContentView: View {
                     .gesture(
                         DragGesture()
                             .onChanged { value in
-                                let next = appState.claudePanelWidth - value.translation.width
-                                appState.claudePanelWidth = min(600, max(280, next))
+                                // 드래그 시작 너비를 한 번만 캡처해 그 기준에서 계산한다.
+                                let start = claudeDragStartWidth ?? appState.claudePanelWidth
+                                if claudeDragStartWidth == nil { claudeDragStartWidth = start }
+                                appState.claudePanelWidth = min(600, max(280, start - value.translation.width))
+                            }
+                            .onEnded { _ in
+                                claudeDragStartWidth = nil
                             }
                     )
 
