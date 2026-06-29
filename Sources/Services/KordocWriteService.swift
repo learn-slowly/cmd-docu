@@ -12,9 +12,11 @@ actor KordocWriteService {
     private let timeout: TimeInterval = 120
 
     /// 두 URL이 (심볼릭 링크·상대 요소 정규화 후) 같은 파일을 가리키는가.
+    /// macOS 기본 파일시스템이 대소문자를 가리지 않으므로 비교도 대소문자를 무시한다.
     static func isSameFile(_ a: URL, _ b: URL) -> Bool {
-        a.standardizedFileURL.resolvingSymlinksInPath().path
-            == b.standardizedFileURL.resolvingSymlinksInPath().path
+        let pa = a.standardizedFileURL.resolvingSymlinksInPath().path
+        let pb = b.standardizedFileURL.resolvingSymlinksInPath().path
+        return pa.compare(pb, options: .caseInsensitive) == .orderedSame
     }
 
     /// 편집 마크다운을 임시 .md로 적고 `kordoc patch <원본> <임시.md> -o <출력>`을 실행한다.
