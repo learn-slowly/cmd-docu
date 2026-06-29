@@ -57,17 +57,20 @@ actor ClaudeService {
             throw ClaudeError.toolNotFound
         }
 
-        // 컨텍스트를 stdin으로 주입하고 닫는다.
-        if let data = stdin.data(using: .utf8), !data.isEmpty {
-            stdinPipe.fileHandleForWriting.write(data)
-        }
-        stdinPipe.fileHandleForWriting.closeFile()
-
-        // 파이프 버퍼가 차서 교착되지 않게 stdout/stderr를 백그라운드에서 비운다.
+        // 파이프 버퍼가 차서 교착되지 않게 stdout/stderr 드레인을 먼저 시작한다.
         let outHandle = stdoutPipe.fileHandleForReading
         let errHandle = stderrPipe.fileHandleForReading
         async let outData = Task.detached { outHandle.readDataToEndOfFile() }.value
         async let errData = Task.detached { errHandle.readDataToEndOfFile() }.value
+
+        // 컨텍스트를 stdin으로 주입하고 닫는다. write가 블록돼도 위 드레인이
+        // 동시에 돌도록 별도 스레드에서 처리해 교착을 막는다.
+        let stdinHandle = stdinPipe.fileHandleForWriting
+        let stdinData = stdin.data(using: .utf8) ?? Data()
+        Task.detached {
+            if !stdinData.isEmpty { stdinHandle.write(stdinData) }
+            stdinHandle.closeFile()
+        }
 
         // 타임아웃 감시(협조적 폴링).
         let deadline = Date().addingTimeInterval(timeout)
