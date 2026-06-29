@@ -359,16 +359,27 @@ final class AppState {
         }
     }
 
-    func openDocument(at url: URL, inNewTab: Bool = false, scrollToLine line: Int? = nil) {
+    func openDocument(at url: URL, inNewTab: Bool = false,
+                      scrollToLine line: Int? = nil, scrollToPDFPage pdfPage: Int? = nil) {
         if let existingTab = tabs.first(where: { $0.fileURL == url }) {
             activeTabId = existingTab.id
             if let line { scrollEditor(toLine: line) }
+            if let pdfPage { scrollPDF(toPage: pdfPage, url: url) }
             return
         }
 
         Task { @MainActor in
             await loadAndActivateDocument(at: url, inNewTab: inNewTab)
             if let line { scrollEditor(toLine: line) }
+            if let pdfPage { scrollPDF(toPage: pdfPage, url: url) }
+        }
+    }
+
+    /// PDF 탭이 떠서 PDFReaderView가 구독을 마칠 시간을 준 뒤 페이지 점프 노티 게시.
+    private func scrollPDF(toPage page: Int, url: URL) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NotificationCenter.default.post(name: .scrollToPDFPage,
+                                            object: PDFPageJump(url: url, page: page))
         }
     }
 

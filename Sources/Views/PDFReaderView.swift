@@ -38,6 +38,29 @@ struct PDFReaderView: NSViewRepresentable {
         var lastQuery: String = ""
         var didSetDividerPosition = false
 
+        private var observers: [NSObjectProtocol] = []
+
+        override init() {
+            super.init()
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(
+                forName: .scrollToPDFPage, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let self,
+                      let jump = note.object as? PDFPageJump,
+                      jump.url == self.currentURL,
+                      let pdfView = self.pdfView,
+                      let document = pdfView.document,
+                      jump.page >= 1, jump.page <= document.pageCount,
+                      let page = document.page(at: jump.page - 1) else { return }
+                pdfView.go(to: page)
+            })
+        }
+
+        deinit {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+        }
+
         /// url로 문서를 로드해 container의 뷰 트리를 구성한다. 재호출 가능(탭 전환·재시도).
         /// 실패해도 container 자체는 유지하고 플레이스홀더만 넣으므로, 이후 유효 URL 전환이 정상 복구된다.
         func load(url: URL) {
@@ -193,4 +216,15 @@ struct PDFReaderView: NSViewRepresentable {
             pdfView.layoutDocumentView()
         }
     }
+}
+
+/// 검색 결과(PDF 본문)에서 특정 페이지로 이동 요청. object로 PDFPageJump를 싣는다.
+extension Notification.Name {
+    static let scrollToPDFPage = Notification.Name("scrollToPDFPage")
+}
+
+/// 어떤 PDF의 몇 페이지로 갈지(1-base). 여러 PDF 탭 중 url로 대상 식별.
+struct PDFPageJump {
+    let url: URL
+    let page: Int
 }
