@@ -46,6 +46,7 @@ struct EditorTab: Identifiable, Equatable, Codable {
     var isDirty: Bool
     var scrollPosition: CGFloat
     var cursorPosition: Int
+    var kind: DocumentKind
 
     init(
         id: UUID = UUID(),
@@ -55,7 +56,8 @@ struct EditorTab: Identifiable, Equatable, Codable {
         isPinned: Bool = false,
         isDirty: Bool = false,
         scrollPosition: CGFloat = 0,
-        cursorPosition: Int = 0
+        cursorPosition: Int = 0,
+        kind: DocumentKind = .markdown
     ) {
         self.id = id
         self.documentId = documentId
@@ -65,6 +67,7 @@ struct EditorTab: Identifiable, Equatable, Codable {
         self.isDirty = isDirty
         self.scrollPosition = scrollPosition
         self.cursorPosition = cursorPosition
+        self.kind = kind
     }
 
     var displayTitle: String {
@@ -72,6 +75,21 @@ struct EditorTab: Identifiable, Equatable, Codable {
             return url.deletingPathExtension().lastPathComponent
         }
         return title.isEmpty ? "Untitled" : title
+    }
+
+    // 구버전 세션 JSON엔 `kind` 키가 없으므로 기본 .markdown 으로 디코딩.
+    // (커스텀 init(from:)만 제공하면 encode(to:)는 합성된다.)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        documentId = try c.decode(UUID.self, forKey: .documentId)
+        fileURL = try c.decodeIfPresent(URL.self, forKey: .fileURL)
+        title = try c.decode(String.self, forKey: .title)
+        isPinned = try c.decode(Bool.self, forKey: .isPinned)
+        isDirty = try c.decode(Bool.self, forKey: .isDirty)
+        scrollPosition = try c.decode(CGFloat.self, forKey: .scrollPosition)
+        cursorPosition = try c.decode(Int.self, forKey: .cursorPosition)
+        kind = try c.decodeIfPresent(DocumentKind.self, forKey: .kind) ?? .markdown
     }
 }
 
