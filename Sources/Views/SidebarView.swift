@@ -282,8 +282,16 @@ struct SearchResultsList: View {
                         SearchResultRow(result: result)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                // Jump straight to the matched line, not just the file.
-                                appState.openDocument(at: result.fileURL, inNewTab: true, scrollToLine: result.lineNumber)
+                                switch result.kind {
+                                case .line:
+                                    appState.openDocument(at: result.fileURL, inNewTab: true,
+                                                          scrollToLine: result.lineNumber)
+                                case .pdfPage:
+                                    appState.openDocument(at: result.fileURL, inNewTab: true,
+                                                          scrollToPDFPage: result.lineNumber)
+                                case .filename:
+                                    appState.openDocument(at: result.fileURL, inNewTab: true)
+                                }
                             }
                     }
                 } header: {
@@ -305,11 +313,19 @@ struct SearchResultsList: View {
 
 struct SearchResultRow: View {
     let result: SearchResult
-    
+
+    private var badge: String {
+        switch result.kind {
+        case .filename: return "이름"
+        case .line:     return "Line \(result.lineNumber)"
+        case .pdfPage:  return "p.\(result.lineNumber)"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text("Line \(result.lineNumber)")
+                Text(badge)
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 4)
@@ -318,7 +334,7 @@ struct SearchResultRow: View {
                     .cornerRadius(3)
                 Spacer()
             }
-            
+
             Text(result.lineContent)
                 .font(.system(size: 11))
                 .lineLimit(2)
