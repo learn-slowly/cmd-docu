@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import UniformTypeIdentifiers
+import PDFKit
 
 @Observable
 final class AppState {
@@ -285,7 +286,7 @@ final class AppState {
     func openFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md")!,
-                                     .png, .jpeg, .heic, .webP, .gif]
+                                     .png, .jpeg, .heic, .webP, .gif, .pdf]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
@@ -358,16 +359,27 @@ final class AppState {
         }
     }
 
-    func openDocument(at url: URL, inNewTab: Bool = false, scrollToLine line: Int? = nil) {
+    func openDocument(at url: URL, inNewTab: Bool = false,
+                      scrollToLine line: Int? = nil, scrollToPDFPage pdfPage: Int? = nil) {
         if let existingTab = tabs.first(where: { $0.fileURL == url }) {
             activeTabId = existingTab.id
             if let line { scrollEditor(toLine: line) }
+            if let pdfPage { scrollPDF(toPage: pdfPage, url: url) }
             return
         }
 
         Task { @MainActor in
             await loadAndActivateDocument(at: url, inNewTab: inNewTab)
             if let line { scrollEditor(toLine: line) }
+            if let pdfPage { scrollPDF(toPage: pdfPage, url: url) }
+        }
+    }
+
+    /// PDF 탭이 떠서 PDFReaderView가 구독을 마칠 시간을 준 뒤 페이지 점프 노티 게시.
+    private func scrollPDF(toPage page: Int, url: URL) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NotificationCenter.default.post(name: .scrollToPDFPage,
+                                            object: PDFPageJump(url: url, page: page))
         }
     }
 
@@ -394,12 +406,13 @@ final class AppState {
             return
         }
 
-        // 이미지: MarkdownDocument/워처/originalContents 없이 탭만.
-        if DocumentKind(from: url) == .image {
+        // 이미지·PDF: MarkdownDocument/워처/originalContents 없이 탭만.
+        let kind = DocumentKind(from: url)
+        if kind == .image || kind == .pdf {
             let tab = EditorTab(
                 fileURL: url,
                 title: url.deletingPathExtension().lastPathComponent,
-                kind: .image
+                kind: kind
             )
             placeTab(tab, inNewTab: inNewTab)
             addToRecentFiles(url)
@@ -630,13 +643,13 @@ final class AppState {
         fileTree = buildFileTree(at: folder)
     }
 
-    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지.
-    /// 이미지 확장자는 DocumentKind.imageExtensions(단일 판별원)를 따른다.
-    /// (PDF·오피스 등은 해당 Phase에서 여기 추가한다.)
+    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF.
+    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions(단일 판별원)를 따른다.
     static func isListableInFileTree(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown" || ext == "txt"
             || DocumentKind.imageExtensions.contains(ext)
+            || DocumentKind.pdfExtensions.contains(ext)
     }
 
     private func buildFileTree(at url: URL, depth: Int = 0) -> [FileTreeItem] {
@@ -1108,7 +1121,32 @@ final class AppState {
         }
     }
 
-    private func performSearch(query: String, in folder: URL) async -> [SearchResult] {
+    /// 파일명에 query(대소문자 무시)가 들어있으면 .filename 결과를 만든다.
+    static func filenameMatch(_ url: URL, query: String) -> SearchResult? {
+        guard !query.isEmpty else { return nil }
+        let name = url.lastPathComponent
+        guard let range = name.range(of: query, options: .caseInsensitive) else { return nil }
+        return SearchResult(fileURL: url, lineNumber: 0, lineContent: name,
+                            matchRange: range, kind: .filename)
+    }
+
+    /// text의 각 줄에서 query(대소문자 무시) 첫 위치를 찾아 .line 결과(줄번호 1-base)로.
+    static func contentLineMatches(in text: String, fileURL: URL, query: String) -> [SearchResult] {
+        guard !query.isEmpty else { return [] }
+        var results: [SearchResult] = []
+        let lines = text.components(separatedBy: .newlines)
+        for (index, line) in lines.enumerated() {
+            if let range = line.range(of: query, options: .caseInsensitive) {
+                results.append(SearchResult(fileURL: fileURL, lineNumber: index + 1,
+                                            lineContent: line, matchRange: range, kind: .line))
+            }
+        }
+        return results
+    }
+
+    private func performSearch(query: String, in folder: URL,
+                              includeFilenames: Bool = true,
+                              includePDFBody: Bool = true) async -> [SearchResult] {
         var results: [SearchResult] = []
         let fileManager = FileManager.default
 
@@ -1118,33 +1156,54 @@ final class AppState {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return [] }
 
-        let lowercaseQuery = query.lowercased()
         let maxResults = 500
+        let textExtensions: Set<String> = ["md", "markdown", "txt"]
 
         // Pull all URLs up front: iterating an enumerator directly is a
         // makeIterator call that's unavailable from async contexts in Swift 6.
         let fileURLs = enumerator.allObjects.compactMap { $0 as? URL }
+
         for fileURL in fileURLs {
-            guard fileURL.pathExtension.lowercased() == "md" || fileURL.pathExtension.lowercased() == "markdown" else { continue }
+            if Task.isCancelled { return results }
+            guard Self.isListableInFileTree(fileURL) else { continue }
 
-            do {
-                let content = try String(contentsOf: fileURL, encoding: .utf8)
-                let lines = content.components(separatedBy: .newlines)
+            // 1) 파일명 매칭(모든 종류: md/txt·이미지·pdf) — Omnisearch는 끔
+            if includeFilenames, let nameHit = Self.filenameMatch(fileURL, query: query) {
+                results.append(nameHit)
+                if results.count >= maxResults { return results }
+            }
 
-                for (index, line) in lines.enumerated() {
-                    if let range = line.lowercased().range(of: lowercaseQuery) {
-                        results.append(SearchResult(
-                            fileURL: fileURL,
-                            lineNumber: index + 1,
-                            lineContent: line,
-                            matchRange: range
-                        ))
+            let ext = fileURL.pathExtension.lowercased()
+
+            // 2) 텍스트 본문(md/markdown/txt)
+            if textExtensions.contains(ext) {
+                if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+                    for hit in Self.contentLineMatches(in: content, fileURL: fileURL, query: query) {
+                        results.append(hit)
                         if results.count >= maxResults { return results }
                     }
                 }
-            } catch {
-                continue
+            // 3) PDF 본문(페이지별 추출 → .pdfPage) — Omnisearch는 끔(실시간 추출 방지)
+            } else if includePDFBody, DocumentKind.pdfExtensions.contains(ext) {
+                if let pdf = PDFDocument(url: fileURL) {
+                    for pageIndex in 0..<pdf.pageCount {
+                        if Task.isCancelled { return results }
+                        guard let page = pdf.page(at: pageIndex),
+                              let pageText = page.string else { continue }
+                        for hit in Self.contentLineMatches(in: pageText, fileURL: fileURL, query: query) {
+                            results.append(SearchResult(
+                                fileURL: fileURL,
+                                lineNumber: pageIndex + 1,        // 페이지 번호(1-base)
+                                lineContent: hit.lineContent,
+                                matchRange: hit.matchRange,
+                                kind: .pdfPage
+                            ))
+                            if results.count >= maxResults { return results }
+                        }
+                    }
+                }
             }
+            // 이미지: 본문 없음 — 파일명 매칭만(위 1번)
         }
 
         return results
@@ -1157,9 +1216,12 @@ final class AppState {
     }
 
     /// Content search over the open folder, used by Omnisearch.
+    /// Omnisearch는 타이핑 중 실시간 검색이라 파일명·PDF 본문은 제외하고
+    /// 텍스트 줄(.line) 결과만 받는다(성능·라벨/scrollToLine 정합).
     func searchContent(query: String) async -> [SearchResult] {
         guard let folder = currentFolder, !query.isEmpty else { return [] }
-        return await performSearch(query: query, in: folder)
+        return await performSearch(query: query, in: folder,
+                                   includeFilenames: false, includePDFBody: false)
     }
 
     // MARK: - Vaults

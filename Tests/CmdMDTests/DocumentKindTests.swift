@@ -33,4 +33,16 @@ final class DocumentKindTests: XCTestCase {
             XCTAssertEqual(kind("a.\(ext)"), .image)
         }
     }
+
+    func testPdfMapsToPdf() {
+        XCTAssertEqual(kind("doc.pdf"), .pdf)
+        XCTAssertEqual(kind("REPORT.PDF"), .pdf)
+        XCTAssertEqual(kind("Paper.Pdf"), .pdf)
+    }
+
+    func testPdfExtensionsSetMatchesMapping() {
+        for ext in DocumentKind.pdfExtensions {
+            XCTAssertEqual(kind("a.\(ext)"), .pdf)
+        }
+    }
 }

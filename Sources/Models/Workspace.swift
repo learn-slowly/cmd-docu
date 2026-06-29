@@ -161,19 +161,29 @@ struct FileTreeItem: Identifiable, Hashable {
 
 // MARK: - Search
 
+/// 검색 결과 한 건의 종류 — 파일명 매칭 / 텍스트 줄 / PDF 페이지.
+enum SearchMatchKind: Equatable {
+    case filename
+    case line
+    case pdfPage
+}
+
 struct SearchResult: Identifiable {
     let id: UUID
     let fileURL: URL
     let lineNumber: Int
     let lineContent: String
     let matchRange: Range<String.Index>
+    let kind: SearchMatchKind
 
-    init(fileURL: URL, lineNumber: Int, lineContent: String, matchRange: Range<String.Index>) {
+    init(fileURL: URL, lineNumber: Int, lineContent: String,
+         matchRange: Range<String.Index>, kind: SearchMatchKind = .line) {
         self.id = UUID()
         self.fileURL = fileURL
         self.lineNumber = lineNumber
         self.lineContent = lineContent
         self.matchRange = matchRange
+        self.kind = kind
     }
 
     var fileName: String {
