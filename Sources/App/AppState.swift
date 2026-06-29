@@ -190,6 +190,16 @@ final class AppState {
         settings.keyBindings[shortcut.rawValue] ?? shortcut.defaultBinding
     }
 
+    /// 편집 저장의 기본 출력 경로: 원본과 같은 폴더에 "<이름> (편집).<확장자>", 충돌 시 uniquify.
+    /// 원본은 절대 건드리지 않으므로 항상 새 경로를 돌려준다.
+    static func patchedOutputURL(for original: URL) -> URL {
+        let ext = original.pathExtension
+        let base = original.deletingPathExtension().lastPathComponent
+        let folder = original.deletingLastPathComponent()
+        let name = ext.isEmpty ? "\(base) (편집)" : "\(base) (편집).\(ext)"
+        return folder.appendingPathComponent(name).uniquified()
+    }
+
     // MARK: - Claude 연동
 
     /// 선택영역은 마크다운 탭에서만 컨텍스트로 쓴다. 다른 종류 탭에선 이전 마크다운
