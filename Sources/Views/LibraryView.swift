@@ -170,15 +170,16 @@ struct LibraryGridCell: View {
     @Environment(AppState.self) private var appState
     let item: FileTreeItem
 
+    @State private var thumbnail: NSImage?
+
     private var paraCategory: ParaCategory {
         ParaLens.classify(item.url, under: appState.currentFolder)
     }
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: cellIcon)
-                .font(.system(size: 32))
-                .foregroundStyle(iconColor)
+            imageArea
+                .frame(width: 64, height: 64)
 
             Text(item.name)
                 .font(.caption)
@@ -190,6 +191,25 @@ struct LibraryGridCell: View {
         .frame(maxWidth: .infinity)
         .opacity(paraCategory == .archive ? 0.45 : 1.0)
         .contentShape(Rectangle())
+        .task(id: item.url) {
+            // 파일만 썸네일 생성(폴더는 폴더 아이콘 유지). 셀이 사라지면 .task가 취소된다.
+            guard !item.isDirectory else { return }
+            thumbnail = await ThumbnailService.shared.thumbnail(for: item.url, pointSize: 64, scale: 2)
+        }
+    }
+
+    @ViewBuilder
+    private var imageArea: some View {
+        if !item.isDirectory, let thumbnail {
+            Image(nsImage: thumbnail)
+                .resizable()
+                .scaledToFit()
+                .cornerRadius(4)
+        } else {
+            Image(systemName: cellIcon)
+                .font(.system(size: 32))
+                .foregroundStyle(iconColor)
+        }
     }
 
     private var cellIcon: String {
