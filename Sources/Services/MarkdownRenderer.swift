@@ -654,6 +654,22 @@ class MarkdownRenderer {
     }
 
     private func hljsIncludes(theme: String) -> String {
+        // 로컬 번들 자산 우선 (인라인 주입 — baseURL 불변, 오프라인 동작).
+        // 없으면 기존 CDN으로 폴백(graceful — swift run·미패키지 환경 대비).
+        switch theme {
+        case "github":
+            if let block = LocalWebAssets.hljsBlock(
+                js: LocalWebAssets.highlightJS,
+                cssLight: LocalWebAssets.highlightCSSLight,
+                cssDark: LocalWebAssets.highlightCSSDark
+            ) {
+                return block
+            }
+        default:
+            break
+        }
+
+        // CDN 폴백 (로컬 자산 없거나 github 외 테마)
         let base = "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build"
         let styleLinks: String
         switch theme {
