@@ -367,18 +367,38 @@ struct FileTreeItemRow: View {
     @ViewBuilder
     private var rowContent: some View {
         if item.isDirectory {
-            DisclosureGroup(isExpanded: Binding(
-                get: { appState.expandedFolders.contains(item.url) },
-                set: { _ in appState.toggleFolderExpansion(item.url) }
-            )) {
-                ForEach(ParaLens.sorted(item.children, under: appState.currentFolder)) { child in
-                    FileTreeItemRow(item: child)
+            // 폴더: chevron 버튼(펼침만) + 라벨 탭(폴더 선택→라이브러리) 수동 분리
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 4) {
+                    // chevron — 펼침/접힘만. 폴더 선택·모드 전환 없음.
+                    Button {
+                        appState.toggleFolderExpansion(item.url)
+                    } label: {
+                        Image(systemName: appState.expandedFolders.contains(item.url)
+                              ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14, height: 14)
+                    }
+                    .buttonStyle(.plain)
+
+                    // 라벨 탭 = 폴더 선택(라이브러리 모드 전환)
+                    labelRow
+                        .onTapGesture {
+                            appState.selectFolderForLibrary(item.url)
+                        }
                 }
-            } label: {
-                labelRow
-            }
-            .contextMenu {
-                FileTreeContextMenu(item: item)
+                .contextMenu {
+                    FileTreeContextMenu(item: item)
+                }
+
+                // 자식: 펼쳐진 경우만 표시, 들여쓰기 12pt
+                if appState.expandedFolders.contains(item.url) {
+                    ForEach(ParaLens.sorted(item.children, under: appState.currentFolder)) { child in
+                        FileTreeItemRow(item: child)
+                            .padding(.leading, 12)
+                    }
+                }
             }
         } else {
             labelRow
