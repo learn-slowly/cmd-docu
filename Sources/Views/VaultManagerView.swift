@@ -12,12 +12,14 @@ struct VaultManagerView: View {
         case vaults = "Vaults"
         case templates = "Templates"
         case rules = "Routing Rules"
+        case para = "PARA"
 
         var icon: String {
             switch self {
             case .vaults: return "folder"
             case .templates: return "doc.on.doc"
             case .rules: return "arrow.triangle.branch"
+            case .para: return "sparkles"
             }
         }
     }
@@ -55,6 +57,8 @@ struct VaultManagerView: View {
                 TemplatesManagerPane()
             case .rules:
                 RulesManagerPane()
+            case .para:
+                ParaManagerPane()
             }
         }
         .frame(width: 760, height: 540)
@@ -945,6 +949,75 @@ struct AddVaultSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - PARA 라우팅
+
+/// PARA 볼트·폴더 목록·자동 라우팅 토글을 관리한다. 변경은 saveUserData로 영속.
+struct ParaManagerPane: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        @Bindable var state = appState
+        Form {
+            Section("PARA 볼트") {
+                Picker("볼트", selection: $state.settings.paraVaultId) {
+                    Text("선택 안 함").tag(nil as UUID?)
+                    ForEach(appState.vaults) { vault in
+                        Text(vault.displayName).tag(vault.id as UUID?)
+                    }
+                }
+                .onChange(of: state.settings.paraVaultId) { appState.saveUserData() }
+                Text("Claude가 제안하는 폴더는 이 볼트 기준 상대 경로입니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("폴더 목록") {
+                if appState.settings.paraFolders.isEmpty {
+                    Text("폴더가 없습니다. 아래 '기본 구조 채우기'로 시작하거나 직접 추가하세요.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach($state.settings.paraFolders) { $folder in
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("라벨", text: $folder.label)
+                        TextField("폴더 경로(예: 10000_Projects/Build_and_Deploy)", text: $folder.folder)
+                        TextField("힌트(분류 설명)", text: $folder.hint)
+                    }
+                    .padding(.vertical, 2)
+                }
+                .onDelete { idx in
+                    state.settings.paraFolders.remove(atOffsets: idx)
+                    appState.saveUserData()
+                }
+                HStack {
+                    Button("폴더 추가") {
+                        state.settings.paraFolders.append(ParaFolder(label: "새 폴더", folder: ""))
+                        appState.saveUserData()
+                    }
+                    Button("기본 구조 채우기") {
+                        // 비었을 때만 시드로 채운다(기존 항목 보존).
+                        if state.settings.paraFolders.isEmpty {
+                            state.settings.paraFolders = ParaFolder.legoSeed()
+                        } else {
+                            state.settings.paraFolders.append(contentsOf: ParaFolder.legoSeed())
+                        }
+                        appState.saveUserData()
+                    }
+                    Spacer()
+                    Button("저장") { appState.saveUserData() }
+                }
+            }
+
+            Section("자동 라우팅") {
+                Toggle("규칙 미매칭 시 Claude에게 자동으로 제안 받기", isOn: $state.settings.claudeRoutingEnabled)
+                    .onChange(of: state.settings.claudeRoutingEnabled) { appState.saveUserData() }
+                Text("켜도 이동 전 Send 시트로 제안을 확인합니다(무단 이동 없음). 기본 OFF.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
     }
 }
 
