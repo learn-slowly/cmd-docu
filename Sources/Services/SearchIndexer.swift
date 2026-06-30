@@ -13,7 +13,8 @@ actor SearchIndexer {
 
     /// URL을 정규 경로로 변환한다(예: /var → /private/var).
     /// 파일이 없으면 부모 디렉터리를 기준으로 해소한다.
-    private func canonical(_ url: URL) -> URL {
+    /// Task 6(AppState 배선)에서 등록 폴더 경로를 동일 방식으로 정규화할 수 있도록 static으로 공개.
+    static func canonicalURL(_ url: URL) -> URL {
         // 존재하는 경우 직접 canonicalPath를 얻는다.
         if let c = try? url.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath {
             return URL(fileURLWithPath: c, isDirectory: false)
@@ -30,7 +31,7 @@ actor SearchIndexer {
     func indexFolder(_ folder: URL, progress: ((Int, Int) -> Void)?) async {
         // 폴더의 정규 경로를 구한다. enumerator도 동일 정규 경로를 반환하므로
         // indexedPaths prefix와 일치한다.
-        let canonicalFolder = canonical(folder)
+        let canonicalFolder = Self.canonicalURL(folder)
         let fm = FileManager.default
         guard let en = fm.enumerator(at: canonicalFolder,
                                      includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
@@ -60,7 +61,7 @@ actor SearchIndexer {
     /// 단일 경로 (재)인덱싱. 파일이 없으면 인덱스에서 제거.
     func reindex(path: String) async {
         // 정규 경로로 변환(예: /var → /private/var). 파일이 없어도 부모 기준 해소.
-        let canonicalURL = canonical(URL(fileURLWithPath: path))
+        let canonicalURL = Self.canonicalURL(URL(fileURLWithPath: path))
         let canonicalPath = canonicalURL.path
         let fm = FileManager.default
         var isDir: ObjCBool = false

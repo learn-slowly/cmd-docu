@@ -91,6 +91,13 @@ final class AppState {
     /// 사이드바 폴더 검색 Task(새 검색 시작 시 이전 것을 취소해 낡은 결과 덮어쓰기 방지).
     private var folderSearchTask: Task<Void, Never>?
 
+    // 내용 검색(인덱스) UI 상태
+    var showIndexSearch: Bool = false
+    var indexSearchText: String = ""
+    var indexSearchResults: [IndexHit] = []
+    var indexInProgress: Bool = false
+    var indexProgress: (done: Int, total: Int)? = nil
+
     // Status
     var errorMessage: String?
     var toastMessage: String?
@@ -112,6 +119,11 @@ final class AppState {
     private let kordocWriteService = KordocWriteService()
     private let kordocFillService = KordocFillService()
     private let dataURL: URL
+
+    // 내용 검색(인덱스) — init에서 대입
+    private let searchIndex: SearchIndex
+    private let searchIndexer: SearchIndexer
+    private let folderWatcher = FolderWatcher()
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
     // Computed Properties
@@ -551,9 +563,16 @@ final class AppState {
         fileService = FileService()
         exportService = ExportService()
 
+        // 인덱스·인덱서 초기화(appDir 재사용, kordocService는 기본값으로 이미 초기화).
+        let idx = SearchIndex(dbURL: appDir.appendingPathComponent("searchindex.sqlite"))
+        self.searchIndex = idx
+        self.searchIndexer = SearchIndexer(index: idx, kordoc: kordocService)
+
         AppState.shared = self
 
         loadUserData()
+        // 등록 폴더 파일 감시 시작(앱 시작 시 1회).
+        Task { @MainActor in self.startFolderWatching() }
         restoreSessionIfNeeded()
         rebuildNoteIndex()
         checkForUpdates()   // silent, throttled to once per 6h
@@ -935,6 +954,97 @@ final class AppState {
                 errorMessage = "Failed to reload: \(error.localizedDescription)"
             }
         }
+    }
+
+    // MARK: - 내용 검색(인덱스)
+
+    /// 등록 폴더 목록 정규화: 중복·기존 하위 추가는 무시하고, 새 상위가 기존 하위를 흡수한다.
+    /// 경로는 표준화 후 접두 비교("/a"는 "/a/"로 보고 "/a/sub"를 하위로 본다).
+    static func normalizedIndexFolders(_ existing: [String], adding: String) -> [String] {
+        func norm(_ p: String) -> String { (p as NSString).standardizingPath }
+        let add = norm(adding)
+        func isAncestor(_ anc: String, _ desc: String) -> Bool {
+            desc == anc || desc.hasPrefix(anc.hasSuffix("/") ? anc : anc + "/")
+        }
+        // 이미 등록됐거나 기존 항목의 하위면 변화 없음.
+        for e in existing where isAncestor(norm(e), add) { return existing }
+        // 새 항목의 하위인 기존 항목들을 제거(흡수)하고 새 항목 추가.
+        var kept = existing.filter { !isAncestor(add, norm($0)) }
+        kept.append(add)
+        return kept
+    }
+
+    /// 폴더를 등록 목록에 정규화 추가하고 인덱싱·감시를 시작한다.
+    @MainActor
+    func registerIndexFolder(_ url: URL) {
+        let canonical = SearchIndexer.canonicalURL(url)
+        let next = Self.normalizedIndexFolders(settings.indexedFolders, adding: canonical.path)
+        guard next != settings.indexedFolders else { return }
+        settings.indexedFolders = next
+        saveUserData()
+        startFolderWatching()
+        reindexFolder(canonical.path)
+    }
+
+    /// 등록 해제: 목록에서 빼고 인덱스에서 그 하위를 제거한다(디스크 파일은 불변).
+    @MainActor
+    func unregisterIndexFolder(_ path: String) {
+        settings.indexedFolders.removeAll { $0 == path }
+        saveUserData()
+        startFolderWatching()
+        Task { _ = await searchIndex.removeUnder(folder: path) }
+    }
+
+    /// 한 폴더를 (재)인덱싱한다(진행률 표시).
+    @MainActor
+    func reindexFolder(_ path: String) {
+        indexInProgress = true
+        indexProgress = (0, 0)
+        Task {
+            await searchIndexer.indexFolder(URL(fileURLWithPath: path)) { done, total in
+                Task { @MainActor in self.indexProgress = (done, total) }
+            }
+            await MainActor.run {
+                self.indexInProgress = false
+                self.indexProgress = nil
+                if !self.indexSearchText.isEmpty {
+                    Task { await self.runIndexSearch(query: self.indexSearchText) }
+                }
+            }
+        }
+    }
+
+    /// 인덱스 검색 실행(결과를 indexSearchResults에 채운다).
+    @MainActor
+    func runIndexSearch(query: String) async {
+        guard !query.isEmpty else { indexSearchResults = []; return }
+        let hits = await searchIndex.search(query: query)
+        indexSearchResults = hits
+    }
+
+    /// 결과 경로를 연다.
+    @MainActor
+    func openIndexHit(_ hit: IndexHit) {
+        let url = URL(fileURLWithPath: hit.path)
+        showIndexSearch = false
+        Task { await loadAndActivateDocument(at: url, inNewTab: true) }
+    }
+
+    /// 등록 폴더로 파일 감시를 (재)시작한다. 변경 경로를 증분 재인덱싱.
+    @MainActor
+    func startFolderWatching() {
+        folderWatcher.onChangedPaths = { [weak self] paths in
+            guard let self else { return }
+            Task { @MainActor in
+                for p in Set(paths) {
+                    await self.searchIndexer.reindex(path: p)
+                }
+                if !self.indexSearchText.isEmpty {
+                    await self.runIndexSearch(query: self.indexSearchText)
+                }
+            }
+        }
+        folderWatcher.start(folders: settings.indexedFolders)
     }
 
     // MARK: - File Tree
