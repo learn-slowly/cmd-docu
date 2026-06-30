@@ -165,7 +165,7 @@ struct FileTreeView: View {
                     }
 
                     List {
-                        ForEach(ParaLens.sorted(appState.fileTree)) { item in
+                        ForEach(ParaLens.sorted(appState.fileTree, under: appState.currentFolder)) { item in
                             FileTreeItemRow(item: item)
                         }
                     }
@@ -355,14 +355,13 @@ struct FileTreeItemRow: View {
         appState.favorites.contains(where: { $0.url == item.url })
     }
 
-    /// PARA 분류에 따른 행 스타일을 계산한다.
+    /// PARA 분류에 따른 행 스타일을 계산한다. 분류는 현재 폴더(root) 기준.
     private var paraCategory: ParaCategory {
-        ParaLens.classify(item.url)
+        ParaLens.classify(item.url, under: appState.currentFolder)
     }
 
     var body: some View {
         rowContent
-            .opacity(paraCategory == .archive ? 0.45 : 1.0)
     }
 
     @ViewBuilder
@@ -372,38 +371,38 @@ struct FileTreeItemRow: View {
                 get: { appState.expandedFolders.contains(item.url) },
                 set: { _ in appState.toggleFolderExpansion(item.url) }
             )) {
-                ForEach(ParaLens.sorted(item.children)) { child in
+                ForEach(ParaLens.sorted(item.children, under: appState.currentFolder)) { child in
                     FileTreeItemRow(item: child)
                 }
             } label: {
-                HStack(spacing: 4) {
-                    rowLabel
-                    if isFavorited {
-                        Image(systemName: "star.fill")
-                            .font(.caption2)
-                            .foregroundColor(.yellow)
-                    }
-                }
+                labelRow
             }
             .contextMenu {
                 FileTreeContextMenu(item: item)
             }
         } else {
-            HStack(spacing: 4) {
-                rowLabel
-                if isFavorited {
-                    Image(systemName: "star.fill")
-                        .font(.caption2)
-                        .foregroundColor(.yellow)
+            labelRow
+                .onTapGesture {
+                    appState.openDocument(at: item.url, inNewTab: true)
                 }
-            }
-            .onTapGesture {
-                appState.openDocument(at: item.url, inNewTab: true)
-            }
-            .contextMenu {
-                FileTreeContextMenu(item: item)
+                .contextMenu {
+                    FileTreeContextMenu(item: item)
+                }
+        }
+    }
+
+    /// 이 행 자신의 라벨(아이콘+이름+즐겨찾기 별).
+    /// archive면 이 라벨에만 dim을 적용하고 DisclosureGroup 자식에는 상속되지 않는다.
+    private var labelRow: some View {
+        HStack(spacing: 4) {
+            rowLabel
+            if isFavorited {
+                Image(systemName: "star.fill")
+                    .font(.caption2)
+                    .foregroundColor(.yellow)
             }
         }
+        .opacity(paraCategory == .archive ? 0.45 : 1.0)
     }
 
     /// PARA 분류에 따라 스타일을 적용한 Label을 반환한다.

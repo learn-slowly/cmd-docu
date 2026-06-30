@@ -30,12 +30,22 @@ enum ParaLens {
 
     // MARK: 분류
 
-    /// `url` 경로의 PARA 분류를 반환한다.
-    /// 경로 컴포넌트를 앞(최상위)에서부터 스캔해 처음 매칭되는 PARA 접두사로 결정한다.
-    /// 매칭 없으면 `.other`.
-    static func classify(_ url: URL) -> ParaCategory {
-        let components = url.pathComponents
-        for component in components {
+    /// `url`의 PARA 분류. `root`(현재 폴더) 기준 상대 경로만 스캔해 조상의 PARA 접두사는 무시한다.
+    /// (root 자신의 이름은 포함 — Archive 폴더로 직접 진입하면 그 안을 archive로 본다.)
+    /// root가 nil이면 전체 경로 스캔(기존 동작).
+    static func classify(_ url: URL, under root: URL?) -> ParaCategory {
+        let urlComps = url.standardizedFileURL.pathComponents
+        let start: Int
+        if let root {
+            let rootComps = root.standardizedFileURL.pathComponents
+            guard urlComps.count >= rootComps.count,
+                  Array(urlComps.prefix(rootComps.count)) == rootComps else { return .other }
+            // root 자신의 lastPathComponent(index: rootComps.count - 1)부터 스캔
+            start = max(0, rootComps.count - 1)
+        } else {
+            start = 0
+        }
+        for component in urlComps[start...] {
             if component.hasPrefix("10000_") { return .projects }
             if component.hasPrefix("20000_") { return .areas }
             if component.hasPrefix("30000_") { return .resources }
@@ -46,23 +56,17 @@ enum ParaLens {
 
     // MARK: 정렬
 
-    /// 항목 배열을 PARA 순서로 정렬해 반환한다.
+    /// 항목 배열을 PARA 순서로 정렬해 반환한다. 분류는 `root`(현재 폴더) 기준.
     /// 정렬키: `(category.sortRank, isDirectory ? 0 : 1, name localizedStandard)`.
     /// 기존 항목 식별자·children은 그대로 보존된다.
-    static func sorted(_ items: [FileTreeItem]) -> [FileTreeItem] {
+    static func sorted(_ items: [FileTreeItem], under root: URL?) -> [FileTreeItem] {
         items.sorted { lhs, rhs in
-            let lhsCat = classify(lhs.url)
-            let rhsCat = classify(rhs.url)
-
-            if lhsCat.sortRank != rhsCat.sortRank {
-                return lhsCat.sortRank < rhsCat.sortRank
-            }
+            let l = classify(lhs.url, under: root).sortRank
+            let r = classify(rhs.url, under: root).sortRank
+            if l != r { return l < r }
             // 같은 분류: 폴더 먼저
-            let lhsDir = lhs.isDirectory ? 0 : 1
-            let rhsDir = rhs.isDirectory ? 0 : 1
-            if lhsDir != rhsDir {
-                return lhsDir < rhsDir
-            }
+            let ld = lhs.isDirectory ? 0 : 1, rd = rhs.isDirectory ? 0 : 1
+            if ld != rd { return ld < rd }
             // 이름 오름차순
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
