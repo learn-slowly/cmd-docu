@@ -28,9 +28,15 @@ final class AppState {
     /// 메인 에디터 영역 모드(reader = 파일 리더, library = 폴더 라이브러리).
     var mainMode: MainMode = .reader
     /// 라이브러리 뷰가 보여줄 폴더. 기본·리셋값은 currentFolder.
-    var selectedFolder: URL? = nil
-    /// 라이브러리 뷰 레이아웃(grid/list). 전역 1개.
-    var libraryLayout: LibraryLayout = .grid
+    var selectedFolder: URL? = nil {
+        didSet { restoreLibraryLayoutForSelectedFolder() }
+    }
+    /// 라이브러리 뷰 레이아웃(grid/list). 폴더별 기억 포함.
+    var libraryLayout: LibraryLayout = .grid {
+        didSet { persistLibraryLayoutForCurrentFolder(oldValue: oldValue) }
+    }
+    /// 복원 중 libraryLayout didSet이 재저장하지 않도록 막는 플래그.
+    private var isRestoringLayout = false
 
     // File System
     var vaults: [Vault] = []
@@ -668,6 +674,31 @@ final class AppState {
     func selectFolderForLibrary(_ url: URL) {
         selectedFolder = url
         mainMode = .library
+    }
+
+    // MARK: - 폴더별 레이아웃 기억 (Phase 8.5-③)
+
+    /// selectedFolder가 바뀔 때 해당 폴더의 기억된 레이아웃을 복원한다.
+    /// 기억이 없으면 현재 레이아웃을 그대로 유지한다.
+    private func restoreLibraryLayoutForSelectedFolder() {
+        guard let url = selectedFolder else { return }
+        let key = url.standardizedFileURL.path
+        guard let remembered = settings.libraryLayouts[key] else { return }
+        guard remembered != libraryLayout else { return }
+        isRestoringLayout = true
+        libraryLayout = remembered
+        isRestoringLayout = false
+    }
+
+    /// libraryLayout이 바뀔 때 현재 폴더에 레이아웃을 기억하고 즉시 영속한다.
+    /// 복원 중이거나 값이 변하지 않으면 건너뛴다.
+    private func persistLibraryLayoutForCurrentFolder(oldValue: LibraryLayout) {
+        guard !isRestoringLayout else { return }
+        guard oldValue != libraryLayout else { return }
+        guard let url = selectedFolder ?? currentFolder else { return }
+        let key = url.standardizedFileURL.path
+        settings.libraryLayouts[key] = libraryLayout
+        saveUserData()
     }
 
     func openInternalURL(_ url: URL) {
