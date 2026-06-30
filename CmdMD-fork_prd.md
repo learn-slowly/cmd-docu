@@ -80,6 +80,16 @@ CmdMD는 "리뷰 우선" 마크다운 리더이자 Obsidian 볼트 라우터다.
 - **중복 인지**: Desktop Commander와 기능이 겹침. 그래도 리더 안에서 처리하려는 선택.
 - 우선순위: 선택 / 티어 3
 
+### 3.9 PARA 라이브러리 뷰 (리더 ⇄ 라이브러리)
+
+- **설명**: 파일 하나를 여는 "리더" 위에, 폴더를 펼쳐 그 안의 파일을 격자/리스트로 훑는 "라이브러리" 모드를 더한다. PARA를 보내기(라우팅)뿐 아니라 탐색 축으로도 쓴다 — 첨부(사진·PDF·영상·오피스)를 텍스트의 곁다리가 아니라 그 자체로 본다.
+- **모드 토글**: `mainMode`(reader/library)를 툴바 세그먼트로 전환. 하위 보조토글은 모드 따라 교체(리더=Source·Split·Preview, 라이브러리=List·Grid).
+- **동선(절충)**: 파일 클릭→리더, 폴더 클릭→라이브러리 자동전환하되 토글이 우선(덮어쓰기). 관통축은 "현재 폴더".
+- **PARA 렌즈**: 사이드바 트리를 `legoSeed` 기준 그룹·정렬, 경로로 분류 판별(Archive는 차분하게 dim, Projects는 또렷하게).
+- **썸네일**: QuickLook(`QLThumbnailGenerator`)으로 전 종류, lazy 생성+캐시.
+- **경계**: 읽기/탐색 전용 — 파일 이동·삭제는 하지 않는다(정리는 3.8). **Phase 8의 폴더 선택·미리보기 기반을 재사용·확장한다.**
+- 우선순위: 선택 / 티어 3 (Phase 8 다음, 9 앞)
+
 ## 4. 기술 아키텍처
 
 ### 4.1 기술 스택
@@ -121,6 +131,8 @@ DocumentKind:  markdown | pdf | image | office   # office = kordoc 경유 렌더
 SearchIndex (SQLite FTS5):  { path, title, bodyMarkdown, mtime, kind }
 RouteSuggestion:  { folder, filename?, reason }          # 노트 1건 분류
 CleanupPlan:      [ { from, to, action: move|rename, reason } ]
+MainMode:         reader | library                       # 메인 영역 모드(리더/라이브러리)
+LibraryLayout:    list | grid                            # 폴더별 표시 기억(URL→layout)
 ```
 
 - Claude 응답은 영구 저장하지 않음(세션 표시 + 노트 삽입 옵션). 보관은 claude.ai가 아니라 볼트 마크다운으로.
@@ -189,6 +201,8 @@ CleanupPlan:      [ { from, to, action: move|rename, reason } ]
 
 **Phase 8: 폴더 정리 (배치)** — 폴더 선택 → 메타데이터(+모호 파일만 내용) → `CleanupPlan` → 미리보기·승인 → `FileManager` 이동, 로그·undo
 
+**Phase 8.5: PARA 라이브러리 뷰 (리더 ⇄ 라이브러리)** — `AppState.mainMode`(reader/library) + `MainEditorView` 분기 + 툴바 모드 세그먼트(하위토글 Source·Split·Preview ⇄ List·Grid). `selectedFolder` 선택 개념 신설(**Phase 8과 공유** — 폴더 선택·미리보기 기반 재사용). detail에 `LazyVGrid`/`List`(썸네일=QuickLook `QLThumbnailGenerator` lazy+`NSCache`). 사이드바 PARA 렌즈(`legoSeed` 그룹·Archive dim·Projects 또렷). 폴더별 뷰 기억(URL→layout). 클릭이 모드 견인+토글 우선. **읽기 전용(이동은 Phase 8 몫)**. 단계: ①PARA 렌즈 → ②메인 그리드+모드토글 → ③뷰 기억·다듬기.
+
 **Phase 9: 시맨틱 검색 + Claude RAG (LLM-Wiki 질의층)** — (가장 무거움) 임베딩·벡터 인덱스 추가, 하이브리드 검색, Claude로 RAG 답변(근거 문서+위치 표시)
 
 **Phase 10: 다듬기 & 배포** — 단축키·설정 정리, `package_app.sh` 패키징·ad-hoc 서명·격리 해제, README 포크판 갱신(출처·라이선스)
@@ -199,6 +213,7 @@ CleanupPlan:      [ { from, to, action: move|rename, reason } ]
 - 문서 종류가 바뀌어도 탭·사이드바·단축키 경험은 일관. PDF·이미지·HWP·오피스 모두 마크다운처럼 탭으로 열고 닫음.
 - Claude 패널·검색 패널은 토글 가능한 보조 영역. 읽는 문서를 가리지 않게.
 - 라우팅·정리·검색의 파일 변경은 항상 미리보기/확인을 거친다.
+- 리더(파일 한 장 줌인)와 라이브러리(폴더 펼쳐 줌아웃)는 같은 "현재 폴더"를 공유하는 두 시점. 전환은 토글, 클릭이 기본 견인.
 - 색·테마는 원본 CMDS 라이트/다크 유지.
 
 ## 8. LLM-Wiki 연동 (운영 패턴 — 앱 밖)

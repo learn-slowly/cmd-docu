@@ -1382,7 +1382,7 @@ struct FolderCleanupView: View {
         HStack {
             Button("정리 계획 만들기") { Task { await state.runCleanupPlan() } }
                 .disabled(state.cleanupMode == nil || state.cleanupBusy)
-            if let msg = state.claudeErrorMessage { Text(msg).foregroundColor(.red).font(.caption) }
+            if let msg = state.cleanupError { Text(msg).foregroundColor(.red).font(.caption) }
         }
     }
 
