@@ -23,7 +23,8 @@ final class FolderWatcher {
         let created = FSEventStreamCreate(
             kCFAllocatorDefault, cb, &ctx, folders as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer))
+            // UseCFTypes: eventPaths를 CFArray<CFString>로 전달 → fromOpaque 캐스트가 유효해짐
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes))
         guard let created else { return }
         stream = created
         FSEventStreamSetDispatchQueue(created, queue)
