@@ -98,6 +98,14 @@ final class AppState {
     var indexInProgress: Bool = false
     var indexProgress: (done: Int, total: Int)? = nil
 
+    // 폴더 정리(Phase 8) UI 상태
+    var showFolderCleanup: Bool = false
+    var cleanupMode: CleanupMode?
+    var cleanupScheme: CleanupScheme = []
+    var cleanupPlan: CleanupPlan?
+    var cleanupBusy: Bool = false
+    var cleanupBatches: [MoveBatch] = []
+
     // Status
     var errorMessage: String?
     var toastMessage: String?
@@ -118,6 +126,9 @@ final class AppState {
     private let claudeService = ClaudeService()
     private let kordocWriteService = KordocWriteService()
     private let kordocFillService = KordocFillService()
+    private let moveLogStore: MoveLogStore
+    private let cleanupService: CleanupService
+    private let moveExecutor: MoveExecutor
     private let dataURL: URL
 
     // 내용 검색(인덱스) — init에서 대입
@@ -559,6 +570,10 @@ final class AppState {
         let appDir = appSupport.appendingPathComponent("CmdMD")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         dataURL = appDir
+
+        moveLogStore = MoveLogStore(directory: appDir)
+        cleanupService = CleanupService(claude: claudeService, kordoc: kordocService)
+        moveExecutor = MoveExecutor(store: moveLogStore)
 
         fileService = FileService()
         exportService = ExportService()
@@ -1889,6 +1904,76 @@ final class AppState {
     }
 
     // MARK: - Toast
+
+    // MARK: - 폴더 정리 (Phase 8)
+
+    /// subfolder 모드 진입: 시트를 열고 이전 상태를 초기화한다.
+    func startCleanup(folder: URL) {
+        cleanupMode = .subfolder(root: folder)
+        cleanupScheme = []
+        cleanupPlan = nil
+        showFolderCleanup = true
+    }
+
+    /// PARA 모드 진입: 설정된 PARA 폴더를 스킴으로 쓴다.
+    func startCleanupToPara(vault: Vault) {
+        cleanupMode = .para(vault: vault)
+        cleanupScheme = settings.paraFolders.map { CleanupBucket.from(para: $0) }
+        cleanupPlan = nil
+        showFolderCleanup = true
+    }
+
+    /// 현재 모드·스킴으로 배정을 받아 미리보기 plan을 만든다.
+    /// subfolder 모드에서 스킴이 비어 있으면 Claude로 스킴부터 제안한다.
+    func runCleanupPlan() async {
+        guard let mode = cleanupMode else { return }
+        cleanupBusy = true
+        defer { cleanupBusy = false }
+
+        let metas = FileScanner.scan(mode.root)
+        guard !metas.isEmpty else { showToast("정리할 파일이 없습니다"); return }
+
+        do {
+            if cleanupScheme.isEmpty {
+                if case .subfolder = mode {
+                    cleanupScheme = try await cleanupService.proposeScheme(metas: metas)
+                } else {
+                    showToast("PARA 폴더가 설정돼 있지 않습니다"); return
+                }
+            }
+            let assignments = try await cleanupService.assign(scheme: cleanupScheme, metas: metas)
+            cleanupPlan = CleanupPlan(scheme: cleanupScheme,
+                                      moves: CleanupPlanner.buildMoves(from: assignments))
+        } catch let error as ClaudeError {
+            errorMessage = Self.claudeErrorMessage(error)
+        } catch {
+            showToast("Claude 응답을 해석하지 못했습니다")
+        }
+    }
+
+    /// 승인된 move만 실행하고 로그를 갱신한다.
+    func applyCleanup() async {
+        guard let mode = cleanupMode, let plan = cleanupPlan else { return }
+        cleanupBusy = true
+        defer { cleanupBusy = false }
+        let outcome = await moveExecutor.apply(plan: plan, mode: mode)
+        await loadCleanupBatches()
+        cleanupPlan = nil
+        let failedNote = outcome.failed.isEmpty ? "" : ", 실패 \(outcome.failed.count)"
+        showToast("정리 완료: \(outcome.moved)개 이동\(failedNote)")
+    }
+
+    /// 정리 배치를 되돌린다.
+    func undoCleanupBatch(_ batch: MoveBatch) async {
+        let result = await moveExecutor.undo(batch)
+        await loadCleanupBatches()
+        showToast("되돌리기: \(result.restored)개 복귀")
+    }
+
+    /// 영속 로그에서 배치 목록을 불러온다(최신 순).
+    func loadCleanupBatches() async {
+        cleanupBatches = await moveLogStore.load().reversed()
+    }
 
     func showToast(_ message: String) {
         toastMessage = message
