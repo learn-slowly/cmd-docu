@@ -97,6 +97,9 @@ struct AppSettings: Codable, Equatable {
     var paraFolders: [ParaFolder] = []     // Claude가 고를 후보 목록
     var claudeRoutingEnabled: Bool = false // 자동 라우팅 미매칭 시 Claude 사용(기본 OFF)
 
+    // MARK: 내용 검색
+    var indexedFolders: [String] = []      // 내용 검색 인덱스 등록 폴더(절대 경로)
+
     // UI
     var showStatusBar: Bool = true
     var showTabBar: Bool = true
@@ -148,6 +151,7 @@ struct AppSettings: Codable, Equatable {
         paraVaultId = try c.decodeIfPresent(UUID.self, forKey: .paraVaultId) ?? d.paraVaultId
         paraFolders = try c.decodeIfPresent([ParaFolder].self, forKey: .paraFolders) ?? d.paraFolders
         claudeRoutingEnabled = try c.decodeIfPresent(Bool.self, forKey: .claudeRoutingEnabled) ?? d.claudeRoutingEnabled
+        indexedFolders = try c.decodeIfPresent([String].self, forKey: .indexedFolders) ?? d.indexedFolders
         showStatusBar = try c.decodeIfPresent(Bool.self, forKey: .showStatusBar) ?? d.showStatusBar
         showTabBar = try c.decodeIfPresent(Bool.self, forKey: .showTabBar) ?? d.showTabBar
         sidebarWidth = try c.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? d.sidebarWidth
