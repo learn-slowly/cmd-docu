@@ -57,6 +57,11 @@ final class AppState {
     var claudeBusy: Bool = false
     /// 마크다운 에디터의 현재 선택영역 텍스트(없으면 빈 문자열). 질의 컨텍스트 우선순위 1.
     var currentSelectionText: String = ""
+    /// PARA 스마트 라우팅 상태.
+    var claudeRouteInProgress: Bool = false
+    var claudeRouteError: String? = nil
+    /// autoRoute 미매칭 → Send 시트가 onAppear에서 자동 제안하도록 켜는 1회성 플래그.
+    var autoTriggerClaudeRoute: Bool = false
 
     // kordoc patch 편집 상태
     var officeEditing: Set<UUID> = []
@@ -385,6 +390,46 @@ final class AppState {
             return "Claude 호출에 실패했습니다: \(m)"
         default:
             return "Claude 호출에 실패했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - PARA 스마트 라우팅
+
+    /// PARA 볼트와 폴더가 모두 설정됐고 그 볼트가 실제 등록돼 있는가(버튼 활성/가드용).
+    func isParaRoutingConfigured() -> Bool {
+        guard let id = settings.paraVaultId, !settings.paraFolders.isEmpty else { return false }
+        return vaults.contains { $0.id == id }
+    }
+
+    /// 설정된 PARA 볼트 객체(없으면 nil).
+    var paraVault: Vault? {
+        guard let id = settings.paraVaultId else { return nil }
+        return vaults.first { $0.id == id }
+    }
+
+    /// 본문을 Claude에 보내 PARA 폴더 제안을 받는다. 실패 시 claudeRouteError 세팅 후 nil.
+    @MainActor
+    func requestClaudeRoute(noteBody: String) async -> RouteSuggestion? {
+        guard isParaRoutingConfigured() else {
+            claudeRouteError = "설정에서 PARA 볼트와 폴더를 먼저 추가하세요."
+            return nil
+        }
+        claudeRouteError = nil
+        claudeRouteInProgress = true
+        defer { claudeRouteInProgress = false }
+        let dests = settings.paraFolders
+        let prompt = RouteHelper.buildRoutePrompt(destinations: dests)
+        let context = RouteHelper.buildRouteContext(noteBody: noteBody)
+        do {
+            let out = try await claudeService.ask(prompt: prompt, context: context)
+            if let suggestion = RouteHelper.parseRouteSuggestion(out, destinations: dests) {
+                return suggestion
+            }
+            claudeRouteError = "Claude 제안을 해석하지 못했습니다. 직접 골라 주세요."
+            return nil
+        } catch {
+            claudeRouteError = Self.claudeErrorMessage(error)
+            return nil
         }
     }
 
@@ -1672,7 +1717,11 @@ final class AppState {
         guard let document = currentDocument else { return }
         guard let rule = matchingRoutingRule(for: document),
               let vault = vaults.first(where: { $0.id == rule.targetVaultId }) else {
-            showToast("No routing rule matches — opening Send dialog")
+            if settings.claudeRoutingEnabled && isParaRoutingConfigured() {
+                autoTriggerClaudeRoute = true   // 시트가 onAppear에서 소비해 자동 제안
+            } else {
+                showToast("No routing rule matches — opening Send dialog")
+            }
             showSendToVault = true
             return
         }
