@@ -60,3 +60,73 @@ enum CleanupPlanner {
         return buckets.isEmpty ? nil : buckets
     }
 }
+
+extension CleanupPlanner {
+
+    static func buildAssignPrompt(scheme: CleanupScheme, metadata metas: [FileMeta]) -> String {
+        let list = scheme.map { "- \($0.id) — \($0.hint)" }.joined(separator: "\n")
+        return """
+        아래 폴더 스킴(id — 설명)이 있다:
+
+        \(list)
+
+        다음 파일들을 각각 위 스킴의 id 중 하나에 배정하라. 확신이 없으면 confidence를 낮게 준다.
+        어디에도 맞지 않으면 id를 빈 문자열("")로 둔다.
+
+        \(metadataList(metas))
+
+        답은 다른 텍스트 없이 strict JSON 한 줄로만 한다:
+        {"assignments":[{"name":"<파일명>","id":"<스킴 id 또는 \\"\\">","reason":"<한 줄>","confidence":0.0}]}
+        """
+    }
+
+    /// 모호 파일의 본문 발췌를 파일명 헤더와 함께 묶는다. 각 발췌는 maxCharsEach로 truncate.
+    static func buildAmbiguousContext(_ items: [(name: String, excerpt: String)], maxCharsEach: Int = 1500) -> String {
+        items.map { item in
+            let body = item.excerpt.count > maxCharsEach
+                ? String(item.excerpt.prefix(maxCharsEach)) + "\n…(생략)"
+                : item.excerpt
+            return "## \(item.name)\n\(body)"
+        }.joined(separator: "\n\n")
+    }
+
+    private struct AssignParse: Decodable { let assignments: [AssignmentParse] }
+    private struct AssignmentParse: Decodable {
+        let name: String; let id: String; let reason: String?; let confidence: Double?
+    }
+
+    /// 파일명으로 메타와 매칭하고 id를 스킴 허용 목록으로 검증(밖이면 ""). confidence는 0...1 클램프.
+    static func parseAssignments(_ stdout: String, scheme: CleanupScheme, metadata metas: [FileMeta]) -> [CleanupAssignment]? {
+        guard let json = extractJSONObject(stdout),
+              let data = json.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(AssignParse.self, from: data)
+        else { return nil }
+
+        let validIds = Set(scheme.map { $0.id })
+        let byName = Dictionary(metas.map { ($0.name, $0.url) }, uniquingKeysWith: { a, _ in a })
+
+        var result: [CleanupAssignment] = []
+        for a in parsed.assignments {
+            guard let url = byName[a.name] else { continue }
+            let validId = validIds.contains(a.id) ? a.id : ""
+            let conf = min(1.0, max(0.0, a.confidence ?? 0))
+            result.append(CleanupAssignment(fileURL: url, bucketId: validId, reason: a.reason ?? "", confidence: conf))
+        }
+        return result
+    }
+
+    /// overrides(2차 본문 재배정)를 fileURL 기준으로 base에 덮어쓴다.
+    static func merge(_ base: [CleanupAssignment], with overrides: [CleanupAssignment]) -> [CleanupAssignment] {
+        var byURL = Dictionary(base.map { ($0.fileURL, $0) }, uniquingKeysWith: { a, _ in a })
+        for o in overrides { byURL[o.fileURL] = o }
+        return base.map { byURL[$0.fileURL] ?? $0 }
+    }
+
+    /// 배정을 미리보기용 move로 변환. 분류된 것만 기본 승인.
+    static func buildMoves(from assignments: [CleanupAssignment]) -> [CleanupMove] {
+        assignments.map {
+            CleanupMove(id: UUID(), source: $0.fileURL, bucketId: $0.bucketId,
+                        reason: $0.reason, confidence: $0.confidence, approved: !$0.bucketId.isEmpty)
+        }
+    }
+}
