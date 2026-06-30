@@ -96,6 +96,9 @@ struct ContentView: View {
         .sheet(item: $state.officeFillSession) { request in
             OfficeFillView(request: request)
         }
+        .sheet(isPresented: $state.showIndexSearch) {
+            IndexSearchView()
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(

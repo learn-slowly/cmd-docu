@@ -259,6 +259,16 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "내용 검색 (인덱스)",
+                subtitle: "등록 폴더의 본문을 키워드로 검색",
+                icon: "magnifyingglass.circle",
+                shortcut: nil,
+                keywords: ["내용", "검색", "인덱스", "index", "search", "fts", "keyword"]
+            ) {
+                appState.showIndexSearch = true
+            },
+
+            Command(
                 title: "Ask Claude",
                 subtitle: "Ask Claude about the open document",
                 icon: "sparkles",
