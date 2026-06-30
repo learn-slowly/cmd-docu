@@ -98,6 +98,8 @@ final class AppState {
     var isSearching: Bool = false
     /// 사이드바 폴더 검색 Task(새 검색 시작 시 이전 것을 취소해 낡은 결과 덮어쓰기 방지).
     private var folderSearchTask: Task<Void, Never>?
+    /// 파일트리 백그라운드 빌드 Task(연타·연속 호출 시 선행 task 취소).
+    private var fileTreeTask: Task<Void, Never>?
 
     // 내용 검색(인덱스) UI 상태
     var showIndexSearch: Bool = false
@@ -1094,7 +1096,17 @@ final class AppState {
     func loadFileTree() {
         guard let folder = currentFolder else { return }
         // selectedFolder를 건드리지 않는다(펼치기·새로고침·이름변경 시 호출될 수 있음).
-        fileTree = buildFileTree(at: folder)
+        // 스냅샷을 메인에서 캡처 후 detached 태스크로 파일시스템 탐색(멈춤 방지).
+        let snapshot = expandedFolders
+        fileTreeTask?.cancel()
+        fileTreeTask = Task.detached(priority: .userInitiated) {
+            let tree = AppState.buildFileTree(at: folder, expanded: snapshot)
+            guard !Task.isCancelled else { return }
+            // AppState is not Sendable — static shared ref로 메인 대입.
+            await MainActor.run {
+                AppState.shared?.fileTree = tree
+            }
+        }
     }
 
     /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF + 오피스.
@@ -1107,41 +1119,42 @@ final class AppState {
             || DocumentKind.officeExtensions.contains(ext)
     }
 
-    private func buildFileTree(at url: URL, depth: Int = 0) -> [FileTreeItem] {
+    /// 파일트리를 동기·순수하게 빌드한다. `Task.detached`에서 안전히 호출 가능.
+    /// - Parameters:
+    ///   - url: 탐색 루트 폴더 URL.
+    ///   - expanded: 펼친 폴더 스냅샷(메인에서 캡처해 넘긴다).
+    ///   - depth: 재귀 깊이(내부용). depth ≥ 10이면 빈 배열 반환.
+    static func buildFileTree(at url: URL, expanded: Set<URL>, depth: Int = 0) -> [FileTreeItem] {
         guard depth < 10 else { return [] }
 
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
 
-            var items: [FileTreeItem] = []
+        var items: [FileTreeItem] = []
 
-            for itemURL in contents.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
-                let resourceValues = try itemURL.resourceValues(forKeys: [.isDirectoryKey])
-                let isDirectory = resourceValues.isDirectory ?? false
+        for itemURL in contents.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
+            guard let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]) else { continue }
+            let isDirectory = resourceValues.isDirectory ?? false
 
-                if isDirectory {
-                    let children = expandedFolders.contains(itemURL) ? buildFileTree(at: itemURL, depth: depth + 1) : []
-                    items.append(FileTreeItem(url: itemURL, isDirectory: true, isExpanded: expandedFolders.contains(itemURL), children: children))
-                } else {
-                    if Self.isListableInFileTree(itemURL) {
-                        items.append(FileTreeItem(url: itemURL, isDirectory: false))
-                    }
+            if isDirectory {
+                let isExpanded = expanded.contains(itemURL)
+                let children = isExpanded ? buildFileTree(at: itemURL, expanded: expanded, depth: depth + 1) : []
+                items.append(FileTreeItem(url: itemURL, isDirectory: true, isExpanded: isExpanded, children: children))
+            } else {
+                if isListableInFileTree(itemURL) {
+                    items.append(FileTreeItem(url: itemURL, isDirectory: false))
                 }
             }
+        }
 
-            return items.sorted { item1, item2 in
-                if item1.isDirectory == item2.isDirectory {
-                    return item1.name.localizedCaseInsensitiveCompare(item2.name) == .orderedAscending
-                }
-                return item1.isDirectory && !item2.isDirectory
+        return items.sorted { item1, item2 in
+            if item1.isDirectory == item2.isDirectory {
+                return item1.name.localizedCaseInsensitiveCompare(item2.name) == .orderedAscending
             }
-        } catch {
-            errorMessage = "Failed to load folder: \(error.localizedDescription)"
-            return []
+            return item1.isDirectory && !item2.isDirectory
         }
     }
 
