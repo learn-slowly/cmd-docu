@@ -25,7 +25,10 @@ struct FolderCleanupView: View {
                     .padding(.horizontal, 4)
             }
 
-            if !appState.cleanupScheme.isEmpty {
+            // 스킴 편집기는 subfolder 모드에서만 표시한다.
+            // PARA 모드에서 표시하면 버킷의 name TextField setter가 id·relativePath를 덮어써
+            // MoveExecutor가 잘못된 경로로 파일을 이동하는 버그가 생긴다.
+            if !appState.cleanupScheme.isEmpty, case .subfolder = appState.cleanupMode {
                 schemeEditorView
             }
 
