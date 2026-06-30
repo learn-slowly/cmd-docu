@@ -92,6 +92,11 @@ struct AppSettings: Codable, Equatable {
     var conflictResolution: FileConflictResolution = .rename
     var injectFrontmatterByDefault: Bool = true
 
+    // MARK: PARA 스마트 라우팅
+    var paraVaultId: UUID? = nil           // 지정 PARA 볼트
+    var paraFolders: [ParaFolder] = []     // Claude가 고를 후보 목록
+    var claudeRoutingEnabled: Bool = false // 자동 라우팅 미매칭 시 Claude 사용(기본 OFF)
+
     // UI
     var showStatusBar: Bool = true
     var showTabBar: Bool = true
@@ -140,6 +145,9 @@ struct AppSettings: Codable, Equatable {
         defaultSendFolder = try c.decodeIfPresent(String.self, forKey: .defaultSendFolder) ?? d.defaultSendFolder
         conflictResolution = try c.decodeIfPresent(FileConflictResolution.self, forKey: .conflictResolution) ?? d.conflictResolution
         injectFrontmatterByDefault = try c.decodeIfPresent(Bool.self, forKey: .injectFrontmatterByDefault) ?? d.injectFrontmatterByDefault
+        paraVaultId = try c.decodeIfPresent(UUID.self, forKey: .paraVaultId) ?? d.paraVaultId
+        paraFolders = try c.decodeIfPresent([ParaFolder].self, forKey: .paraFolders) ?? d.paraFolders
+        claudeRoutingEnabled = try c.decodeIfPresent(Bool.self, forKey: .claudeRoutingEnabled) ?? d.claudeRoutingEnabled
         showStatusBar = try c.decodeIfPresent(Bool.self, forKey: .showStatusBar) ?? d.showStatusBar
         showTabBar = try c.decodeIfPresent(Bool.self, forKey: .showTabBar) ?? d.showTabBar
         sidebarWidth = try c.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? d.sidebarWidth
