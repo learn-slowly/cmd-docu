@@ -16,6 +16,7 @@ struct SendToVaultSheet: View {
     @State private var isSending: Bool = false
     @State private var errorMessage: String?
     @State private var availableFolders: [String] = []
+    @State private var routeCaption: String?      // Claude 제안 이유 또는 에러 표시
 
     /// Batch mode is active when the sidebar queued multiple files
     /// ("Send Folder to Vault…").
@@ -62,6 +63,25 @@ struct SendToVaultSheet: View {
                         }
                     } else {
                         TextField("Folder", text: $targetFolder)
+                    }
+
+                    if !isBatch && appState.isParaRoutingConfigured() {
+                        HStack {
+                            Button {
+                                runClaudeRoute()
+                            } label: {
+                                Label("Claude에게 맡기기", systemImage: "wand.and.stars")
+                            }
+                            .disabled(appState.claudeRouteInProgress)
+                            if appState.claudeRouteInProgress {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                        if let caption = routeCaption {
+                            Text(caption)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -162,6 +182,13 @@ struct SendToVaultSheet: View {
                 targetFolder = appState.effectiveSendFolder(for: vault)
                 loadFolders(for: vault)
             }
+
+            if appState.autoTriggerClaudeRoute {
+                appState.autoTriggerClaudeRoute = false   // 1회성 소비
+                if !isBatch && appState.isParaRoutingConfigured() {
+                    runClaudeRoute()
+                }
+            }
         }
     }
 
@@ -198,6 +225,32 @@ struct SendToVaultSheet: View {
         options.applyTemplate = applyTemplate
         options.templateId = applyTemplate ? selectedTemplateId : nil
         return options
+    }
+
+    /// Claude에게 현재 문서 본문을 보내 PARA 폴더를 제안받아 Vault/Folder를 프리필한다.
+    private func runClaudeRoute() {
+        guard let body = appState.currentDocument?.content else {
+            routeCaption = "보낼 문서를 찾을 수 없습니다."
+            return
+        }
+        routeCaption = nil
+        Task {
+            let suggestion = await appState.requestClaudeRoute(noteBody: body)
+            await MainActor.run {
+                if let s = suggestion, let vault = appState.paraVault {
+                    selectedVault = vault
+                    loadFolders(for: vault)
+                    targetFolder = s.folder.folder
+                    // 제안 폴더가 목록에 없으면 끼워 픽커에 보이게 한다.
+                    if !availableFolders.contains(s.folder.folder) {
+                        availableFolders.insert(s.folder.folder, at: 0)
+                    }
+                    routeCaption = "제안: \(s.folder.label) — \(s.reason)"
+                } else {
+                    routeCaption = appState.claudeRouteError ?? "제안을 받지 못했습니다."
+                }
+            }
+        }
     }
 
     private func send() {
