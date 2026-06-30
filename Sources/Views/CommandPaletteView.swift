@@ -275,6 +275,7 @@ struct Command: Identifiable {
                 shortcut: nil,
                 keywords: ["정리", "폴더", "cleanup", "organize", "batch", "para", "이동"]
             ) {
+                appState.resetCleanup()
                 appState.showFolderCleanup = true
             },
 

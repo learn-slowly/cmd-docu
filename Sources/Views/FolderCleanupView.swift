@@ -55,6 +55,7 @@ struct FolderCleanupView: View {
             Spacer()
             Button("폴더 선택…") { pickFolder() }
                 .buttonStyle(.borderless)
+                .disabled(appState.cleanupBusy)
             Button("닫기") { dismiss() }
                 .buttonStyle(.borderless)
         }
@@ -110,14 +111,23 @@ struct FolderCleanupView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - 계획 없음: "정리 계획 만들기" 버튼
+    // MARK: - 계획 없음: 2단계 흐름 버튼
 
     private var planActionsView: some View {
         HStack {
-            Button("정리 계획 만들기") {
-                Task { await appState.runCleanupPlan() }
+            if appState.cleanupMode != nil && appState.cleanupScheme.isEmpty {
+                // 1단계: 스킴 제안 요청(subfolder 모드) 또는 PARA 직접 배정
+                Button("스킴 만들기") {
+                    Task { await appState.proposeCleanupScheme() }
+                }
+                .disabled(appState.cleanupBusy)
+            } else if !appState.cleanupScheme.isEmpty {
+                // 2단계: 스킴 편집 후 배정
+                Button("배정하기") {
+                    Task { await appState.assignCleanupPlan() }
+                }
+                .disabled(appState.cleanupBusy)
             }
-            .disabled(appState.cleanupMode == nil || appState.cleanupBusy)
             Spacer()
         }
         .padding(.vertical, 4)

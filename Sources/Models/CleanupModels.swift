@@ -63,6 +63,7 @@ struct CleanupMove: Identifiable, Equatable {
 }
 
 struct CleanupPlan: Equatable {
+    let mode: CleanupMode
     let scheme: CleanupScheme
     var moves: [CleanupMove]
 }

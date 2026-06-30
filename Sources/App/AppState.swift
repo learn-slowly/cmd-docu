@@ -1913,6 +1913,7 @@ final class AppState {
         cleanupMode = .subfolder(root: folder)
         cleanupScheme = []
         cleanupPlan = nil
+        cleanupError = nil
         showFolderCleanup = true
     }
 
@@ -1921,20 +1922,27 @@ final class AppState {
         cleanupMode = .para(vault: vault)
         cleanupScheme = settings.paraFolders.map { CleanupBucket.from(para: $0) }
         cleanupPlan = nil
+        cleanupError = nil
         showFolderCleanup = true
     }
 
-    /// 현재 모드·스킴으로 배정을 받아 미리보기 plan을 만든다.
-    /// subfolder 모드에서 스킴이 비어 있으면 Claude로 스킴부터 제안한다.
-    func runCleanupPlan() async {
+    /// 정리 UI 상태를 완전히 초기화한다(커맨드팔레트 재진입 시 사용).
+    func resetCleanup() {
+        cleanupMode = nil
+        cleanupScheme = []
+        cleanupPlan = nil
+        cleanupError = nil
+    }
+
+    /// 1단계: 폴더 스캔 후 스킴을 제안한다(배정은 하지 않음). subfolder 모드만 Claude 호출.
+    @MainActor
+    func proposeCleanupScheme() async {
         guard let mode = cleanupMode else { return }
         cleanupBusy = true
         cleanupError = nil
         defer { cleanupBusy = false }
-
         let metas = FileScanner.scan(mode.root)
         guard !metas.isEmpty else { showToast("정리할 파일이 없습니다"); return }
-
         do {
             if cleanupScheme.isEmpty {
                 if case .subfolder = mode {
@@ -1943,8 +1951,27 @@ final class AppState {
                     showToast("PARA 폴더가 설정돼 있지 않습니다"); return
                 }
             }
+            // 스킴만 제시하고 사용자 편집을 기다린다. plan은 아직 만들지 않는다.
+            cleanupPlan = nil
+        } catch let error as ClaudeError {
+            cleanupError = Self.claudeErrorMessage(error)
+        } catch {
+            showToast("Claude 응답을 해석하지 못했습니다")
+        }
+    }
+
+    /// 2단계: 확정된(편집된) 스킴으로 배정해 미리보기 plan을 만든다.
+    @MainActor
+    func assignCleanupPlan() async {
+        guard let mode = cleanupMode, !cleanupScheme.isEmpty else { return }
+        cleanupBusy = true
+        cleanupError = nil
+        defer { cleanupBusy = false }
+        let metas = FileScanner.scan(mode.root)
+        guard !metas.isEmpty else { showToast("정리할 파일이 없습니다"); return }
+        do {
             let assignments = try await cleanupService.assign(scheme: cleanupScheme, metas: metas)
-            cleanupPlan = CleanupPlan(scheme: cleanupScheme,
+            cleanupPlan = CleanupPlan(mode: mode, scheme: cleanupScheme,
                                       moves: CleanupPlanner.buildMoves(from: assignments))
         } catch let error as ClaudeError {
             cleanupError = Self.claudeErrorMessage(error)
@@ -1955,10 +1982,10 @@ final class AppState {
 
     /// 승인된 move만 실행하고 로그를 갱신한다.
     func applyCleanup() async {
-        guard let mode = cleanupMode, let plan = cleanupPlan else { return }
+        guard let plan = cleanupPlan else { return }
         cleanupBusy = true
         defer { cleanupBusy = false }
-        let outcome = await moveExecutor.apply(plan: plan, mode: mode)
+        let outcome = await moveExecutor.apply(plan: plan, mode: plan.mode)
         await loadCleanupBatches()
         cleanupPlan = nil
         let failedNote = outcome.failed.isEmpty ? "" : ", 실패 \(outcome.failed.count)"

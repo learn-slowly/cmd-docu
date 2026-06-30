@@ -957,6 +957,7 @@ struct AddVaultSheet: View {
 /// PARA 볼트·폴더 목록·자동 라우팅 토글을 관리한다. 변경은 saveUserData로 영속.
 struct ParaManagerPane: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         @Bindable var state = appState
@@ -1013,6 +1014,18 @@ struct ParaManagerPane: View {
                 Toggle("규칙 미매칭 시 Claude에게 자동으로 제안 받기", isOn: $state.settings.claudeRoutingEnabled)
                     .onChange(of: state.settings.claudeRoutingEnabled) { appState.saveUserData() }
                 Text("켜도 이동 전 Send 시트로 제안을 확인합니다(무단 이동 없음). 기본 OFF.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("폴더 정리") {
+                Button("이 볼트를 PARA로 정리…") {
+                    if let vault = appState.paraVault {
+                        appState.startCleanupToPara(vault: vault)
+                        dismiss()
+                    }
+                }
+                .disabled(!appState.isParaRoutingConfigured())
+                Text("PARA 볼트와 폴더를 설정한 뒤 폴더 정리 시트를 엽니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

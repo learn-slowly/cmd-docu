@@ -32,4 +32,15 @@ final class CleanupModelsTests: XCTestCase {
         XCTAssertEqual(mode.root, root)
         XCTAssertTrue(mode.label.contains("Downloads"))
     }
+
+    func testCleanupPlanCarriesMode() {
+        let url = URL(fileURLWithPath: "/tmp/test")
+        let mode = CleanupMode.subfolder(root: url)
+        let plan = CleanupPlan(mode: mode, scheme: [], moves: [])
+        if case .subfolder(let root) = plan.mode {
+            XCTAssertEqual(root, url)
+        } else {
+            XCTFail("CleanupPlan.mode가 .subfolder여야 합니다")
+        }
+    }
 }

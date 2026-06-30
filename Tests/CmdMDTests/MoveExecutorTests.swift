@@ -12,8 +12,9 @@ final class MoveExecutorTests: XCTestCase {
         try? "x".write(to: url, atomically: true, encoding: .utf8)
         return url
     }
-    private func plan(scheme: CleanupScheme, moves: [CleanupMove]) -> CleanupPlan {
-        CleanupPlan(scheme: scheme, moves: moves)
+    private func plan(scheme: CleanupScheme, moves: [CleanupMove],
+                      mode: CleanupMode = .subfolder(root: URL(fileURLWithPath: "/tmp"))) -> CleanupPlan {
+        CleanupPlan(mode: mode, scheme: scheme, moves: moves)
     }
 
     func testApplyMovesApprovedFilesAndLogsBatch() async {
