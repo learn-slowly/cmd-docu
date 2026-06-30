@@ -269,6 +269,16 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "폴더 정리 (배치)",
+                subtitle: "Claude 제안으로 폴더를 종류·주제별로 정리",
+                icon: "folder.badge.gearshape",
+                shortcut: nil,
+                keywords: ["정리", "폴더", "cleanup", "organize", "batch", "para", "이동"]
+            ) {
+                appState.showFolderCleanup = true
+            },
+
+            Command(
                 title: "Ask Claude",
                 subtitle: "Ask Claude about the open document",
                 icon: "sparkles",

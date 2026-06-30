@@ -99,6 +99,9 @@ struct ContentView: View {
         .sheet(isPresented: $state.showIndexSearch) {
             IndexSearchView()
         }
+        .sheet(isPresented: $state.showFolderCleanup) {
+            FolderCleanupView()
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(
