@@ -61,7 +61,14 @@ struct LinkedNoteResolver {
     }
 
     private func fileNameVariants(for url: URL) -> [URL] {
-        guard url.pathExtension.isEmpty else { return [url] }
+        // 지원 확장자(md/markdown/txt)가 명시됐을 때만 그대로 쓴다.
+        // 그 외에는 — 확장자가 없든, 노트 이름에 점(.)이 들어가 URL이 끝자락을
+        // 확장자로 오인하든 — md/markdown/txt 후보를 붙여 찾는다.
+        // (예: "1.1.1_미디어_개념과_특징"의 pathExtension은 "1_미디어_개념과_특징"이라
+        //  isEmpty 검사로는 .md가 안 붙어 해석에 실패했다.)
+        if Self.supportedExtensions.contains(url.pathExtension.lowercased()) {
+            return [url]
+        }
         return [
             url.appendingPathExtension("md"),
             url.appendingPathExtension("markdown"),
@@ -70,9 +77,13 @@ struct LinkedNoteResolver {
     }
 
     private func findLinkedNote(named target: String) -> URL? {
-        let targetPath = target as NSString
-        let targetBasename = (targetPath.lastPathComponent as NSString).deletingPathExtension
-        let targetRelativePath = targetPath.deletingPathExtension
+        // 위키링크 target은 파일 경로가 아니라 노트 "이름"이다. 지원 확장자(md/markdown/txt)가
+        // 명시된 경우에만 떼고, 그 외엔 점(.)이 든 이름을 그대로 둔다. NSString.deletingPathExtension을
+        // 무조건 쓰면 "1.1.1_미디어_개념과_특징"을 "1.1"로 잘라 매칭에 실패했다.
+        let strippedTarget = Self.strippingSupportedExtension(target)
+        let targetPath = strippedTarget as NSString
+        let targetBasename = targetPath.lastPathComponent
+        let targetRelativePath = strippedTarget
 
         for root in roots {
             guard let enumerator = fileManager.enumerator(
@@ -109,6 +120,15 @@ struct LinkedNoteResolver {
         }
 
         return String(filePath.dropFirst(rootPrefix.count))
+    }
+
+    /// 지원 확장자(md/markdown/txt)가 명시됐을 때만 떼고, 그 외 점(.)이 든 이름은 그대로 둔다.
+    private static func strippingSupportedExtension(_ s: String) -> String {
+        let ns = s as NSString
+        if supportedExtensions.contains(ns.pathExtension.lowercased()) {
+            return ns.deletingPathExtension
+        }
+        return s
     }
 
     private static func uniqueStandardizedRoots(_ roots: [URL]) -> [URL] {
