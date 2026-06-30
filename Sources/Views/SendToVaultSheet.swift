@@ -244,7 +244,9 @@ struct SendToVaultSheet: View {
             let suggestion = await appState.requestClaudeRoute(noteBody: body)
             await MainActor.run {
                 if let s = suggestion, let vault = appState.paraVault {
-                    suppressVaultReset = true
+                    // 볼트가 실제로 바뀔 때만 onChange가 발화하므로, 그 때만 리셋 억제 플래그를 켠다.
+                    // (이미 같은 볼트면 onChange 미발화 → 플래그가 잔류해 다음 변경을 망친다.)
+                    suppressVaultReset = (selectedVault != vault)
                     targetFolder = s.folder.folder
                     selectedVault = vault
                     loadFolders(for: vault, ensuring: s.folder.folder)
