@@ -91,4 +91,66 @@ final class MoveExecutorTests: XCTestCase {
         XCTAssertEqual(outcome.failed, [src])
         XCTAssertTrue(FileManager.default.fileExists(atPath: src.path))
     }
+
+    // MARK: - Bug 1: 부분 undo 실패 시 로그 보존
+
+    /// undo 도중 복원 대상 파일이 없으면(failed > 0) 배치가 로그에서 제거되지 않아야 한다.
+    func testPartialUndoFailureKeepsBatchInLog() async {
+        let root = tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let src = write("보고서.pdf", in: root)
+        let scheme = [CleanupBucket(id: "문서", name: "문서", hint: "", relativePath: "문서")]
+        let move = CleanupMove(id: UUID(), source: src, bucketId: "문서", reason: "x", confidence: 0.9, approved: true)
+        let store = MoveLogStore(directory: root)
+        let exec = MoveExecutor(store: store)
+
+        let outcome = await exec.apply(plan: plan(scheme: scheme, moves: [move]), mode: .subfolder(root: root))
+        XCTAssertEqual(outcome.moved, 1)
+
+        // 이동된 파일을 직접 삭제해 undo 복원이 실패하도록 만든다.
+        try? FileManager.default.removeItem(at: outcome.batch.records[0].to)
+
+        let result = await exec.undo(outcome.batch)
+        XCTAssertEqual(result.restored, 0)
+        XCTAssertEqual(result.failed, 1)
+
+        // 실패가 있었으므로 배치 로그는 여전히 남아 있어야 한다.
+        let remaining = await store.load()
+        XCTAssertTrue(remaining.contains(where: { $0.id == outcome.batch.id }),
+                      "부분 undo 실패 시 배치 로그가 삭제되면 안 됩니다")
+    }
+
+    // MARK: - Bug 2: 중간 디렉터리 생성 후 undo 시 고아 폴더 없음
+
+    /// 중첩 relativePath("a/b")로 이동 후 undo하면 a/b도 a도 남지 않아야 한다.
+    func testNestedRelativePathLeavesNoOrphanAfterUndo() async {
+        let root = tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let src = write("회의록.txt", in: root)
+
+        // a/b 모두 사전에 없음을 확인.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("a").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("a/b").path))
+
+        let scheme = [CleanupBucket(id: "ab", name: "ab", hint: "", relativePath: "a/b")]
+        let move = CleanupMove(id: UUID(), source: src, bucketId: "ab", reason: "", confidence: 1, approved: true)
+        let store = MoveLogStore(directory: root)
+        let exec = MoveExecutor(store: store)
+
+        let outcome = await exec.apply(plan: plan(scheme: scheme, moves: [move]), mode: .subfolder(root: root))
+        XCTAssertEqual(outcome.moved, 1)
+        // 파일이 root/a/b/<name>에 있어야 한다.
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("a/b/회의록.txt").path))
+
+        let result = await exec.undo(outcome.batch)
+        XCTAssertEqual(result.restored, 1)
+
+        // 파일이 원위치에 돌아와야 한다.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: src.path))
+
+        // 중간 폴더 a/b와 a가 모두 제거되어야 한다(고아 폴더 없음).
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("a/b").path),
+                       "undo 후 a/b 폴더가 남으면 안 됩니다")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("a").path),
+                       "undo 후 중간 폴더 a가 남으면 안 됩니다")
+    }
 }

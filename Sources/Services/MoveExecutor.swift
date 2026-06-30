@@ -29,9 +29,11 @@ actor MoveExecutor {
                 failed.append(move.source); continue
             }
             if !fm.fileExists(atPath: destDir.path) {
+                // 아직 존재하지 않는 중간 경로까지 모두 기록해야 undo에서 고아 폴더가 남지 않는다.
+                let newlyCreated = Self.missingAncestors(from: destDir, downTo: root, fm: fm)
                 do {
                     try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
-                    createdDirs.append(destDir)
+                    createdDirs.append(contentsOf: newlyCreated)
                 } catch { failed.append(move.source); continue }
             }
             let dest = destDir.appendingPathComponent(move.source.lastPathComponent).uniquified()
@@ -66,7 +68,24 @@ actor MoveExecutor {
             }
         }
 
-        await store.remove(id: batch.id)
+        // 부분 실패 시 로그를 유지한다 — 복원되지 않은 파일의 복구 경로를 보존하기 위해.
+        if failed == 0 {
+            await store.remove(id: batch.id)
+        }
         return (restored, failed)
+    }
+
+    /// destDir부터 root 직하까지, 아직 존재하지 않는 디렉터리들을 모은다(우리가 만든 것만 undo에서 제거).
+    private static func missingAncestors(from destDir: URL, downTo root: URL, fm: FileManager) -> [URL] {
+        var result: [URL] = []
+        var current = destDir.standardizedFileURL
+        let rootPath = root.standardizedFileURL.path
+        while current.path != rootPath && current.path.hasPrefix(rootPath + "/") {
+            if !fm.fileExists(atPath: current.path) {
+                result.append(current)
+            }
+            current = current.deletingLastPathComponent()
+        }
+        return result
     }
 }
