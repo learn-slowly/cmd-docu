@@ -5,34 +5,44 @@ struct MainEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if appState.settings.showTabBar && !appState.tabs.isEmpty {
-                TabBarView()
+            if appState.mainMode == .library {
+                LibraryView()
+            } else {
+                readerLayout
             }
+        }
+    }
 
-            if let fileURL = appState.currentTabFileURL {
-                SimpleBreadcrumbView(fileURL: fileURL, folderURL: appState.currentFolder)
-            }
+    /// 리더 모드 레이아웃(기존 파일별 뷰 디스패치).
+    @ViewBuilder
+    private var readerLayout: some View {
+        if appState.settings.showTabBar && !appState.tabs.isEmpty {
+            TabBarView()
+        }
 
-            Group {
-                if appState.currentTabKind == .image, let url = appState.currentTabFileURL {
-                    ImageReaderView(url: url)
-                } else if appState.currentTabKind == .pdf, let url = appState.currentTabFileURL {
-                    PDFReaderView(url: url)
-                } else if appState.currentTabKind == .office,
-                          let url = appState.currentTabFileURL,
-                          let tabID = appState.activeTabId {
-                    OfficeReaderView(tabID: tabID, fileURL: url)
-                } else if let document = appState.currentDocument {
-                    // 탭 전환 시 NSTextView / WKWebView를 재생성하지 않도록 패널을 유지 — 성능 최적화.
-                    DocumentEditorView(document: document)
-                } else {
-                    WelcomeView()
-                }
-            }
+        if let fileURL = appState.currentTabFileURL {
+            SimpleBreadcrumbView(fileURL: fileURL, folderURL: appState.currentFolder)
+        }
 
-            if appState.settings.showStatusBar, appState.currentDocument != nil {
-                StatusBarView()
+        Group {
+            if appState.currentTabKind == .image, let url = appState.currentTabFileURL {
+                ImageReaderView(url: url)
+            } else if appState.currentTabKind == .pdf, let url = appState.currentTabFileURL {
+                PDFReaderView(url: url)
+            } else if appState.currentTabKind == .office,
+                      let url = appState.currentTabFileURL,
+                      let tabID = appState.activeTabId {
+                OfficeReaderView(tabID: tabID, fileURL: url)
+            } else if let document = appState.currentDocument {
+                // 탭 전환 시 NSTextView / WKWebView를 재생성하지 않도록 패널을 유지 — 성능 최적화.
+                DocumentEditorView(document: document)
+            } else {
+                WelcomeView()
             }
+        }
+
+        if appState.settings.showStatusBar, appState.currentDocument != nil {
+            StatusBarView()
         }
     }
 }

@@ -44,7 +44,12 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                ViewModePicker()
+                MainModePicker()
+                if appState.mainMode == .reader {
+                    ViewModePicker()
+                } else {
+                    LibraryLayoutPicker()
+                }
             }
 
             ToolbarItemGroup(placement: .primaryAction) {
@@ -152,6 +157,28 @@ struct ContentView: View {
     }
 }
 
+/// 메인 모드 토글(리더 ↔ 라이브러리).
+struct MainModePicker: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        @Bindable var state = appState
+
+        Picker("Main Mode", selection: $state.mainMode) {
+            Label("리더", systemImage: "doc.text")
+                .tag(MainMode.reader)
+            Label("라이브러리", systemImage: "square.grid.2x2")
+                .tag(MainMode.library)
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.iconOnly)
+        .controlSize(.regular)
+        .fixedSize()
+        .help("리더 모드 · 라이브러리 모드")
+    }
+}
+
+/// 리더 모드 보기 토글(Source/Split/Preview).
 struct ViewModePicker: View {
     @Environment(AppState.self) private var appState
 
@@ -171,6 +198,27 @@ struct ViewModePicker: View {
         .controlSize(.regular)
         .fixedSize()
         .help("Source ⌘1 · Split ⌘2 · Preview ⌘3")
+    }
+}
+
+/// 라이브러리 레이아웃 토글(리스트 ↔ 격자).
+struct LibraryLayoutPicker: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        @Bindable var state = appState
+
+        Picker("Library Layout", selection: $state.libraryLayout) {
+            Label("리스트", systemImage: "list.bullet")
+                .tag(LibraryLayout.list)
+            Label("격자", systemImage: "square.grid.2x2")
+                .tag(LibraryLayout.grid)
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.iconOnly)
+        .controlSize(.regular)
+        .fixedSize()
+        .help("리스트 · 격자")
     }
 }
 
