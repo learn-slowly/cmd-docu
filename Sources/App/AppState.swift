@@ -1099,13 +1099,11 @@ final class AppState {
         // 스냅샷을 메인에서 캡처 후 detached 태스크로 파일시스템 탐색(멈춤 방지).
         let snapshot = expandedFolders
         fileTreeTask?.cancel()
-        fileTreeTask = Task.detached(priority: .userInitiated) {
+        fileTreeTask = Task.detached(priority: .userInitiated) { [weak self] in
             let tree = AppState.buildFileTree(at: folder, expanded: snapshot)
             guard !Task.isCancelled else { return }
-            // AppState is not Sendable — static shared ref로 메인 대입.
-            await MainActor.run {
-                AppState.shared?.fileTree = tree
-            }
+            // 호출 인스턴스에 대입 — static shared 참조 제거(다중 인스턴스·테스트 안전).
+            await MainActor.run { self?.fileTree = tree }
         }
     }
 

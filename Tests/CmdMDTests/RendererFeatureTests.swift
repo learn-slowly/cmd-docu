@@ -72,17 +72,18 @@ final class RendererFeatureTests: XCTestCase {
 
     func testHighlightJSIncludedForCodeBlocks() {
         let html = render("```swift\nlet x = 1\n```")
-        XCTAssertTrue(html.contains("highlight.min.js"))
+        // 인라인(번들)·CDN 폴백 양쪽 모두에 존재하는 초기화 스크립트로 검증.
+        XCTAssertTrue(html.contains("hljs.highlightElement"))
     }
 
     func testHighlightJSAbsentWhenDisabled() {
         let html = render("```swift\nlet x = 1\n```", configure: { $0.enableCodeHighlight = false })
-        XCTAssertFalse(html.contains("highlight.min.js"))
+        XCTAssertFalse(html.contains("hljs.highlightElement"))
     }
 
     func testHighlightJSAbsentWithoutCode() {
         let html = render("just text")
-        XCTAssertFalse(html.contains("highlight.min.js"))
+        XCTAssertFalse(html.contains("hljs.highlightElement"))
     }
 
     // MARK: Mermaid toggle

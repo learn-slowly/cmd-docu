@@ -53,24 +53,13 @@ enum LocalWebAssets {
     /// JS·CSS 콘텐츠를 인라인 `<script>`/`<style>` 문자열로 조립한다.
     ///
     /// - Parameters:
-    ///   - js: highlight.min.js 문자열. **nil이면 nil 반환.**
-    ///   - cssLight: 라이트 테마 CSS. nil이면 `<style>` 블록 없음.
-    ///   - cssDark: 다크 테마 CSS. cssLight와 함께 지정하면 `media` 쿼리로 분기.
-    /// - Returns: HTML 인라인 블록 문자열. js가 nil이면 nil.
+    ///   - js: highlight.min.js 문자열.
+    ///   - cssLight: 라이트 테마 CSS.
+    ///   - cssDark: 다크 테마 CSS.
+    /// - Returns: HTML 인라인 블록 문자열. **셋 중 하나라도 nil이면 nil 반환**(CDN 폴백 트리거).
     static func hljsBlock(js: String?, cssLight: String?, cssDark: String?) -> String? {
-        guard let js else { return nil }
-
-        // CSS 블록 조립
-        var styleBlock = ""
-        if let light = cssLight, let dark = cssDark {
-            // github 기본 테마: 라이트/다크 자동 전환
-            styleBlock = """
-                <style media="(prefers-color-scheme: light)">\(light)</style>
-                <style media="(prefers-color-scheme: dark)">\(dark)</style>
-                """
-        } else if let css = cssLight {
-            styleBlock = "<style>\(css)</style>"
-        }
+        // js·cssLight·cssDark 모두 있어야 로컬 인라인 주입; 하나라도 없으면 nil → CDN 폴백.
+        guard let js, let cssLight, let cssDark else { return nil }
 
         // JS 초기화 스크립트: mermaid 블록 제외 후 hljs 적용
         let initScript = """
@@ -86,7 +75,8 @@ enum LocalWebAssets {
             """
 
         return """
-            \(styleBlock)
+            <style media="(prefers-color-scheme: light)">\(cssLight)</style>
+            <style media="(prefers-color-scheme: dark)">\(cssDark)</style>
             <script>\(js)</script>
             \(initScript)
             """
