@@ -12,6 +12,14 @@ struct LibraryView: View {
         appState.selectedFolder ?? appState.currentFolder
     }
 
+    /// 폴더(또는 정렬 기준 currentFolder)가 바뀔 때만 재계산하기 위한 키.
+    private var folderKey: String {
+        "\(displayFolder?.path ?? "∅")|\(appState.currentFolder?.path ?? "∅")"
+    }
+
+    /// 캐시된 항목 목록. .task(id: folderKey)로 폴더 변경 시에만 갱신.
+    @State private var entries: [FileTreeItem] = []
+
     /// 상위 폴더로 이동 가능한가(currentFolder보다 위로는 안 감).
     private var canGoUp: Bool {
         guard let display = displayFolder,
@@ -19,7 +27,13 @@ struct LibraryView: View {
         // standardizedFileURL로 비교해 /var → /private/var 차이를 없앤다.
         let displayStd = display.standardizedFileURL.path
         let rootStd    = root.standardizedFileURL.path
-        return displayStd != rootStd && displayStd.hasPrefix(rootStd)
+        // '/' 경계를 포함해 형제 폴더 오감지를 방지한다.
+        return displayStd != rootStd && displayStd.hasPrefix(rootStd + "/")
+    }
+
+    private func reloadEntries() {
+        guard let folder = displayFolder else { entries = []; return }
+        entries = ParaLens.sorted(LibraryListing.entries(of: folder), under: appState.currentFolder)
     }
 
     var body: some View {
@@ -28,6 +42,8 @@ struct LibraryView: View {
             Divider()
             libraryBody
         }
+        // 폴더가 바뀔 때만 1회 열거 — 매 렌더 동기 FS 호출 제거.
+        .task(id: folderKey) { reloadEntries() }
     }
 
     // MARK: - 헤더
@@ -62,11 +78,6 @@ struct LibraryView: View {
     @ViewBuilder
     private var libraryBody: some View {
         if let folder = displayFolder {
-            let entries = ParaLens.sorted(
-                LibraryListing.entries(of: folder),
-                under: appState.currentFolder
-            )
-
             if entries.isEmpty {
                 ContentUnavailableView {
                     Label("이 폴더에 항목이 없습니다", systemImage: "folder")
@@ -98,7 +109,8 @@ struct LibraryView: View {
 
         return ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(entries) { item in
+                // url 기준 동일성으로 안정화 — 재열거 시 UUID가 새로 생겨도 셀 재생성·애니메이션 파괴 방지.
+                ForEach(entries, id: \.url) { item in
                     LibraryGridCell(item: item)
                         .onTapGesture {
                             handleTap(item: item)
@@ -112,12 +124,15 @@ struct LibraryView: View {
     // MARK: - 리스트 뷰
 
     private func listView(entries: [FileTreeItem]) -> some View {
-        List(entries) { item in
-            LibraryListCell(item: item)
-                .onTapGesture {
-                    handleTap(item: item)
-                }
-                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+        List {
+            // url 기준 동일성으로 안정화 — 재열거 시 UUID가 새로 생겨도 행 재생성·애니메이션 파괴 방지.
+            ForEach(entries, id: \.url) { item in
+                LibraryListCell(item: item)
+                    .onTapGesture {
+                        handleTap(item: item)
+                    }
+                    .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+            }
         }
         .listStyle(.plain)
     }
@@ -140,10 +155,10 @@ struct LibraryView: View {
         guard let current = displayFolder,
               let root = appState.currentFolder else { return }
         let parent = current.deletingLastPathComponent()
-        // root보다 위로는 올라가지 않는다
+        // root보다 위로는 올라가지 않는다. '/' 경계로 형제 폴더 오감지 방지.
         let parentStd = parent.standardizedFileURL.path
         let rootStd   = root.standardizedFileURL.path
-        if parentStd == rootStd || parentStd.hasPrefix(rootStd) {
+        if parentStd == rootStd || parentStd.hasPrefix(rootStd + "/") {
             appState.selectedFolder = parent
         }
     }

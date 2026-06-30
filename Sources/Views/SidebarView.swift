@@ -383,11 +383,16 @@ struct FileTreeItemRow: View {
                     .buttonStyle(.plain)
 
                     // 라벨 탭 = 폴더 선택(라이브러리 모드 전환)
+                    // maxWidth로 빈 공간도 탭 영역으로 포함한다.
                     labelRow
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .onTapGesture {
                             appState.selectFolderForLibrary(item.url)
                         }
                 }
+                // 행 전체 우클릭 히트영역 확보.
+                .contentShape(Rectangle())
                 .contextMenu {
                     FileTreeContextMenu(item: item)
                 }
@@ -401,7 +406,10 @@ struct FileTreeItemRow: View {
                 }
             }
         } else {
+            // 파일 행도 maxWidth로 빈 공간을 탭 영역에 포함한다.
             labelRow
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
                 .onTapGesture {
                     appState.openDocument(at: item.url, inNewTab: true)
                 }

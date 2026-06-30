@@ -652,6 +652,8 @@ final class AppState {
 
         if panel.runModal() == .OK, let url = panel.url {
             currentFolder = url
+            // currentFolder가 실제로 바뀌는 지점에서만 selectedFolder를 리셋한다.
+            selectedFolder = url
             selectedSidebarTab = .files
             sidebarVisible = true
             loadFileTree()
@@ -1091,8 +1093,7 @@ final class AppState {
 
     func loadFileTree() {
         guard let folder = currentFolder else { return }
-        // currentFolder가 바뀔 때 selectedFolder를 리셋한다(라이브러리가 새 폴더를 기준으로 시작).
-        selectedFolder = folder
+        // selectedFolder를 건드리지 않는다(펼치기·새로고침·이름변경 시 호출될 수 있음).
         fileTree = buildFileTree(at: folder)
     }
 
@@ -2111,6 +2112,8 @@ final class AppState {
         if let folder = session.currentFolder,
            FileManager.default.fileExists(atPath: folder.path) {
             currentFolder = folder
+            // 세션 복원 시 currentFolder가 바뀌므로 selectedFolder도 리셋한다.
+            selectedFolder = folder
             loadFileTree()
         }
 

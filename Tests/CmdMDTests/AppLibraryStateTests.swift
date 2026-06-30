@@ -58,23 +58,19 @@ final class AppLibraryStateTests: XCTestCase {
         XCTAssertEqual(app.mainMode, .reader, "openDocument 호출 즉시 mainMode가 reader로 바뀌어야 한다")
     }
 
-    // MARK: - currentFolder 변경 → selectedFolder 리셋
+    // MARK: - loadFileTree는 selectedFolder를 보존해야 함
 
     @MainActor
-    func testLoadFileTreeResetsSelectedFolderToCurrentFolder() {
-        let app = AppState()
-
-        // currentFolder와 다른 selectedFolder를 먼저 설정
-        let folder = URL(fileURLWithPath: "/tmp")
-        let otherFolder = URL(fileURLWithPath: "/private/tmp/other")
-        app.currentFolder = folder
-        app.selectedFolder = otherFolder
-        XCTAssertEqual(app.selectedFolder, otherFolder)
-
-        // loadFileTree 호출 → selectedFolder = currentFolder
-        app.loadFileTree()
-        XCTAssertEqual(app.selectedFolder, folder,
-                       "loadFileTree 후 selectedFolder는 currentFolder로 리셋돼야 한다")
+    func testLoadFileTreePreservesSelectedFolder() {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lt-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let s = AppState()
+        s.currentFolder = dir
+        let sub = dir.appendingPathComponent("10000_Projects")
+        s.selectedFolder = sub
+        s.loadFileTree()   // 트리 새로고침 — currentFolder 불변
+        XCTAssertEqual(s.selectedFolder, sub, "새로고침이 selectedFolder를 루트로 되돌리면 안 된다")
     }
 
     @MainActor
