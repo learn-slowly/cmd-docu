@@ -17,6 +17,7 @@ struct SendToVaultSheet: View {
     @State private var errorMessage: String?
     @State private var availableFolders: [String] = []
     @State private var routeCaption: String?      // Claude 제안 이유 또는 에러 표시
+    @State private var suppressVaultReset = false   // 프로그램적 볼트 선택 시 onChange의 targetFolder 리셋을 막는다
 
     /// Batch mode is active when the sidebar queued multiple files
     /// ("Send Folder to Vault…").
@@ -48,8 +49,12 @@ struct SendToVaultSheet: View {
                     }
                     .onChange(of: selectedVault) { _, newVault in
                         if let vault = newVault {
-                            targetFolder = appState.effectiveSendFolder(for: vault)
-                            loadFolders(for: vault)
+                            if suppressVaultReset {
+                                suppressVaultReset = false
+                            } else {
+                                targetFolder = appState.effectiveSendFolder(for: vault)
+                            }
+                            loadFolders(for: vault, ensuring: targetFolder)
                         }
                     }
 
@@ -197,18 +202,19 @@ struct SendToVaultSheet: View {
         return String(repeating: "    ", count: depth) + (folder.components(separatedBy: "/").last ?? folder)
     }
 
-    private func loadFolders(for vault: Vault) {
+    private func loadFolders(for vault: Vault, ensuring extra: String? = nil) {
         Task {
             let vaultService = VaultService(dataDirectory: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("CmdMD"))
             let effective = appState.effectiveSendFolder(for: vault)
             do {
                 var folders = try await vaultService.listFolders(in: vault)
-                if !folders.contains(effective) {
-                    folders.insert(effective, at: 0)
-                }
+                if !folders.contains(effective) { folders.insert(effective, at: 0) }
+                if let extra, !extra.isEmpty, !folders.contains(extra) { folders.insert(extra, at: 0) }
                 await MainActor.run { availableFolders = folders }
             } catch {
-                await MainActor.run { availableFolders = [effective] }
+                var fallback = [effective]
+                if let extra, !extra.isEmpty, extra != effective { fallback.insert(extra, at: 0) }
+                await MainActor.run { availableFolders = fallback }
             }
         }
     }
@@ -238,13 +244,10 @@ struct SendToVaultSheet: View {
             let suggestion = await appState.requestClaudeRoute(noteBody: body)
             await MainActor.run {
                 if let s = suggestion, let vault = appState.paraVault {
-                    selectedVault = vault
-                    loadFolders(for: vault)
+                    suppressVaultReset = true
                     targetFolder = s.folder.folder
-                    // 제안 폴더가 목록에 없으면 끼워 픽커에 보이게 한다.
-                    if !availableFolders.contains(s.folder.folder) {
-                        availableFolders.insert(s.folder.folder, at: 0)
-                    }
+                    selectedVault = vault
+                    loadFolders(for: vault, ensuring: s.folder.folder)
                     routeCaption = "제안: \(s.folder.label) — \(s.reason)"
                 } else {
                     routeCaption = appState.claudeRouteError ?? "제안을 받지 못했습니다."
