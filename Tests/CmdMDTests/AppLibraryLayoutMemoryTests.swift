@@ -2,19 +2,28 @@ import XCTest
 @testable import CmdMD
 
 /// Phase 8.5-③: selectedFolder/libraryLayout didSet 레이아웃 기억 테스트.
-/// 실제 설정 파일 오염 없이 freshState(AppState())로만 검증.
-/// AppState()가 디스크에서 설정을 읽으므로 각 테스트 초반에
-/// libraryLayouts를 초기화해 이전 테스트의 saveUserData 잔재를 제거한다.
+/// 각 테스트가 per-test 임시 디렉터리를 AppState에 주입해 실제 설정 오염 없이,
+/// 디스크 잔재에 의존하지 않는 깨끗한 상태(libraryLayouts 비어 있음)에서 검증한다.
 final class AppLibraryLayoutMemoryTests: XCTestCase {
+
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = TempDataDirectory.make()
+    }
+
+    override func tearDown() {
+        TempDataDirectory.cleanup(tempDir)
+        tempDir = nil
+        super.tearDown()
+    }
 
     // MARK: - 기본: 기억 없으면 레이아웃 변동 없음
 
     @MainActor
     func testNoChangeWhenNoMemory() {
-        let app = AppState()
-        app.settings.libraryLayouts = [:]   // 디스크 잔재 제거
-        app.selectedFolder = nil
-        app.currentFolder = nil
+        let app = AppState(dataDirectory: tempDir)
         let fakePath = "/v/photos-\(UUID().uuidString)"
         // libraryLayouts 비어있는 상태에서 selectedFolder 설정
         app.selectedFolder = URL(fileURLWithPath: fakePath)
@@ -27,8 +36,7 @@ final class AppLibraryLayoutMemoryTests: XCTestCase {
 
     @MainActor
     func testRestoresLayoutWhenMemoryExists() {
-        let app = AppState()
-        app.settings.libraryLayouts = [:]   // 디스크 잔재 제거
+        let app = AppState(dataDirectory: tempDir)
         let fakePath = "/v/docs-\(UUID().uuidString)"
         app.settings.libraryLayouts[URL(fileURLWithPath: fakePath).standardizedFileURL.path] = .list
         app.selectedFolder = URL(fileURLWithPath: fakePath)
@@ -40,8 +48,7 @@ final class AppLibraryLayoutMemoryTests: XCTestCase {
 
     @MainActor
     func testPersistsLayoutOnChange() {
-        let app = AppState()
-        app.settings.libraryLayouts = [:]   // 디스크 잔재 제거
+        let app = AppState(dataDirectory: tempDir)
         let fakePath = "/v/docs-\(UUID().uuidString)"
         let url = URL(fileURLWithPath: fakePath)
         app.selectedFolder = url
@@ -55,8 +62,7 @@ final class AppLibraryLayoutMemoryTests: XCTestCase {
 
     @MainActor
     func testRestoreDoesNotTriggerSaveForOtherFolder() {
-        let app = AppState()
-        app.settings.libraryLayouts = [:]   // 디스크 잔재 제거
+        let app = AppState(dataDirectory: tempDir)
         let photosPath = "/v/photos-\(UUID().uuidString)"
         let docsPath = "/v/docs-\(UUID().uuidString)"
         let photosKey = URL(fileURLWithPath: photosPath).standardizedFileURL.path
@@ -78,7 +84,7 @@ final class AppLibraryLayoutMemoryTests: XCTestCase {
         // 복원이 photos 폴더 키를 만들지 않아야 함
         XCTAssertNil(app.settings.libraryLayouts[photosKey],
                      "복원이 다른 폴더 키를 새로 생성하면 안 된다")
-        // 원래 docs 키만 있어야 함 (디스크 잔재는 위에서 제거했으므로 1개)
+        // 임시 디렉터리라 settings가 비어 시작 → 위에서 넣은 docs 키 1개만 있어야 함
         XCTAssertEqual(app.settings.libraryLayouts.count, 1,
                        "settings.libraryLayouts에는 docs 키 1개만 있어야 한다")
     }

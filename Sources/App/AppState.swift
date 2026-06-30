@@ -586,12 +586,21 @@ final class AppState {
         showToast("Path copied")
     }
 
-    init() {
+    /// - Parameter dataDirectory: 모든 영속(settings.json·session.json·drafts 등)을
+    ///   둘 데이터 디렉터리. nil이면 기본 app-support/CmdMD를 쓴다(앱 실행 경로).
+    ///   테스트는 빈 임시 디렉터리를 주입해 실제 사용자 설정 오염과 세션 복원
+    ///   비결정성을 피한다(빈 디렉터리 → 깨끗한 기본값으로 시작, 세션 복원 없음).
+    init(dataDirectory: URL? = nil) {
         // 서브프로세스 stdin write가 broken pipe를 만나도 SIGPIPE로 앱이 죽지 않게 한다.
         signal(SIGPIPE, SIG_IGN)
 
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("CmdMD")
+        let appDir: URL
+        if let dataDirectory {
+            appDir = dataDirectory
+        } else {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            appDir = appSupport.appendingPathComponent("CmdMD")
+        }
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         dataURL = appDir
 
