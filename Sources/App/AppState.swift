@@ -63,6 +63,10 @@ final class AppState {
     var officeEditBuffers: [UUID: String] = [:]
     var officePatchInProgress: Set<UUID> = []
     var officeSaveConfirm: OfficeSaveRequest?
+    /// 양식 채우기 시트 구동(키 = 활성 office 탭). nil이면 시트 닫힘.
+    var officeFillSession: OfficeFillRequest?
+    /// 양식 채우기(dry-run·fill) 진행 중인 탭. 스피너·중복 실행 방지.
+    var officeFillInProgress: Set<UUID> = []
 
     // Update checking (GitHub Releases)
     var updateAvailable: Bool = false
@@ -101,6 +105,7 @@ final class AppState {
     private let kordocService = KordocService()
     private let claudeService = ClaudeService()
     private let kordocWriteService = KordocWriteService()
+    private let kordocFillService = KordocFillService()
     private let dataURL: URL
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
@@ -284,6 +289,67 @@ final class AppState {
             return "서식 보존 저장에 실패했습니다.\n\(m)"
         default:
             return "저장에 실패했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - kordoc fill 양식 채우기
+
+    /// dry-run으로 서식 필드를 조회해 양식 채우기 시트를 띄운다(아직 채우지 않는다).
+    @MainActor
+    func beginOfficeFill(tabID: UUID, fileURL: URL) {
+        guard DocumentKind.isFillable(fileURL),
+              !officeFillInProgress.contains(tabID) else { return }
+        officeFillInProgress.insert(tabID)
+        Task { @MainActor in
+            do {
+                let detection = try await kordocFillService.dryRun(template: fileURL)
+                officeFillSession = OfficeFillRequest(tabID: tabID, fileURL: fileURL,
+                                                      detection: detection,
+                                                      output: Self.filledOutputURL(for: fileURL))
+            } catch {
+                errorMessage = Self.kordocFillErrorMessage(error)
+            }
+            officeFillInProgress.remove(tabID)
+        }
+    }
+
+    /// 확인된 값·출력 경로로 kordoc fill을 실행한다. 원본은 건드리지 않는다.
+    @MainActor
+    func confirmOfficeFill(tabID: UUID, fileURL: URL,
+                           values: [String: String], output: URL) {
+        guard !officeFillInProgress.contains(tabID) else { return }
+        officeFillSession = nil
+        officeFillInProgress.insert(tabID)
+        Task { @MainActor in
+            do {
+                let warnings = try await kordocFillService.fill(template: fileURL,
+                                                                values: values, output: output)
+                if warnings.isEmpty {
+                    toastMessage = "양식 채움: \(output.lastPathComponent)"
+                } else {
+                    toastMessage = "양식 채움: \(output.lastPathComponent) · 매칭 실패 \(warnings.count)개"
+                }
+            } catch {
+                errorMessage = Self.kordocFillErrorMessage(error)
+            }
+            officeFillInProgress.remove(tabID)
+        }
+    }
+
+    static func kordocFillErrorMessage(_ error: Error) -> String {
+        switch error {
+        case KordocFillError.toolNotFound:
+            return "kordoc 실행에 필요한 Node(18+)/kordoc을 찾을 수 없습니다. 터미널에서 `npx kordoc` 또는 `npm i -g kordoc` 후 다시 시도하세요."
+        case KordocFillError.timeout:
+            return "양식 채우기가 너무 오래 걸려 중단했습니다."
+        case KordocFillError.dryRunFailed(let m):
+            return "서식 필드를 읽지 못했습니다.\n\(m)"
+        case KordocFillError.fillFailed(let m):
+            return "양식 채우기에 실패했습니다.\n\(m)"
+        case KordocFillError.decodeFailed:
+            return "서식 필드 정보를 해석하지 못했습니다."
+        default:
+            return "양식 채우기에 실패했습니다: \(error.localizedDescription)"
         }
     }
 
@@ -1790,6 +1856,15 @@ struct OfficeSaveRequest: Identifiable {
     let id = UUID()
     let tabID: UUID
     let fileURL: URL
+    var output: URL
+}
+
+/// 양식 채우기 시트를 구동하는 요청. detection = dry-run 결과, output = 제안 기본 경로(시드).
+struct OfficeFillRequest: Identifiable {
+    let id = UUID()
+    let tabID: UUID
+    let fileURL: URL
+    let detection: FillDetection
     var output: URL
 }
 
