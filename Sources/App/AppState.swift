@@ -24,6 +24,14 @@ final class AppState {
     var inspectorVisible: Bool = false
     var selectedSidebarTab: SidebarTab = .files
 
+    // 라이브러리 모드 상태
+    /// 메인 에디터 영역 모드(reader = 파일 리더, library = 폴더 라이브러리).
+    var mainMode: MainMode = .reader
+    /// 라이브러리 뷰가 보여줄 폴더. 기본·리셋값은 currentFolder.
+    var selectedFolder: URL? = nil
+    /// 라이브러리 뷰 레이아웃(grid/list). 전역 1개.
+    var libraryLayout: LibraryLayout = .grid
+
     // File System
     var vaults: [Vault] = []
     var drafts: [Draft] = []
@@ -652,6 +660,12 @@ final class AppState {
         }
     }
 
+    /// 사이드바 폴더 행 탭 시 라이브러리 모드로 전환하고 표시 폴더를 설정한다.
+    func selectFolderForLibrary(_ url: URL) {
+        selectedFolder = url
+        mainMode = .library
+    }
+
     func openInternalURL(_ url: URL) {
         guard url.scheme == "cmdmd" else { return }
 
@@ -700,6 +714,7 @@ final class AppState {
 
     func openDocument(at url: URL, inNewTab: Bool = false,
                       scrollToLine line: Int? = nil, scrollToPDFPage pdfPage: Int? = nil) {
+        mainMode = .reader
         if let existingTab = tabs.first(where: { $0.fileURL == url }) {
             activeTabId = existingTab.id
             if let line { scrollEditor(toLine: line) }
@@ -1076,6 +1091,8 @@ final class AppState {
 
     func loadFileTree() {
         guard let folder = currentFolder else { return }
+        // currentFolder가 바뀔 때 selectedFolder를 리셋한다(라이브러리가 새 폴더를 기준으로 시작).
+        selectedFolder = folder
         fileTree = buildFileTree(at: folder)
     }
 
