@@ -369,7 +369,7 @@ struct WindowAccessor: NSViewRepresentable {
 
 enum AppInfo {
     static var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.4.2"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.8.5"
     }
     static var build: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
@@ -379,7 +379,7 @@ enum AppInfo {
     }
     static let forkMaker = "레고 (learn-slowly)"
     static let originalMaker = "구요한 · CMDSPACE"
-    static let website = URL(string: "https://cmdspace.work")!
+    static let website = URL(string: "https://damaged.kr")!
     static let github = URL(string: "https://github.com/learn-slowly/cmd-docu")!
     static let originalGithub = URL(string: "https://github.com/johnfkoo951/CmdMD")!
     static let tagline = "한글·오피스·PDF를 읽고, Claude에게 묻고, 내용으로 검색해 알맞은 자리로 정리하는 macOS 도구."
@@ -390,7 +390,7 @@ struct CreatorLinks: View {
     var body: some View {
         HStack(spacing: 16) {
             Link(destination: AppInfo.website) {
-                Label("cmdspace.work", systemImage: "globe")
+                Label("damaged.kr", systemImage: "globe")
             }
             Link(destination: AppInfo.github) {
                 Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
