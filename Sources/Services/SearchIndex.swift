@@ -36,7 +36,9 @@ actor SearchIndex {
         // init은 actor 격리 전이므로 open()을 직접 인라인.
         var dbPtr: OpaquePointer? = nil
         if sqlite3_open(dbURL.path, &dbPtr) != SQLITE_OK {
-            // 열기 실패 → DB 재생성 시도.
+            // 열기 실패 → SQLite는 에러 시에도 핸들을 반환하므로 먼저 닫고 DB 재생성 시도.
+            sqlite3_close(dbPtr)
+            dbPtr = nil
             try? FileManager.default.removeItem(at: dbURL)
             sqlite3_open(dbURL.path, &dbPtr)
         }
@@ -147,7 +149,8 @@ actor SearchIndex {
         if sqlite3_prepare_v2(db, "SELECT path FROM files WHERE path LIKE ? ESCAPE '\\';", -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, like, -1, TRANSIENT)
             while sqlite3_step(stmt) == SQLITE_ROW {
-                out.append(String(cString: sqlite3_column_text(stmt, 0)))
+                // path가 nil이면 해당 행 건너뜀(안전 읽기).
+                if let c = sqlite3_column_text(stmt, 0) { out.append(String(cString: c)) }
             }
         }
         return out
@@ -173,7 +176,9 @@ actor SearchIndex {
         sqlite3_bind_text(stmt, 2, match, -1, TRANSIENT)
         sqlite3_bind_int(stmt, 3, Int32(limit))
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let path = String(cString: sqlite3_column_text(stmt, 0))
+            // path가 nil이면 해당 행 건너뜀(안전 읽기).
+            guard let pathC = sqlite3_column_text(stmt, 0) else { continue }
+            let path = String(cString: pathC)
             let snippet = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
             let isFilenameMatch = sqlite3_column_int(stmt, 2) != 0
             out.append(IndexHit(path: path, snippet: snippet, isFilenameMatch: isFilenameMatch))
