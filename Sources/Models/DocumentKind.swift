@@ -26,6 +26,14 @@ extension DocumentKind {
         patchableExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// kordoc fill(서식 빈칸 채우기) 대상 확장자(소문자). HWP/HWPX 전용. 출력은 항상 hwpx.
+    static let fillableExtensions: Set<String> = ["hwp", "hwpx"]
+
+    /// 이 파일이 kordoc fill(양식 채우기) 대상인가.
+    static func isFillable(_ url: URL) -> Bool {
+        fillableExtensions.contains(url.pathExtension.lowercased())
+    }
+
     /// 확장자(대소문자 무시): 이미지 → PDF → 오피스 → 마크다운(기본).
     init(from url: URL) {
         let ext = url.pathExtension.lowercased()
