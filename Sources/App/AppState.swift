@@ -1981,6 +1981,7 @@ final class AppState {
     }
 
     /// 승인된 move만 실행하고 로그를 갱신한다.
+    @MainActor
     func applyCleanup() async {
         guard let plan = cleanupPlan else { return }
         cleanupBusy = true
@@ -1993,6 +1994,7 @@ final class AppState {
     }
 
     /// 정리 배치를 되돌린다.
+    @MainActor
     func undoCleanupBatch(_ batch: MoveBatch) async {
         let result = await moveExecutor.undo(batch)
         await loadCleanupBatches()
@@ -2000,6 +2002,7 @@ final class AppState {
     }
 
     /// 영속 로그에서 배치 목록을 불러온다(최신 순).
+    @MainActor
     func loadCleanupBatches() async {
         cleanupBatches = await moveLogStore.load().reversed()
     }
