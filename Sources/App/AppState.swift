@@ -207,6 +207,27 @@ final class AppState {
         return folder.appendingPathComponent(name).uniquified()
     }
 
+    /// fill 출력 기본 경로: 원본과 같은 폴더에 "<이름> (채움).hwpx". fill은 항상 hwpx로 내므로 확장자 강제.
+    /// 원본은 절대 건드리지 않으므로 항상 새 경로를 돌려준다.
+    static func filledOutputURL(for original: URL) -> URL {
+        let base = original.deletingPathExtension().lastPathComponent
+        let folder = original.deletingLastPathComponent()
+        return folder.appendingPathComponent("\(base) (채움).hwpx").uniquified()
+    }
+
+    /// 시트에서 편집한 값(키=FillField.id) 중 "변경됐고 비어있지 않은" 것만 label→value로 모은다.
+    /// 빈 문자열은 보내지 않는다(빈 덮어쓰기 방지). 중복 label은 마지막이 우선(kordoc 매칭 한계).
+    static func fillValuesToSend(fields: [FillField], edited: [String: String]) -> [String: String] {
+        var out: [String: String] = [:]
+        for field in fields {
+            let v = edited[field.id] ?? field.value
+            if v != field.value && !v.isEmpty {
+                out[field.label] = v
+            }
+        }
+        return out
+    }
+
     // MARK: - kordoc patch 편집 저장
 
     /// 변환 마크다운을 편집 버퍼로 복사하고 편집모드로 들어간다(이미 버퍼가 있으면 유지).
