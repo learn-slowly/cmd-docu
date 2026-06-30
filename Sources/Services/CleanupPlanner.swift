@@ -129,4 +129,13 @@ extension CleanupPlanner {
                         reason: $0.reason, confidence: $0.confidence, approved: !$0.bucketId.isEmpty)
         }
     }
+
+    /// bucket의 목적지 디렉터리. 표준화 후 root 하위가 아니면 nil(디렉터리 탈출 방지).
+    static func destinationDir(root: URL, bucket: CleanupBucket) -> URL? {
+        let dir = root.appendingPathComponent(bucket.relativePath)
+        let rootPath = root.standardizedFileURL.path
+        let dirPath = dir.standardizedFileURL.path
+        guard dirPath == rootPath || dirPath.hasPrefix(rootPath + "/") else { return nil }
+        return dir
+    }
 }
