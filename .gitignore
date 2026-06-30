@@ -47,3 +47,6 @@ landing/.env.local
 
 # Tooling scratch
 .omo/
+
+# Subagent-driven 개발 스크래치(원장·리포트·diff·brief)
+.superpowers/
