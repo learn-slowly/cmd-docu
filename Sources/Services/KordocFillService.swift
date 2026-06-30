@@ -25,6 +25,8 @@ actor KordocFillService {
         guard let outHandle = try? FileHandle(forWritingTo: tmp) else {
             throw KordocFillError.dryRunFailed("임시 파일을 열지 못했습니다.")
         }
+        // defer 등록 순서: removeItem이 먼저(= 나중에 실행), close가 나중(= 먼저 실행) → 닫은 뒤 삭제.
+        defer { try? outHandle.close() }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: npx)
@@ -35,15 +37,15 @@ actor KordocFillService {
         process.standardOutput = outHandle   // dry-run JSON을 임시 파일로 받는다.
 
         do { try process.run() }
-        catch { try? outHandle.close(); throw KordocFillError.toolNotFound }
+        catch { throw KordocFillError.toolNotFound }
 
         try await waitOrTimeout(process)
-        try? outHandle.close()
 
         if process.terminationStatus != 0 {
             let msg = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             throw KordocFillError.dryRunFailed(String(msg.prefix(500)))
         }
+        // stderr는 --silent라 작아 미드레인해도 안전(논-silent로 바꾸면 드레인 필요).
         guard let data = try? Data(contentsOf: tmp),
               let detection = try? JSONDecoder().decode(FillDetection.self, from: data) else {
             throw KordocFillError.decodeFailed
@@ -80,6 +82,8 @@ actor KordocFillService {
         guard let outHandle = try? FileHandle(forWritingTo: tmpOut) else {
             throw KordocFillError.fillFailed("임시 출력 파일을 열지 못했습니다.")
         }
+        // defer 등록 순서: removeItem(tmpOut)이 먼저(= 나중에 실행), close가 나중(= 먼저 실행) → 닫은 뒤 삭제.
+        defer { try? outHandle.close() }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: npx)
@@ -90,10 +94,9 @@ actor KordocFillService {
         process.standardOutput = outHandle   // 채운 hwpx 바이너리를 파일로 직접 받는다(파이프 교착 회피).
 
         do { try process.run() }
-        catch { try? outHandle.close(); throw KordocFillError.toolNotFound }
+        catch { throw KordocFillError.toolNotFound }
 
         try await waitOrTimeout(process)
-        try? outHandle.close()
 
         let stderrText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         if process.terminationStatus != 0 {
