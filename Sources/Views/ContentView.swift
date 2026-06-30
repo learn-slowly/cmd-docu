@@ -93,6 +93,9 @@ struct ContentView: View {
         .sheet(item: $state.officeSaveConfirm) { request in
             OfficeSaveConfirmView(request: request)
         }
+        .sheet(item: $state.officeFillSession) { request in
+            OfficeFillView(request: request)
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(

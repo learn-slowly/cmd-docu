@@ -26,11 +26,24 @@ struct OfficeReaderView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(appState.officePatchInProgress.contains(tabID))
-                    } else if DocumentKind.isPatchable(fileURL) {
-                        Button {
-                            appState.beginOfficeEdit(tabID: tabID)
-                        } label: {
-                            Label("편집", systemImage: "pencil")
+                    } else {
+                        if DocumentKind.isPatchable(fileURL) {
+                            Button {
+                                appState.beginOfficeEdit(tabID: tabID)
+                            } label: {
+                                Label("편집", systemImage: "pencil")
+                            }
+                        }
+                        if DocumentKind.isFillable(fileURL) {
+                            if appState.officeFillInProgress.contains(tabID) {
+                                ProgressView().controlSize(.small)
+                            }
+                            Button {
+                                appState.beginOfficeFill(tabID: tabID, fileURL: fileURL)
+                            } label: {
+                                Label("양식 채우기", systemImage: "square.and.pencil")
+                            }
+                            .disabled(appState.officeFillInProgress.contains(tabID))
                         }
                     }
                 }
