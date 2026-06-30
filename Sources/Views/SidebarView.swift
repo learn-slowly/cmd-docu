@@ -165,7 +165,7 @@ struct FileTreeView: View {
                     }
 
                     List {
-                        ForEach(appState.fileTree) { item in
+                        ForEach(ParaLens.sorted(appState.fileTree)) { item in
                             FileTreeItemRow(item: item)
                         }
                     }
@@ -350,24 +350,34 @@ struct SearchResultRow: View {
 struct FileTreeItemRow: View {
     @Environment(AppState.self) private var appState
     let item: FileTreeItem
-    
+
     private var isFavorited: Bool {
         appState.favorites.contains(where: { $0.url == item.url })
     }
-    
+
+    /// PARA 분류에 따른 행 스타일을 계산한다.
+    private var paraCategory: ParaCategory {
+        ParaLens.classify(item.url)
+    }
+
     var body: some View {
+        rowContent
+            .opacity(paraCategory == .archive ? 0.45 : 1.0)
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
         if item.isDirectory {
             DisclosureGroup(isExpanded: Binding(
                 get: { appState.expandedFolders.contains(item.url) },
                 set: { _ in appState.toggleFolderExpansion(item.url) }
             )) {
-                ForEach(item.children) { child in
+                ForEach(ParaLens.sorted(item.children)) { child in
                     FileTreeItemRow(item: child)
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Label(item.name, systemImage: item.icon)
-                        .lineLimit(1)
+                    rowLabel
                     if isFavorited {
                         Image(systemName: "star.fill")
                             .font(.caption2)
@@ -380,8 +390,7 @@ struct FileTreeItemRow: View {
             }
         } else {
             HStack(spacing: 4) {
-                Label(item.name, systemImage: item.icon)
-                    .lineLimit(1)
+                rowLabel
                 if isFavorited {
                     Image(systemName: "star.fill")
                         .font(.caption2)
@@ -394,6 +403,24 @@ struct FileTreeItemRow: View {
             .contextMenu {
                 FileTreeContextMenu(item: item)
             }
+        }
+    }
+
+    /// PARA 분류에 따라 스타일을 적용한 Label을 반환한다.
+    @ViewBuilder
+    private var rowLabel: some View {
+        if paraCategory == .projects && item.isDirectory {
+            Label {
+                Text(item.name)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: item.icon)
+                    .foregroundStyle(Color.cmdsAccent)
+            }
+        } else {
+            Label(item.name, systemImage: item.icon)
+                .lineLimit(1)
         }
     }
 }
