@@ -109,47 +109,109 @@ extension NSAppearance {
 
 // MARK: - Brand logo
 
-/// The single, canonical CmdMD mark: the CMDS open-book on the green→pink tile.
-/// Mirrors the app icon so every in-app hero shows the same logo. Loads the
-/// bundled book glyph when present (packaged app), else an SF Symbol fallback.
+/// cmd-docu 마크 색(슬레이트 → 앰버). 앱 아이콘(scripts/make_icon.swift)과 동일.
+enum DocBrand {
+    static let slate    = Color(hex: "1E293B")
+    static let slateMid = Color(hex: "475569")
+    static let amber    = Color(hex: "F59E0B")
+}
+
+/// 앞장에 접힌 모서리가 있는 문서 모양(좌상 원점, y 아래로).
+struct FoldedDoc: Shape {
+    var fold: CGFloat = 0.26   // 가로 대비 접힌 모서리 비율
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let f = rect.width * fold
+        let rr = rect.width * 0.10
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + rr))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + rr, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - f, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + f))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - rr))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - rr, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + rr, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - rr), control: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// cmd-docu 캐노니컬 마크: 슬레이트→앰버 타일 위에 쌓인 흰 문서 + AI 스파크.
+/// 앱 아이콘과 같은 모티프(인앱 hero용). 순수 벡터라 swift run·패키지 모두 동일.
 struct BrandLogo: View {
     var size: CGFloat = 76
-    /// Show the "MD" wordmark under the book (icon-style lockup).
+    /// 호환용(현재 마크는 자체 텍스트 없음 — 워드마크는 호출부에서 별도 표기).
     var showWordmark: Bool = false
 
-    private var bookGlyph: NSImage? {
-        guard let url = Bundle.main.url(forResource: "cmds-book-white", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }
+    private var sheetW: CGFloat { size * 0.40 }
+    private var sheetH: CGFloat { size * 0.48 }
+    private var d: CGFloat { size * 0.055 }
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [CMDSBrand.green, CMDSBrand.greenBright, CMDSBrand.pink],
+                    colors: [DocBrand.slate, DocBrand.slateMid, DocBrand.amber],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
             .frame(width: size, height: size)
-            .overlay {
-                VStack(spacing: size * 0.04) {
-                    Group {
-                        if let glyph = bookGlyph {
-                            Image(nsImage: glyph).resizable().scaledToFit()
-                        } else {
-                            Image(systemName: "book.fill").resizable().scaledToFit()
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .frame(width: size * 0.56, height: size * (showWordmark ? 0.34 : 0.42))
+            .overlay { mark }
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.235, style: .continuous))
+    }
 
-                    if showWordmark {
-                        Text("MD")
-                            .font(.system(size: size * 0.22, weight: .heavy))
-                            .foregroundStyle(.white)
-                    }
+    private var mark: some View {
+        ZStack {
+            backSheet(2).opacity(0.55)
+            backSheet(1).opacity(0.78)
+            frontSheet
+            Image(systemName: "sparkles")
+                .font(.system(size: size * 0.20, weight: .semibold))
+                .foregroundStyle(.white)
+                .position(x: size * 0.75, y: size * 0.23)
+        }
+        .frame(width: size, height: size)
+    }
+
+    private func backSheet(_ i: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: size * 0.045, style: .continuous)
+            .fill(.white)
+            .frame(width: sheetW, height: sheetH)
+            .position(x: size * 0.50 - i * d, y: size * 0.60 - i * d)
+    }
+
+    private var frontSheet: some View {
+        FoldedDoc()
+            .fill(.white)
+            .overlay {
+                // 접힌 모서리 그림자
+                FoldFlap()
+                    .fill(Color.black.opacity(0.15))
+                // 본문 줄 3개(슬레이트)
+                VStack(alignment: .leading, spacing: sheetH * 0.12) {
+                    Capsule().fill(DocBrand.slate).frame(width: sheetW * 0.58, height: size * 0.028)
+                    Capsule().fill(DocBrand.slate).frame(width: sheetW * 0.58, height: size * 0.028)
+                    Capsule().fill(DocBrand.slate).frame(width: sheetW * 0.40, height: size * 0.028)
                 }
+                .frame(width: sheetW, height: sheetH, alignment: .center)
+                .offset(y: sheetH * 0.14)
             }
+            .frame(width: sheetW, height: sheetH)
+            .position(x: size * 0.50, y: size * 0.60)
+    }
+}
+
+/// 접힌 모서리 플랩(앞장 우상단 삼각형).
+struct FoldFlap: Shape {
+    var fold: CGFloat = 0.26
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let f = rect.width * fold
+        p.move(to: CGPoint(x: rect.maxX - f, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + f))
+        p.addLine(to: CGPoint(x: rect.maxX - f, y: rect.minY + f))
+        p.closeSubpath()
+        return p
     }
 }
