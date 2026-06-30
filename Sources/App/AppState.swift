@@ -970,7 +970,8 @@ final class AppState {
         for e in existing where isAncestor(norm(e), add) { return existing }
         // 새 항목의 하위인 기존 항목들을 제거(흡수)하고 새 항목 추가.
         var kept = existing.filter { !isAncestor(add, norm($0)) }
-        kept.append(add)
+        // standardizingPath는 /private 접두를 떼므로 비교에만 쓰고, 저장은 호출자가 넘긴 canonical 경로 그대로 둔다.
+        kept.append(adding)
         return kept
     }
 
@@ -989,10 +990,11 @@ final class AppState {
     /// 등록 해제: 목록에서 빼고 인덱스에서 그 하위를 제거한다(디스크 파일은 불변).
     @MainActor
     func unregisterIndexFolder(_ path: String) {
-        settings.indexedFolders.removeAll { $0 == path }
+        let canonicalPath = SearchIndexer.canonicalURL(URL(fileURLWithPath: path)).path
+        settings.indexedFolders.removeAll { $0 == canonicalPath || $0 == path }
         saveUserData()
         startFolderWatching()
-        Task { _ = await searchIndex.removeUnder(folder: path) }
+        Task { _ = await searchIndex.removeUnder(folder: canonicalPath) }
     }
 
     /// 한 폴더를 (재)인덱싱한다(진행률 표시).

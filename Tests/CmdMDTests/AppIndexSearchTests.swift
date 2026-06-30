@@ -24,6 +24,12 @@ final class AppIndexSearchTests: XCTestCase {
         XCTAssertEqual(out, ["/a", "/b"])
     }
 
+    func testNormalizedPreservesPrivatePrefixedCanonicalPath() {
+        // canonical 경로(/private/var/...)를 그대로 저장해야 한다. standardizingPath가 /private를 떼면 안 된다.
+        let out = AppState.normalizedIndexFolders([], adding: "/private/var/folders/abc/Docs")
+        XCTAssertEqual(out, ["/private/var/folders/abc/Docs"])
+    }
+
     @MainActor
     func testIndexSearchStateDefaults() {
         let app = AppState()
