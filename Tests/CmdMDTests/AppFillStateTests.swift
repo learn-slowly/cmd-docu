@@ -7,6 +7,7 @@ final class AppFillStateTests: XCTestCase {
         XCTAssertTrue(AppState.kordocFillErrorMessage(KordocFillError.timeout).contains("중단"))
         XCTAssertTrue(AppState.kordocFillErrorMessage(KordocFillError.fillFailed("boom")).contains("boom"))
         XCTAssertTrue(AppState.kordocFillErrorMessage(KordocFillError.dryRunFailed("nope")).contains("nope"))
+        XCTAssertTrue(AppState.kordocFillErrorMessage(KordocFillError.decodeFailed).contains("서식 필드 정보를"))
     }
 
     @MainActor

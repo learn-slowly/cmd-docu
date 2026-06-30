@@ -96,9 +96,14 @@ actor KordocFillService {
         do { try process.run() }
         catch { throw KordocFillError.toolNotFound }
 
+        // stderr를 동시에 드레인한다 — fill은 "매칭 실패" 경고를 stderr로 내므로,
+        // 종료 후에야 읽으면 버퍼가 차서 kordoc이 막혀 교착될 수 있다.
+        let stderrHandle = stderrPipe.fileHandleForReading
+        let stderrTask = Task.detached { stderrHandle.readDataToEndOfFile() }
+
         try await waitOrTimeout(process)
 
-        let stderrText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderrText = String(data: await stderrTask.value, encoding: .utf8) ?? ""
         if process.terminationStatus != 0 {
             throw KordocFillError.fillFailed(String(stderrText.prefix(500)))
         }
