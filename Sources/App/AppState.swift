@@ -107,6 +107,11 @@ final class AppState {
     var cleanupBatches: [MoveBatch] = []
     var cleanupError: String?
 
+    // Claude 인증 상태(설정 화면)
+    var claudeAuthStatus: ClaudeAuthStatus?   // nil = CLI 미설치 또는 미확인
+    var claudeAuthChecked: Bool = false       // 한 번이라도 status를 조회했는가
+    var claudeAuthBusy: Bool = false
+
     // Status
     var errorMessage: String?
     var toastMessage: String?
@@ -2005,6 +2010,41 @@ final class AppState {
     @MainActor
     func loadCleanupBatches() async {
         cleanupBatches = await moveLogStore.load().reversed()
+    }
+
+    // MARK: - Claude 인증 (설정 화면)
+
+    /// `claude auth status`를 조회해 화면 상태를 갱신한다.
+    @MainActor
+    func refreshClaudeAuth() async {
+        claudeAuthBusy = true
+        defer { claudeAuthBusy = false }
+        claudeAuthStatus = await claudeService.authStatus()
+        claudeAuthChecked = true
+    }
+
+    /// `claude auth login`(브라우저 로그인)을 실행하고 끝나면 상태를 새로고침한다.
+    @MainActor
+    func claudeLogin() async {
+        claudeAuthBusy = true
+        do {
+            try await claudeService.login()
+        } catch let error as ClaudeError {
+            errorMessage = Self.claudeErrorMessage(error)
+        } catch {
+            errorMessage = "Claude 로그인에 실패했습니다."
+        }
+        claudeAuthBusy = false
+        await refreshClaudeAuth()
+    }
+
+    /// 로그아웃 후 상태를 새로고침한다.
+    @MainActor
+    func claudeLogout() async {
+        claudeAuthBusy = true
+        try? await claudeService.logout()
+        claudeAuthBusy = false
+        await refreshClaudeAuth()
     }
 
     func showToast(_ message: String) {

@@ -377,9 +377,12 @@ enum AppInfo {
     static var versionLabel: String {
         build.isEmpty ? "Version \(version)" : "Version \(version) (\(build))"
     }
-    static let maker = "구요한 · CMDSPACE"
+    static let forkMaker = "레고 (learn-slowly)"
+    static let originalMaker = "구요한 · CMDSPACE"
     static let website = URL(string: "https://cmdspace.work")!
-    static let github = URL(string: "https://github.com/johnfkoo951/CmdMD")!
+    static let github = URL(string: "https://github.com/learn-slowly/cmd-docu")!
+    static let originalGithub = URL(string: "https://github.com/johnfkoo951/CmdMD")!
+    static let tagline = "한글·오피스·PDF를 읽고, Claude에게 묻고, 내용으로 검색해 알맞은 자리로 정리하는 macOS 도구."
 }
 
 /// Shared row of brand links — reused by the About window and Settings.
@@ -414,7 +417,7 @@ struct AboutView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("A review-first Markdown editor & Obsidian vault router.")
+            Text(AppInfo.tagline)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -445,14 +448,18 @@ struct AboutView: View {
             Divider().frame(width: 220)
 
             VStack(spacing: 8) {
-                Text("Made by \(AppInfo.maker)")
+                Text("Fork by \(AppInfo.forkMaker)")
                     .font(.callout.weight(.medium))
                 CreatorLinks()
             }
 
-            Text("© 2026 CMDSPACE · MIT License")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            VStack(spacing: 2) {
+                Text("Original CmdMD by \(AppInfo.originalMaker)")
+                Text("© 2026 CMDSPACE · MIT License")
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .multilineTextAlignment(.center)
 
             Button("Done") { dismiss() }
                 .keyboardShortcut(.defaultAction)

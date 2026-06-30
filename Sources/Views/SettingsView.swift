@@ -108,25 +108,75 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                LabeledContent("Version", value: AppInfo.versionLabel)
-                LabeledContent("Made by", value: AppInfo.maker)
-                Link(destination: AppInfo.website) {
-                    Label("cmdspace.work", systemImage: "globe")
+                claudeStatusRow
+                HStack {
+                    if let s = appState.claudeAuthStatus, s.loggedIn {
+                        Button("로그아웃") { Task { await appState.claudeLogout() } }
+                    } else {
+                        Button("브라우저로 로그인") { Task { await appState.claudeLogin() } }
+                    }
+                    Button("상태 새로고침") { Task { await appState.refreshClaudeAuth() } }
+                    if appState.claudeAuthBusy {
+                        ProgressView().controlSize(.small)
+                    }
                 }
+                .disabled(appState.claudeAuthBusy)
+            } header: {
+                Text("Claude")
+            } footer: {
+                Text("폴더 정리·라우팅·질의는 로컬 claude CLI를 씁니다. ‘브라우저로 로그인’을 누르면 claude auth login이 실행돼 브라우저 로그인 페이지가 열립니다. 별도 API 키는 필요 없습니다.")
+                    .font(.caption)
+            }
+
+            Section {
+                LabeledContent("Version", value: AppInfo.versionLabel)
+                LabeledContent("Fork by", value: AppInfo.forkMaker)
+                LabeledContent("Original", value: AppInfo.originalMaker)
                 Link(destination: AppInfo.github) {
-                    Label("GitHub repository", systemImage: "chevron.left.forwardslash.chevron.right")
+                    Label("cmd-docu (GitHub)", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
                 Button("About cmd-docu…") { appState.showAbout = true }
             } header: {
                 Text("About")
             } footer: {
-                Text("cmd-docu — CmdMD fork · © 2026 CMDSPACE · MIT License")
+                Text("cmd-docu — CmdMD(© 2026 CMDSPACE) 포크 · MIT License")
                     .font(.caption)
             }
         }
         .formStyle(.grouped)
+        .task {
+            await appState.refreshClaudeAuth()
+        }
         .onChange(of: appState.settings) { _, _ in
             appState.saveUserData()
+        }
+    }
+
+    /// claude 로그인 상태 한 줄.
+    @ViewBuilder
+    private var claudeStatusRow: some View {
+        LabeledContent("상태") {
+            if !appState.claudeAuthChecked {
+                Text("확인 중…").foregroundStyle(.secondary)
+            } else if let s = appState.claudeAuthStatus {
+                if s.loggedIn {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Label(s.email ?? "로그인됨", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                        if let sub = s.subscriptionType {
+                            Text("구독: \(sub)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Label("미로그인", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+            } else {
+                Label("claude CLI 미설치", systemImage: "xmark.octagon")
+                    .foregroundStyle(.red)
+            }
         }
     }
 }

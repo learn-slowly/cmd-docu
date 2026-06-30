@@ -93,6 +93,63 @@ actor ClaudeService {
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - 인증 (claude auth)
+
+    /// `claude auth status` 결과. CLI를 못 찾으면 nil(미설치), 찾았으나 미로그인이면 loggedOut.
+    func authStatus() async -> ClaudeAuthStatus? {
+        guard let path = Self.resolveClaudePath() else { return nil }
+        guard let result = await Self.runCapturing(path: path, arguments: ["auth", "status"], timeout: 20)
+        else { return ClaudeAuthStatus.loggedOut }
+        return ClaudeAuthParser.parse(result.out) ?? .loggedOut
+    }
+
+    /// `claude auth login --claudeai` 실행 — 브라우저 로그인 페이지가 열린다.
+    /// 완료까지 대기(긴 타임아웃). 실패 시 분류된 에러를 던진다.
+    func login() async throws {
+        guard let path = Self.resolveClaudePath() else { throw ClaudeError.toolNotFound }
+        guard let result = await Self.runCapturing(path: path, arguments: ["auth", "login", "--claudeai"], timeout: 300)
+        else { throw ClaudeError.toolNotFound }
+        if result.code != 0 {
+            throw Self.classify(exitCode: result.code, stderr: result.err.isEmpty ? result.out : result.err)
+        }
+    }
+
+    /// `claude auth logout`.
+    func logout() async throws {
+        guard let path = Self.resolveClaudePath() else { throw ClaudeError.toolNotFound }
+        _ = await Self.runCapturing(path: path, arguments: ["auth", "logout"], timeout: 30)
+    }
+
+    /// stdin 없이 인자만으로 claude를 실행해 (stdout, stderr, 종료코드)를 돌려준다.
+    /// 실행 자체가 불가하면 nil. 파이프 교착 방지를 위해 드레인을 먼저 시작한다.
+    private static func runCapturing(path: String, arguments: [String], timeout: TimeInterval) async -> (out: String, err: String, code: Int32)? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        process.standardInput = FileHandle.nullDevice
+
+        do { try process.run() } catch { return nil }
+
+        let outHandle = outPipe.fileHandleForReading
+        let errHandle = errPipe.fileHandleForReading
+        async let outData = Task.detached { outHandle.readDataToEndOfFile() }.value
+        async let errData = Task.detached { errHandle.readDataToEndOfFile() }.value
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning {
+            if Date() > deadline { process.terminate(); break }
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+        }
+
+        let out = String(data: await outData, encoding: .utf8) ?? ""
+        let err = String(data: await errData, encoding: .utf8) ?? ""
+        return (out, err, process.terminationStatus)
+    }
+
     /// GUI 앱(.app)은 로그인 셸 PATH를 상속하지 않으므로 claude 절대경로를 탐지한다.
     /// 흔한 설치 경로 → 그래도 없으면 로그인 셸의 `which claude`.
     static func resolveClaudePath() -> String? {
