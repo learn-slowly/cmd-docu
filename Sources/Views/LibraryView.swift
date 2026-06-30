@@ -204,7 +204,7 @@ struct LibraryGridCell: View {
             Image(nsImage: thumbnail)
                 .resizable()
                 .scaledToFit()
-                .cornerRadius(4)
+                .clipShape(.rect(cornerRadius: 4))
         } else {
             Image(systemName: cellIcon)
                 .font(.system(size: 32))
