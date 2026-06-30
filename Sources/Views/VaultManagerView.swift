@@ -996,7 +996,7 @@ struct ParaManagerPane: View {
                         appState.saveUserData()
                     }
                     Button("기본 구조 채우기") {
-                        // 비었을 때만 시드로 채운다(기존 항목 보존).
+                        // 비었으면 시드로 채우고, 항목이 있으면 뒤에 추가한다(기존 항목 보존).
                         if state.settings.paraFolders.isEmpty {
                             state.settings.paraFolders = ParaFolder.legoSeed()
                         } else {
