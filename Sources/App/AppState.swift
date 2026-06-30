@@ -105,6 +105,7 @@ final class AppState {
     var cleanupPlan: CleanupPlan?
     var cleanupBusy: Bool = false
     var cleanupBatches: [MoveBatch] = []
+    var cleanupError: String?
 
     // Status
     var errorMessage: String?
@@ -1928,6 +1929,7 @@ final class AppState {
     func runCleanupPlan() async {
         guard let mode = cleanupMode else { return }
         cleanupBusy = true
+        cleanupError = nil
         defer { cleanupBusy = false }
 
         let metas = FileScanner.scan(mode.root)
@@ -1945,7 +1947,7 @@ final class AppState {
             cleanupPlan = CleanupPlan(scheme: cleanupScheme,
                                       moves: CleanupPlanner.buildMoves(from: assignments))
         } catch let error as ClaudeError {
-            errorMessage = Self.claudeErrorMessage(error)
+            cleanupError = Self.claudeErrorMessage(error)
         } catch {
             showToast("Claude 응답을 해석하지 못했습니다")
         }

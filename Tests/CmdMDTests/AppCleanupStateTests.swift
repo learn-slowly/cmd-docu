@@ -9,6 +9,7 @@ final class AppCleanupStateTests: XCTestCase {
         XCTAssertNil(state.cleanupPlan)
         XCTAssertTrue(state.cleanupScheme.isEmpty)
         XCTAssertFalse(state.cleanupBusy)
+        XCTAssertNil(state.cleanupError)
     }
 
     func testStartCleanupSetsSubfolderModeAndShows() {
