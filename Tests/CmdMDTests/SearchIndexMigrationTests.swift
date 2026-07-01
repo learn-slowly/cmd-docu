@@ -27,9 +27,9 @@ final class SearchIndexMigrationTests: XCTestCase {
         XCTAssertTrue(reset)                     // 구 스키마 감지 → 재구성
         let count = await idx.count()
         XCTAssertEqual(count, 0)                  // 구 데이터 비워짐(재인덱싱 대상)
-        // trigram 활성 확인: 복합어 2글자 부분일치.
+        // trigram MATCH 부분일치 확인(3글자): "방선거"(3글자) → "지방선거" 포함 문서 회수.
         await idx.upsert(path: "/n.md", filename: "n.md", body: "지방선거 결과", mtime: 1, ext: "md")
-        let hits = await idx.searchTerms(["선거"], mode: .and)
+        let hits = await idx.searchTerms(["방선거"], mode: .and)
         XCTAssertEqual(hits.first?.path, "/n.md")
     }
 
@@ -38,5 +38,17 @@ final class SearchIndexMigrationTests: XCTestCase {
         let idx = SearchIndex(dbURL: tempURL())
         let reset = await idx.didResetForSchemaChange
         XCTAssertFalse(reset)
+    }
+
+    /// 이미 trigram DB를 재열기하면 재구성 없이 데이터가 보존된다.
+    func testReopenExistingTrigramDbDoesNotReset() async {
+        let url = tempURL()
+        let idx1 = SearchIndex(dbURL: url)
+        await idx1.upsert(path: "/x.md", filename: "x.md", body: "내용", mtime: 1, ext: "md")
+        let idx2 = SearchIndex(dbURL: url)
+        let reset = await idx2.didResetForSchemaChange
+        XCTAssertFalse(reset)                 // 이미 trigram → 재구성 없음
+        let count = await idx2.count()
+        XCTAssertEqual(count, 1)               // 데이터 보존
     }
 }

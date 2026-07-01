@@ -52,6 +52,16 @@ final class RagRetrieverTests: XCTestCase {
         XCTAssertTrue(paths.contains("/d/a.md"))
     }
 
+    func testTopFilesRecoversMixedLengthKoreanQuestion() async {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmddocu-ret4-\(UUID().uuidString)").appendingPathExtension("sqlite")
+        let idx = SearchIndex(dbURL: url)
+        await idx.upsert(path: "/d/a.md", filename: "a.md", body: "지방선거 결과 분석", mtime: 1, ext: "md")
+        // "지방선거 결과" → 토큰 [지방선거(4), 결과(2)] 혼합. 확장 없이도 .or 백스톱이 회수해야 한다(C1 회귀).
+        let paths = await RagRetriever(index: idx).topFiles(question: "지방선거 결과", expandedTerms: [])
+        XCTAssertTrue(paths.contains("/d/a.md"))
+    }
+
     // 회귀 가드(RED 아님): trigram이라 "평가서"→"평가서에" 부분일치가 리팩터 전후 모두 통과한다.
     func testTopFilesMatchesKoreanParticleSubstring() async {
         let url = FileManager.default.temporaryDirectory

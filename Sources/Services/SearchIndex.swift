@@ -166,9 +166,9 @@ actor SearchIndex {
         guard let built = TrigramQuery.build(terms: terms, mode: mode) else { return [] }
         let firstTerm = terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                              .first(where: { !$0.isEmpty }) ?? ""
-        let snippetExpr = built.hasMatch ? "snippet(docs, 2, '[', ']', '…', 10)" : "''"
+        let snippetExpr = built.directMatch ? "snippet(docs, 2, '[', ']', '…', 10)" : "''"
         let fnameExpr = flagFilename ? "(INSTR(lower(filename), lower(?)) > 0)" : "0"
-        let orderBy = built.hasMatch ? "ORDER BY rank " : ""
+        let orderBy = built.directMatch ? "ORDER BY rank " : ""
         let sql = "SELECT path, \(snippetExpr), \(fnameExpr) FROM docs WHERE \(built.whereClause) \(orderBy)LIMIT ?;"
 
         var stmt: OpaquePointer?

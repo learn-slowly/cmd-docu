@@ -72,6 +72,14 @@ final class SearchIndexTests: XCTestCase {
         XCTAssertEqual(hits.first?.path, "/other/z.md")
     }
 
+    func testSearchTermsMixedOrLengthDoesNotError() async {
+        let idx = SearchIndex(dbURL: tempDBURL())
+        await idx.upsert(path: "/d/a.md", filename: "a.md", body: "정의당 지방선거 평가서에 총평", mtime: 1, ext: "md")
+        // ≥3글자(평가서, MATCH)+≤2글자(선거, LIKE) 혼합 OR — 예전엔 FTS5 런타임 에러로 []였다.
+        let hits = await idx.searchTerms(["평가서", "선거"], mode: .or)
+        XCTAssertTrue(hits.contains(where: { $0.path == "/d/a.md" }))
+    }
+
     func testIndexedPathsUnder() async {
         let idx = SearchIndex(dbURL: tempDBURL())
         await idx.upsert(path: "/d/a.md", filename: "a.md", body: "x", mtime: 1, ext: "md")
