@@ -629,6 +629,8 @@ final class AppState {
         AppState.shared = self
 
         loadUserData()
+        // 검색 인덱스 스키마가 바뀌어 재구성됐으면 등록 폴더를 자동 재인덱싱(1회).
+        Task { @MainActor in await self.reindexAfterSchemaMigration() }
         // 등록 폴더 파일 감시 시작(앱 시작 시 1회).
         Task { @MainActor in self.startFolderWatching() }
         restoreSessionIfNeeded()
@@ -1087,6 +1089,15 @@ final class AppState {
         saveUserData()
         startFolderWatching()
         Task { _ = await searchIndex.removeUnder(folder: canonicalPath) }
+    }
+
+    /// 인덱스 DB가 스키마 변경으로 재구성됐으면 등록된 모든 폴더를 재인덱싱한다.
+    @MainActor
+    private func reindexAfterSchemaMigration() async {
+        guard await searchIndex.didResetForSchemaChange else { return }
+        for folder in settings.indexedFolders {
+            reindexFolder(folder)
+        }
     }
 
     /// 한 폴더를 (재)인덱싱한다(진행률 표시).
