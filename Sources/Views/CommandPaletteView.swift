@@ -269,6 +269,16 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "자료에 묻기 (RAG)",
+                subtitle: "등록 폴더를 근거로 Claude가 답하고 출처를 표시",
+                icon: "text.magnifyingglass",
+                shortcut: nil,
+                keywords: ["자료", "질문", "묻기", "rag", "ask", "claude", "근거", "출처"]
+            ) {
+                appState.showAskCorpus = true
+            },
+
+            Command(
                 title: "폴더 정리 (배치)",
                 subtitle: "Claude 제안으로 폴더를 종류·주제별로 정리",
                 icon: "folder.badge.gearshape",
