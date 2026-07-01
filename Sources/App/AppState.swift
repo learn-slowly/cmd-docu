@@ -107,6 +107,14 @@ final class AppState {
     /// 파일트리 백그라운드 빌드 Task(연타·연속 호출 시 선행 task 취소).
     private var fileTreeTask: Task<Void, Never>?
 
+    // MARK: 자료에 묻기(RAG)
+    var showAskCorpus: Bool = false
+    var ragQuestion: String = ""
+    var ragAnswer: String? = nil
+    var ragSources: [RagSource] = []
+    var ragBusy: Bool = false
+    var ragMessage: String? = nil   // noEvidence·에러 안내
+
     // 내용 검색(인덱스) UI 상태
     var showIndexSearch: Bool = false
     var indexSearchText: String = ""
@@ -157,6 +165,7 @@ final class AppState {
     private let searchIndex: SearchIndex
     private let searchIndexer: SearchIndexer
     private let folderWatcher = FolderWatcher()
+    private let ragService: RagService
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
 
     // Computed Properties
@@ -615,6 +624,7 @@ final class AppState {
         let idx = SearchIndex(dbURL: appDir.appendingPathComponent("searchindex.sqlite"))
         self.searchIndex = idx
         self.searchIndexer = SearchIndexer(index: idx, kordoc: kordocService)
+        self.ragService = RagService(index: idx, claude: claudeService, kordoc: kordocService)
 
         AppState.shared = self
 
@@ -1112,6 +1122,40 @@ final class AppState {
         let url = URL(fileURLWithPath: hit.path)
         showIndexSearch = false
         Task { await loadAndActivateDocument(at: url, inNewTab: true) }
+    }
+
+    /// 자료에 묻기(RAG) 실행. 근거 없으면 안내, 성공하면 답변+출처를 채운다.
+    @MainActor
+    func runRagQuery() async {
+        let q = ragQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        ragBusy = true
+        ragAnswer = nil
+        ragSources = []
+        ragMessage = nil
+        let outcome = await ragService.ask(question: q, expandQuery: settings.ragExpandQuery)
+        ragBusy = false
+        switch outcome {
+        case .answered(let a):
+            ragAnswer = a.text
+            ragSources = a.sources
+        case .noEvidence:
+            ragMessage = "자료에서 관련 내용을 찾지 못했습니다."
+        case .failed(let e):
+            ragMessage = AppState.claudeErrorMessage(e)
+        }
+    }
+
+    /// 근거 출처를 그 위치(줄/페이지)로 연다.
+    @MainActor
+    func openRagSource(_ source: RagSource) {
+        showAskCorpus = false
+        let url = URL(fileURLWithPath: source.path)
+        switch source.location {
+        case .line(let n): openDocument(at: url, inNewTab: true, scrollToLine: n)
+        case .page(let p): openDocument(at: url, inNewTab: true, scrollToPDFPage: p)
+        case .unknown: openDocument(at: url, inNewTab: true)
+        }
     }
 
     /// 등록 폴더로 파일 감시를 (재)시작한다. 변경 경로를 증분 재인덱싱.
