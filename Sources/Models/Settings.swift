@@ -100,6 +100,10 @@ struct AppSettings: Codable, Equatable {
     // MARK: 내용 검색
     var indexedFolders: [String] = []      // 내용 검색 인덱스 등록 폴더(절대 경로)
 
+    // MARK: RAG 설정
+    /// 자료에 묻기(RAG) 질의 확장 토글(동의어 recall 보완). 기본 ON.
+    var ragExpandQuery: Bool = true
+
     // MARK: 폴더별 뷰 기억
     /// 키 = 폴더 표준화 경로(`standardizedFileURL.path`), 값 = 기억된 레이아웃.
     var libraryLayouts: [String: LibraryLayout] = [:]
@@ -156,6 +160,7 @@ struct AppSettings: Codable, Equatable {
         paraFolders = try c.decodeIfPresent([ParaFolder].self, forKey: .paraFolders) ?? d.paraFolders
         claudeRoutingEnabled = try c.decodeIfPresent(Bool.self, forKey: .claudeRoutingEnabled) ?? d.claudeRoutingEnabled
         indexedFolders = try c.decodeIfPresent([String].self, forKey: .indexedFolders) ?? d.indexedFolders
+        ragExpandQuery = try c.decodeIfPresent(Bool.self, forKey: .ragExpandQuery) ?? d.ragExpandQuery
         libraryLayouts = try c.decodeIfPresent([String: LibraryLayout].self, forKey: .libraryLayouts) ?? d.libraryLayouts
         showStatusBar = try c.decodeIfPresent(Bool.self, forKey: .showStatusBar) ?? d.showStatusBar
         showTabBar = try c.decodeIfPresent(Bool.self, forKey: .showTabBar) ?? d.showTabBar
