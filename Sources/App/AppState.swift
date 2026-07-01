@@ -1128,13 +1128,13 @@ final class AppState {
     @MainActor
     func runRagQuery() async {
         let q = ragQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return }
+        guard !q.isEmpty, !ragBusy else { return }   // 빈 질문·중복 실행 방지
         ragBusy = true
+        defer { ragBusy = false }
         ragAnswer = nil
         ragSources = []
         ragMessage = nil
         let outcome = await ragService.ask(question: q, expandQuery: settings.ragExpandQuery)
-        ragBusy = false
         switch outcome {
         case .answered(let a):
             ragAnswer = a.text

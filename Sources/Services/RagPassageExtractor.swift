@@ -95,8 +95,7 @@ enum RagPassageExtractor {
         let chars = Array(s)
         let half = maxChars / 2
         let start = max(0, min(off - half, chars.count - maxChars))
-        let clampedStart = max(0, start)
-        let end = min(chars.count, clampedStart + maxChars)
-        return String(chars[clampedStart..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let end = min(chars.count, start + maxChars)
+        return String(chars[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

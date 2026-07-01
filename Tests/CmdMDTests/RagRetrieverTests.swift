@@ -39,4 +39,16 @@ final class RagRetrieverTests: XCTestCase {
         let paths = await retriever.topFiles(question: "지방선거", expandedTerms: ["평가서"])
         XCTAssertEqual(Set(paths), ["/d/a.md", "/d/b.md"])
     }
+
+    func testTopFilesRecoversMultiWordQuestionWithoutExpansion() async {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmddocu-ret2-\(UUID().uuidString)").appendingPathExtension("sqlite")
+        let idx = SearchIndex(dbURL: url)
+        // 문서엔 질문의 일부 단어만 있다 — 문장 전체 AND(primary)로는 안 잡힌다.
+        await idx.upsert(path: "/d/a.md", filename: "a.md", body: "정의당 평가서 초안", mtime: 1, ext: "md")
+        let retriever = RagRetriever(index: idx)
+        // 확장 없이(expandedTerms=[]) 자연어 질문 → 원질문 토큰 OR로 회수돼야 한다.
+        let paths = await retriever.topFiles(question: "정의당 평가서에 뭐라고 썼더라", expandedTerms: [])
+        XCTAssertTrue(paths.contains("/d/a.md"))
+    }
 }

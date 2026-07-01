@@ -1,5 +1,3 @@
-import Foundation
-
 /// RAG 답변의 근거 1건 + 원본 위치.
 struct RagSource: Equatable, Identifiable {
     let index: Int          // [n] (1-based). 프롬프트 번호와 표시에 공용.
