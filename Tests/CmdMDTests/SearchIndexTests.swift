@@ -8,26 +8,28 @@ final class SearchIndexTests: XCTestCase {
             .appendingPathExtension("sqlite")
     }
 
-    func testSanitizeQuotesTermsAndPrefixesLast() {
-        XCTAssertEqual(FTSQuery.sanitize("선거 분석"), "\"선거\" \"분석\"*")
-        XCTAssertEqual(FTSQuery.sanitize("hello"), "\"hello\"*")
-        XCTAssertNil(FTSQuery.sanitize("   "))
-    }
-
-    func testSanitizeEscapesEmbeddedQuotes() {
-        // FTS5에서 따옴표는 ""로 이스케이프해야 구문 깨짐을 막는다.
-        XCTAssertEqual(FTSQuery.sanitize("a\"b"), "\"a\"\"b\"*")
-    }
-
-    func testUpsertThenSearchFindsBodyHitWithSnippet() async {
+    func testSearchFindsBodyHitWithSnippet() async {
         let idx = SearchIndex(dbURL: tempDBURL())
         await idx.upsert(path: "/d/a.hwp", filename: "a.hwp",
                          body: "정의당 평가서 선거 분석 보고", mtime: 1, ext: "hwp")
-        let hits = await idx.search(query: "선거")
+        // ≥3글자 → MATCH + 스니펫.
+        let hits = await idx.search(query: "평가서")
         XCTAssertEqual(hits.count, 1)
         XCTAssertEqual(hits.first?.path, "/d/a.hwp")
-        XCTAssertTrue(hits.first?.snippet.contains("선거") ?? false)
+        XCTAssertTrue(hits.first?.snippet.contains("평가서") ?? false)
         XCTAssertFalse(hits.first?.isFilenameMatch ?? true)
+    }
+
+    func testSearchMatchesKoreanParticleAndCompound() async {
+        let idx = SearchIndex(dbURL: tempDBURL())
+        await idx.upsert(path: "/d/p.md", filename: "p.md", body: "정의당 평가서에 대한 총평", mtime: 1, ext: "md")
+        await idx.upsert(path: "/d/c.md", filename: "c.md", body: "지방선거 결과 분석", mtime: 1, ext: "md")
+        // 조사: "평가서" → "평가서에" 매치.
+        let h1 = await idx.search(query: "평가서")
+        XCTAssertEqual(h1.first?.path, "/d/p.md")
+        // 복합어(2글자 LIKE): "선거" → "지방선거" 매치.
+        let h2 = await idx.search(query: "선거")
+        XCTAssertEqual(h2.first?.path, "/d/c.md")
     }
 
     func testFilenameMatchFlagged() async {

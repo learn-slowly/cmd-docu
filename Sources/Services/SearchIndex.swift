@@ -8,47 +8,36 @@ struct IndexHit: Equatable {
     let isFilenameMatch: Bool
 }
 
-/// 사용자 입력을 안전한 FTS5 MATCH 문자열로 바꾼다(구문 깨짐 방지).
-enum FTSQuery {
-    /// 공백으로 용어를 나누고 각 용어를 "..."로 감싸며 내부 따옴표를 ""로 이스케이프한다.
-    /// 마지막 용어에는 접두 검색 *를 붙인다. 빈 입력이면 nil.
-    static func sanitize(_ raw: String) -> String? {
-        let terms = raw.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).map(String.init)
-        guard !terms.isEmpty else { return nil }
-        var parts: [String] = []
-        for (i, term) in terms.enumerated() {
-            let escaped = term.replacingOccurrences(of: "\"", with: "\"\"")
-            let quoted = "\"\(escaped)\""
-            parts.append(i == terms.count - 1 ? quoted + "*" : quoted)
-        }
-        return parts.joined(separator: " ")
-    }
-}
-
 /// SQLite FTS5 영속 인덱스. kordoc/FSEvents와 달리 in-process라 단위테스트 대상.
 /// 인덱싱은 읽기 전용 — 원본 파일을 건드리지 않는다.
 actor SearchIndex {
     private var db: OpaquePointer?
     private let dbURL: URL
 
+    /// init 중 구 스키마를 감지해 재구성했는지(= 등록 폴더 재인덱싱 필요) 표시.
+    private(set) var didResetForSchemaChange = false
+
     init(dbURL: URL) {
         self.dbURL = dbURL
-        // init은 actor 격리 전이므로 open()을 직접 인라인.
         var dbPtr: OpaquePointer? = nil
         if sqlite3_open(dbURL.path, &dbPtr) != SQLITE_OK {
-            // 열기 실패 → SQLite는 에러 시에도 핸들을 반환하므로 먼저 닫고 DB 재생성 시도.
             sqlite3_close(dbPtr)
             dbPtr = nil
             try? FileManager.default.removeItem(at: dbURL)
             sqlite3_open(dbURL.path, &dbPtr)
         }
         db = dbPtr
+        // 기존 docs가 trigram이 아니면(구 unicode61) 재구성 대상 — 비우고 아래에서 trigram으로 재생성.
+        if Self.docsTokenizerIsTrigram(db) == false {
+            sqlite3_exec(db, "DROP TABLE IF EXISTS docs; DROP TABLE IF EXISTS files;", nil, nil, nil)
+            didResetForSchemaChange = true
+        }
         let schema = """
         CREATE TABLE IF NOT EXISTS files(
           path TEXT PRIMARY KEY, mtime REAL NOT NULL, ext TEXT, indexedAt REAL
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(
-          path UNINDEXED, filename, body, tokenize = 'unicode61'
+          path UNINDEXED, filename, body, tokenize = 'trigram'
         );
         """
         if sqlite3_exec(db, schema, nil, nil, nil) != SQLITE_OK {
@@ -58,6 +47,16 @@ actor SearchIndex {
             sqlite3_open(dbURL.path, &db)
             sqlite3_exec(db, schema, nil, nil, nil)
         }
+    }
+
+    /// docs 테이블의 정의를 sqlite_master에서 읽어 trigram 여부를 판정.
+    /// 반환: nil(테이블 없음=새 DB) / false(구 tokenizer) / true(이미 trigram).
+    private static func docsTokenizerIsTrigram(_ db: OpaquePointer?) -> Bool? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT sql FROM sqlite_master WHERE type='table' AND name='docs';", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let c = sqlite3_column_text(stmt, 0) else { return nil }
+        return String(cString: c).lowercased().contains("trigram")
     }
 
     deinit { sqlite3_close(db) }
@@ -157,26 +156,33 @@ actor SearchIndex {
     }
 
     func search(query: String, limit: Int = 200) -> [IndexHit] {
-        guard let match = FTSQuery.sanitize(query) else { return [] }
-        // 첫 번째 원문 용어 추출(INSTR 파일명 매칭용 — filename MATCH ?는 SELECT에서 FTS5 미지원).
-        let firstTerm = query.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" })
-                             .first.map(String.init) ?? query
+        let terms = query.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).map(String.init)
+        return searchTerms(terms, mode: .and, flagFilename: true, limit: limit)
+    }
+
+    /// 용어 목록을 trigram MATCH(≥3글자)+LIKE(≤2글자)로 검색한다.
+    /// flagFilename이면 첫 용어로 파일명 부분일치(INSTR)를 IndexHit.isFilenameMatch에 표시.
+    func searchTerms(_ terms: [String], mode: SearchMode, flagFilename: Bool = false, limit: Int = 200) -> [IndexHit] {
+        guard let built = TrigramQuery.build(terms: terms, mode: mode) else { return [] }
+        let firstTerm = terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                             .first(where: { !$0.isEmpty }) ?? ""
+        let snippetExpr = built.hasMatch ? "snippet(docs, 2, '[', ']', '…', 10)" : "''"
+        let fnameExpr = flagFilename ? "(INSTR(lower(filename), lower(?)) > 0)" : "0"
+        let orderBy = built.hasMatch ? "ORDER BY rank " : ""
+        let sql = "SELECT path, \(snippetExpr), \(fnameExpr) FROM docs WHERE \(built.whereClause) \(orderBy)LIMIT ?;"
+
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
-        // body 스니펫(컬럼 인덱스 2). 파일명 매칭 여부는 INSTR로 판정(FTS5 가상테이블 특성상
-        // filename MATCH ?를 SELECT 절에 쓰면 prepare 실패 → INSTR 대안 사용).
-        let sql = """
-        SELECT path, snippet(docs, 2, '[', ']', '…', 10),
-               (INSTR(lower(filename), lower(?)) > 0) AS fnameHit
-        FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?;
-        """
-        var out: [IndexHit] = []
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        sqlite3_bind_text(stmt, 1, firstTerm, -1, TRANSIENT)
-        sqlite3_bind_text(stmt, 2, match, -1, TRANSIENT)
-        sqlite3_bind_int(stmt, 3, Int32(limit))
+        // 바인딩 순서 = SQL 텍스트의 ? 등장 순서: [flagFilename 첫용어] → matchArg → likeArgs → limit.
+        var i: Int32 = 1
+        if flagFilename { sqlite3_bind_text(stmt, i, firstTerm, -1, TRANSIENT); i += 1 }
+        if let m = built.matchArg { sqlite3_bind_text(stmt, i, m, -1, TRANSIENT); i += 1 }
+        for like in built.likeArgs { sqlite3_bind_text(stmt, i, like, -1, TRANSIENT); i += 1 }
+        sqlite3_bind_int(stmt, i, Int32(limit))
+
+        var out: [IndexHit] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            // path가 nil이면 해당 행 건너뜀(안전 읽기).
             guard let pathC = sqlite3_column_text(stmt, 0) else { continue }
             let path = String(cString: pathC)
             let snippet = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
