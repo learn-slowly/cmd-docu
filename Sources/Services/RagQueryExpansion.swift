@@ -32,14 +32,4 @@ enum RagQueryExpansion {
         return out
     }
 
-    /// 확장 용어 → FTS5 OR MATCH. 각 용어를 "..."로 감싸고 내부 따옴표를 ""로 이스케이프.
-    /// 유효 용어가 없으면 nil.
-    static func orMatch(_ terms: [String]) -> String? {
-        let quoted = terms
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-        guard !quoted.isEmpty else { return nil }
-        return quoted.joined(separator: " OR ")
-    }
 }

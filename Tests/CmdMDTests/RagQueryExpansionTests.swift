@@ -28,13 +28,4 @@ final class RagQueryExpansionTests: XCTestCase {
         XCTAssertEqual(RagQueryExpansion.parse("JSON 아님"), [])
     }
 
-    func testOrMatchQuotesAndEscapes() {
-        XCTAssertEqual(RagQueryExpansion.orMatch(["선거", "평가"]), "\"선거\" OR \"평가\"")
-        XCTAssertEqual(RagQueryExpansion.orMatch(["a\"b"]), "\"a\"\"b\"")
-    }
-
-    func testOrMatchEmptyIsNil() {
-        XCTAssertNil(RagQueryExpansion.orMatch([]))
-        XCTAssertNil(RagQueryExpansion.orMatch(["", "  "]))
-    }
 }

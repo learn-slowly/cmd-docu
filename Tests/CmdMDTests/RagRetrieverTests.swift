@@ -51,4 +51,15 @@ final class RagRetrieverTests: XCTestCase {
         let paths = await retriever.topFiles(question: "정의당 평가서에 뭐라고 썼더라", expandedTerms: [])
         XCTAssertTrue(paths.contains("/d/a.md"))
     }
+
+    // 회귀 가드(RED 아님): trigram이라 "평가서"→"평가서에" 부분일치가 리팩터 전후 모두 통과한다.
+    func testTopFilesMatchesKoreanParticleSubstring() async {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmddocu-ret3-\(UUID().uuidString)").appendingPathExtension("sqlite")
+        let idx = SearchIndex(dbURL: url)
+        // 문서엔 조사 붙은 "평가서에". 질의는 bare "평가서"(3글자) → 부분일치로 회수.
+        await idx.upsert(path: "/d/p.md", filename: "p.md", body: "정의당 평가서에 총평", mtime: 1, ext: "md")
+        let paths = await RagRetriever(index: idx).topFiles(question: "평가서", expandedTerms: [])
+        XCTAssertTrue(paths.contains("/d/p.md"))
+    }
 }

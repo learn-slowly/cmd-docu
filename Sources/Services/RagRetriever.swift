@@ -4,16 +4,12 @@ import Foundation
 struct RagRetriever {
     let index: SearchIndex
 
-    /// 원질문 히트(우선) + 확장 OR 히트(신규 경로만)를 합쳐 파일 경로 top-N.
+    /// 원질문 히트(우선) + 원질문토큰·확장어 OR 히트(신규 경로만)를 합쳐 파일 경로 top-N.
     func topFiles(question: String, expandedTerms: [String], limit: Int = 8) async -> [String] {
         let primary = await index.search(query: question)
         // 원질문 토큰 + 확장 용어를 OR로 재검색해, 문장 전체 AND(primary)로는 놓치는
-        // 문서를 회수한다(대화형 질문·확장 OFF에서도 recall 유지).
-        let orTerms = Self.tokens(question) + expandedTerms
-        var secondary: [IndexHit] = []
-        if let orMatch = RagQueryExpansion.orMatch(orTerms) {
-            secondary = await index.searchMatch(orMatch)
-        }
+        // 문서를 회수한다(대화형 질문·확장 OFF에서도 recall 유지). trigram이라 조사·복합어 부분일치.
+        let secondary = await index.searchTerms(Self.tokens(question) + expandedTerms, mode: .or)
         return Self.mergePaths(primary: primary, secondary: secondary, limit: limit)
     }
 

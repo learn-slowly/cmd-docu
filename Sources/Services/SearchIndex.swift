@@ -192,28 +192,6 @@ actor SearchIndex {
         return out
     }
 
-    /// 호출자가 직접 만든 MATCH 문자열로 검색한다(sanitize 안 함). RAG 확장 OR 질의용.
-    /// 파일명 매칭 판정은 하지 않는다(isFilenameMatch = false).
-    func searchMatch(_ match: String, limit: Int = 200) -> [IndexHit] {
-        var stmt: OpaquePointer?
-        defer { sqlite3_finalize(stmt) }
-        let sql = """
-        SELECT path, snippet(docs, 2, '[', ']', '…', 10)
-        FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?;
-        """
-        var out: [IndexHit] = []
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        sqlite3_bind_text(stmt, 1, match, -1, TRANSIENT)
-        sqlite3_bind_int(stmt, 2, Int32(limit))
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let pathC = sqlite3_column_text(stmt, 0) else { continue }
-            let path = String(cString: pathC)
-            let snippet = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
-            out.append(IndexHit(path: path, snippet: snippet, isFilenameMatch: false))
-        }
-        return out
-    }
-
     func clear() {
         exec("DELETE FROM docs;")
         exec("DELETE FROM files;")
