@@ -49,6 +49,10 @@ struct MediaReaderView: View {
         .task(id: url) {
             await setUpPlayer()
             loadNote()
+            consumePendingScroll()
+        }
+        .onChange(of: appState.pendingMediaScrollLines[tabID]) {
+            consumePendingScroll()
         }
         .onDisappear {
             player?.pause()
@@ -57,6 +61,23 @@ struct MediaReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             // 앱 종료 시 onDisappear가 보장되지 않으므로 별도로 저장 경로를 확보한다.
             saveIfEditing()
+        }
+    }
+
+    /// 검색·옴니서치·RAG에서 짝꿍 노트를 줄 번호와 함께 열어 이 탭으로 리다이렉트된
+    /// 경우, AppState가 담아둔 pending 줄을 소비해 노트 패널로 점프 알림을 보낸다.
+    /// 편집 모드용 `.scrollToLine`과 미리보기용 `.scrollToHeading`을 둘 다 게시한다
+    /// (지금 어느 모드인지 몰라도 두 구독자 중 있는 쪽이 반응).
+    private func consumePendingScroll() {
+        guard let line = appState.pendingMediaScrollLines[tabID],
+              case .loaded(let content) = noteState else { return }
+        appState.pendingMediaScrollLines.removeValue(forKey: tabID)
+        // 노트 패널(에디터/프리뷰)이 막 나타나 구독을 마칠 시간을 준다(scrollEditor와 동일 패턴).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NotificationCenter.default.post(name: .scrollToLine, object: line)
+            if let slug = AppState.nearestHeadingSlug(in: content, before: line) {
+                NotificationCenter.default.post(name: .scrollToHeading, object: slug)
+            }
         }
     }
 

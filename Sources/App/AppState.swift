@@ -17,6 +17,10 @@ final class AppState {
     var originalContents: [UUID: String] = [:]
     /// kordoc 오피스 변환 상태(키 = EditorTab.id). office 탭은 MarkdownDocument가 없다.
     var officeStates: [UUID: OfficeState] = [:]
+    /// 검색·옴니서치·RAG 등에서 짝꿍 노트를 줄 번호와 함께 열었다가 media 탭으로
+    /// 리다이렉트된 경우, 알림 구독자가 없어 소실되던 줄 정보를 탭별로 담아둔다.
+    /// MediaReaderView가 노트 로드 후 소비하고 지운다. 비영속(세션 저장 안 함).
+    var pendingMediaScrollLines: [UUID: Int] = [:]
 
     // View State
     var viewMode: ViewMode = AppState.launchDefaults.viewMode
@@ -781,14 +785,29 @@ final class AppState {
         mainMode = .reader
         if let existingTab = tabs.first(where: { $0.fileURL == url }) {
             activeTabId = existingTab.id
-            if let line { scrollEditor(toLine: line) }
+            if let line {
+                // media 탭(짝꿍 노트 리다이렉트 등)은 알림 구독자가 없어 줄 정보가 소실된다.
+                // 탭별 pending으로 담아뒀다가 MediaReaderView가 노트 로드 후 소비한다.
+                if existingTab.kind == .media {
+                    pendingMediaScrollLines[existingTab.id] = line
+                } else {
+                    scrollEditor(toLine: line)
+                }
+            }
             if let pdfPage { scrollPDF(toPage: pdfPage, url: url) }
             return
         }
 
         Task { @MainActor in
             await loadAndActivateDocument(at: url, inNewTab: inNewTab)
-            if let line { scrollEditor(toLine: line) }
+            if let line {
+                // 로드 분기 — 짝꿍 노트를 열었다가 media로 리다이렉트된 경우도 포함.
+                if currentTabKind == .media, let id = activeTabId {
+                    pendingMediaScrollLines[id] = line
+                } else {
+                    scrollEditor(toLine: line)
+                }
+            }
             if let pdfPage { scrollPDF(toPage: pdfPage, url: url) }
         }
     }
@@ -889,7 +908,12 @@ final class AppState {
     }
 
     private func nearestHeadingSlug(before line: Int) -> String? {
-        guard let content = currentDocument?.content else { return nil }
+        Self.nearestHeadingSlug(in: currentDocument?.content ?? "", before: line)
+    }
+
+    /// 주어진 줄 앞에서 가장 가까운 헤딩의 slug. 순수 함수 — media 짝꿍 노트처럼
+    /// currentDocument가 없는 콘텐츠(문자열만 있는 경우)에서도 쓸 수 있도록 분리.
+    static func nearestHeadingSlug(in content: String, before line: Int) -> String? {
         let headings = TOCBuilder.extractHeadings(from: content)
         return headings.last(where: { $0.lineNumber <= line })?.slug
     }
