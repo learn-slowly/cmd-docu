@@ -258,8 +258,9 @@ struct LibraryListCell: View {
                 Text(item.name)
                     .lineLimit(1)
                     .font(paraCategory == .projects && item.isDirectory ? .body.weight(.medium) : .body)
-                if let summary {
-                    Text(summary)
+                if item.hasCompanionNote {
+                    // summary가 늦게 도착해도 행 높이가 변하지 않게 자리부터 확보(리플로우 방지)
+                    Text(summary ?? " ")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
