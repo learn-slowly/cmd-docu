@@ -733,6 +733,9 @@ struct ToolsSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { refresh() }
+        .onChange(of: appState.settings) { _, _ in
+            appState.saveUserData()
+        }
     }
 
     /// 경로를 찾으면 모노스페이스로, 못 찾으면 "미설치"와 안내 캡션을 표시한다.
