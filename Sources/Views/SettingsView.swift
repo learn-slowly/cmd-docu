@@ -673,12 +673,14 @@ struct ShortcutRow: View {
 // MARK: - Tools (외부 CLI 상태·신규 기능 설정 통합)
 
 /// kordoc·claude CLI 탐지 상태와 신규 기능(라우팅·검색 인덱스·RAG) 설정을 한 곳에 모은 탭.
-/// 경로 탐지는 동기 리졸버만 호출한다(프로세스 실행·버전 프로브 없음 — 스펙 §3).
+/// 경로 탐지는 리졸버만 호출한다(버전 프로브 없음 — 스펙 §3). 리졸버가 후보 경로 밖 설치에서
+/// `which` 셸 프로브로 폴백할 수 있어 탐지는 백그라운드에서 돌리고 결과만 메인에 반영한다.
 struct ToolsSettingsView: View {
     @Environment(AppState.self) private var appState
 
     @State private var kordocPath: String?
     @State private var claudePath: String?
+    @State private var hasChecked = false
 
     var body: some View {
         @Bindable var state = appState
@@ -734,6 +736,7 @@ struct ToolsSettingsView: View {
     }
 
     /// 경로를 찾으면 모노스페이스로, 못 찾으면 "미설치"와 안내 캡션을 표시한다.
+    /// 첫 탐지가 끝나기 전에는 "확인 중…"으로 오신호(미설치 깜빡임)를 막는다.
     @ViewBuilder
     private func toolStatusRows(name: String, path: String?, missingHint: String) -> some View {
         LabeledContent(name) {
@@ -743,12 +746,15 @@ struct ToolsSettingsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            } else if !hasChecked {
+                Text("확인 중…")
+                    .foregroundStyle(.secondary)
             } else {
                 Text("미설치")
                     .foregroundStyle(.orange)
             }
         }
-        if path == nil {
+        if hasChecked && path == nil {
             Text(missingHint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -756,8 +762,17 @@ struct ToolsSettingsView: View {
     }
 
     private func refresh() {
-        kordocPath = KordocService.resolveNpxPath()
-        claudePath = ClaudeService.resolveClaudePath()
+        // 리졸버는 후보 경로 밖 설치에서 `which` 셸 프로브(프로세스 스폰·무제한 대기)로
+        // 폴백할 수 있어 메인 스레드에서 직접 부르지 않는다 — 탐지는 백그라운드, 반영만 메인.
+        Task.detached(priority: .userInitiated) {
+            let kordoc = KordocService.resolveNpxPath()
+            let claude = ClaudeService.resolveClaudePath()
+            await MainActor.run {
+                kordocPath = kordoc
+                claudePath = claude
+                hasChecked = true
+            }
+        }
     }
 }
 
