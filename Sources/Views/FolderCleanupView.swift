@@ -99,9 +99,13 @@ struct FolderCleanupView: View {
                         .frame(minWidth: 160)
 
                     // 버킷 삭제 — id 기준 제거라 남은 행들의 정체성이 흔들리지 않는다.
+                    // 주의: id를 클로저 밖에서 값으로 복사해야 한다. bucket은 $bucket 바인딩 경유라
+                    // removeAll(쓰기 접근) 도중 클로저 안에서 bucket.id를 읽으면 같은 cleanupScheme을
+                    // 다시 읽어 배타적 접근 위반으로 즉사한다(스모크 실측 크래시, 2026-07-02).
                     Button(role: .destructive) {
+                        let removedId = bucket.id
                         withAnimation {
-                            state.cleanupScheme.removeAll { $0.id == bucket.id }
+                            state.cleanupScheme.removeAll { $0.id == removedId }
                         }
                     } label: {
                         Image(systemName: "trash")
