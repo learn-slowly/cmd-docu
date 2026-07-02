@@ -12,7 +12,8 @@ final class AppFillStateTests: XCTestCase {
 
     @MainActor
     func testBeginOfficeFillIgnoresNonFillable() {
-        let app = AppState()
+        let dir = TempDataDirectory.make(); defer { TempDataDirectory.cleanup(dir) }
+        let app = AppState(dataDirectory: dir)
         let tabID = UUID()
         app.beginOfficeFill(tabID: tabID, fileURL: URL(fileURLWithPath: "/tmp/a.docx"))
         XCTAssertNil(app.officeFillSession)
