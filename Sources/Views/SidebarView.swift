@@ -397,11 +397,14 @@ struct FileTreeItemRow: View {
                     FileTreeContextMenu(item: item)
                 }
 
-                // 자식: 펼쳐진 경우만 표시, 들여쓰기 12pt
+                // 자식: 펼쳐진 경우만 표시, 들여쓰기 12pt.
+                // 세로 여백 — 자식들은 List 행 밖(부모 행 안 VStack)이라 List의 기본 행 간격을
+                // 못 받는다. 최상위 행과 밀도를 맞추기 위해 행마다 여백을 준다(스모크 피드백).
                 if appState.expandedFolders.contains(item.url) {
                     ForEach(ParaLens.sorted(item.children, under: appState.currentFolder)) { child in
                         FileTreeItemRow(item: child)
                             .padding(.leading, 12)
+                            .padding(.vertical, 3)
                     }
                 }
             }
