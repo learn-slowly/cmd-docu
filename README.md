@@ -9,7 +9,7 @@
 Open a note, read it beautifully, then send it to the right vault folder — one keystroke each.
 Native Swift / SwiftUI · macOS 14+ · CMDS‑branded, light & dark.
 
-**[cmdmd.cmdspace.work](https://cmdmd.cmdspace.work)** · [Download](https://github.com/johnfkoo951/CmdMD/releases/latest) · [Website source](https://github.com/johnfkoo951/CmdMD-web)
+**[cmdmd.cmdspace.work](https://cmdmd.cmdspace.work)** · [Download](https://github.com/learn-slowly/cmd-docu/releases/latest) · [Website source](https://github.com/johnfkoo951/CmdMD-web)
 
 <br/>
 
@@ -112,7 +112,7 @@ cd cmd-docu
 
 swift build                         # debug build
 swift run                           # run it
-swift test                          # 315 tests (정식 Xcode 필요)
+swift test                          # 382 tests (XCTest 364 + Swift Testing 18, 정식 Xcode 필요)
 
 swift build -c release              # release binary
 bash scripts/package_app.sh         # → dist/CmdMD.app + dist/CmdMD-macos.zip
@@ -148,7 +148,7 @@ connect). When you **Send** (`⇧⌘T`), a note is copied or moved into a destin
 
 Swift / SwiftUI · [swift‑markdown](https://github.com/apple/swift-markdown) ·
 [Highlightr](https://github.com/raspu/Highlightr) · [Yams](https://github.com/jpsim/Yams) ·
-Mermaid & KaTeX via CDN. App data lives in `~/Library/Application Support/CmdMD/`.
+Mermaid & KaTeX bundled locally (CDN fallback). App data lives in `~/Library/Application Support/CmdMD/`.
 The `cmdmd://open?note=<name>` URL scheme resolves a note against the open folder and vaults.
 
 포크 추가 분은 보기에 **PDFKit**(PDF)·**ImageIO/AppKit**(이미지), 문서 변환·편집에 외부 CLI
