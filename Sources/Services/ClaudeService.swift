@@ -93,6 +93,138 @@ actor ClaudeService {
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - 스트리밍 (askStream)
+
+    /// stream-json 스트리밍용 인자(순수 함수). 프롬프트=`-p` 인자, 컨텍스트=stdin(ask와 동일).
+    /// `--verbose`는 stream-json에 필수(줄단위 이벤트를 내보내려면 필요).
+    static func makeStreamArguments(prompt: String) -> [String] {
+        ["-p", prompt,
+         "--output-format", "stream-json",
+         "--verbose",
+         "--include-partial-messages"]
+    }
+
+    /// stream-json 한 줄에서 텍스트 델타를 뽑는다(순수 함수).
+    /// `stream_event`/`content_block_delta`/`text_delta`만 통과 — thinking_delta·system·assistant 등은 nil.
+    static func textDelta(fromStreamLine line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["type"] as? String == "stream_event",
+              let event = obj["event"] as? [String: Any],
+              event["type"] as? String == "content_block_delta",
+              let delta = event["delta"] as? [String: Any],
+              delta["type"] as? String == "text_delta" else { return nil }
+        return delta["text"] as? String
+    }
+
+    /// stream-json 최종 결과 줄을 뽑는다(순수 함수). `type=="result"`만 통과.
+    /// 델타 미지원 구버전 폴백용 텍스트와 에러 여부를 반환한다.
+    static func finalResult(fromStreamLine line: String) -> (text: String, isError: Bool)? {
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["type"] as? String == "result" else { return nil }
+        let isError = (obj["is_error"] as? Bool) ?? (obj["subtype"] as? String != "success")
+        return (obj["result"] as? String ?? "", isError)
+    }
+
+    /// ask와 동일한 골격(경로 탐지→Process 3파이프→stdin detached write→120s 협조 타임아웃) 위에
+    /// stdout을 줄 단위로 증분 파싱해 text_delta를 yield한다. 기존 `ask`는 그대로 둔다(RAG·라우팅 의존).
+    func askStream(prompt: String, context: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            // process는 work·onTermination 양쪽에서 참조(소비자 취소 시 즉시 terminate).
+            let process = Process()
+            let work = Task.detached { [timeout] in
+                guard let claudePath = Self.resolveClaudePath() else {
+                    continuation.finish(throwing: ClaudeError.toolNotFound)
+                    return
+                }
+                process.executableURL = URL(fileURLWithPath: claudePath)
+                process.arguments = Self.makeStreamArguments(prompt: prompt)
+
+                let stdinPipe = Pipe()
+                let stdoutPipe = Pipe()
+                let stderrPipe = Pipe()
+                process.standardInput = stdinPipe
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.finish(throwing: ClaudeError.toolNotFound)
+                    return
+                }
+
+                let outHandle = stdoutPipe.fileHandleForReading
+                let errHandle = stderrPipe.fileHandleForReading
+
+                // stderr 일괄 드레인을 stdout 증분 읽기와 **동시에** 시작(파이프 교착 방지).
+                let errTask = Task.detached { errHandle.readDataToEndOfFile() }
+
+                // 컨텍스트를 stdin으로 주입(별도 스레드 — write가 블록돼도 stdout 드레인이 계속 돌게).
+                let stdinHandle = stdinPipe.fileHandleForWriting
+                let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
+                let stdinData = trimmed.data(using: .utf8) ?? Data()
+                Task.detached {
+                    if !stdinData.isEmpty { try? stdinHandle.write(contentsOf: stdinData) }
+                    try? stdinHandle.close()
+                }
+
+                // 데드라인 감시(별도 폴링 — 증분 읽기가 블록돼도 초과 시 terminate).
+                let timedOut = AtomicFlag()
+                let timeoutTask = Task.detached { [timeout] in
+                    let deadline = Date().addingTimeInterval(timeout)
+                    while process.isRunning {
+                        if Date() > deadline {
+                            timedOut.set()
+                            process.terminate()
+                            return
+                        }
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                    }
+                }
+
+                var emitted = false
+                var sawErrorResult = false
+                do {
+                    for try await line in outHandle.bytes.lines {
+                        if Task.isCancelled { process.terminate(); break }
+                        if let t = Self.textDelta(fromStreamLine: line) {
+                            emitted = true
+                            continuation.yield(t)
+                        } else if let r = Self.finalResult(fromStreamLine: line) {
+                            if r.isError {
+                                sawErrorResult = true
+                            } else if !emitted, !r.text.isEmpty {
+                                // 델타 미지원 구버전 폴백 — result 텍스트를 한 번에 yield.
+                                emitted = true
+                                continuation.yield(r.text)
+                            }
+                        }
+                    }
+                } catch {
+                    // stdout 증분 읽기 실패(취소 포함) — 아래 종료 분류로 넘어간다.
+                }
+
+                process.waitUntilExit()
+                timeoutTask.cancel()
+                let err = String(data: await errTask.value, encoding: .utf8) ?? ""
+
+                if timedOut.value {
+                    continuation.finish(throwing: ClaudeError.timeout)
+                } else if process.terminationStatus != 0 || sawErrorResult {
+                    continuation.finish(throwing: Self.classify(exitCode: process.terminationStatus, stderr: err))
+                } else {
+                    continuation.finish()
+                }
+            }
+            continuation.onTermination = { _ in
+                work.cancel()
+                if process.isRunning { process.terminate() }
+            }
+        }
+    }
+
     // MARK: - 인증 (claude auth)
 
     /// `claude auth status` 결과. CLI를 못 찾으면 nil(미설치), 찾았으나 미로그인이면 loggedOut.
@@ -182,4 +314,12 @@ actor ClaudeService {
         } catch { }
         return nil
     }
+}
+
+/// askStream 타임아웃 여부를 여러 Task 사이에서 스레드 안전하게 공유하는 작은 박스.
+private final class AtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = false
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return _value }
+    func set() { lock.lock(); _value = true; lock.unlock() }
 }

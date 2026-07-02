@@ -31,18 +31,29 @@ struct ClaudePanelView: View {
 
             ScrollView {
                 Group {
-                    if appState.claudeBusy {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Claude에게 묻는 중…").foregroundStyle(.secondary)
-                        }
-                    } else if let err = appState.claudeError {
+                    // 순서: 에러 > 응답(스트리밍 중 포함) > busy 스피너 > 안내.
+                    // busy가 먼저면 부분 응답이 가려지므로 응답을 우선한다.
+                    if let err = appState.claudeError {
                         Text(err)
                             .foregroundStyle(.red)
                             .textSelection(.enabled)
                     } else if let resp = appState.claudeResponse {
-                        Text(resp)
-                            .textSelection(.enabled)
+                        VStack(alignment: .leading, spacing: 8) {
+                            if appState.claudeBusy {
+                                // 스트리밍 진행 중 표시(응답 위 소형 한 줄).
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.small)
+                                    Text("작성 중…").foregroundStyle(.secondary).font(.caption)
+                                }
+                            }
+                            Text(resp)
+                                .textSelection(.enabled)
+                        }
+                    } else if appState.claudeBusy {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Claude에게 묻는 중…").foregroundStyle(.secondary)
+                        }
                     } else {
                         Text("열린 문서에 대해 Claude에게 물어보세요. 마크다운에서 선택영역이 있으면 그 부분만 전송됩니다.")
                             .foregroundStyle(.secondary)

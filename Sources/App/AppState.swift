@@ -519,13 +519,18 @@ final class AppState {
 
         Task { @MainActor in
             do {
-                let answer = try await claudeService.ask(prompt: prompt, context: context)
-                if answer.isEmpty {
+                var acc = ""
+                let stream = await claudeService.askStream(prompt: prompt, context: context)
+                for try await chunk in stream {
+                    acc += chunk
+                    claudeResponse = acc          // @Observable — 패널이 실시간 갱신
+                }
+                if acc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    claudeResponse = nil
                     claudeError = "Claude가 빈 응답을 반환했습니다. 다시 시도해 주세요."
-                } else {
-                    claudeResponse = answer
                 }
             } catch {
+                claudeResponse = nil
                 claudeError = Self.claudeErrorMessage(error)
             }
             claudeBusy = false

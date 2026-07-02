@@ -29,4 +29,49 @@ final class ClaudeServiceTests: XCTestCase {
         XCTAssertEqual(args, ["-p", "안녕"])
         XCTAssertEqual(stdin, "")
     }
+
+    // MARK: - stream-json 파서 (실측 fixture 기반)
+
+    func testTextDeltaParsesRealStreamEventLine() {
+        let line = #"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"안"}},"session_id":"s","uuid":"u"}"#
+        XCTAssertEqual(ClaudeService.textDelta(fromStreamLine: line), "안")
+    }
+
+    func testTextDeltaIgnoresNonDeltaLines() {
+        XCTAssertNil(ClaudeService.textDelta(fromStreamLine: #"{"type":"system","subtype":"init"}"#))
+        XCTAssertNil(ClaudeService.textDelta(fromStreamLine: #"{"type":"assistant","message":{}}"#))
+        XCTAssertNil(ClaudeService.textDelta(fromStreamLine: "not json"))
+    }
+
+    func testTextDeltaIgnoresThinkingDelta() {
+        // thinking 델타는 delta.type=="thinking_delta"라 text_delta 필터로 배제돼야 한다(실측).
+        let line = #"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}}"#
+        XCTAssertNil(ClaudeService.textDelta(fromStreamLine: line))
+    }
+
+    func testFinalResultParsesResultLine() {
+        let line = #"{"type":"result","subtype":"success","is_error":false,"result":"안녕"}"#
+        let r = ClaudeService.finalResult(fromStreamLine: line)
+        XCTAssertEqual(r?.text, "안녕")
+        XCTAssertEqual(r?.isError, false)
+    }
+
+    func testFinalResultFlagsErrorResult() {
+        let line = #"{"type":"result","subtype":"error_during_execution","is_error":true,"result":""}"#
+        let r = ClaudeService.finalResult(fromStreamLine: line)
+        XCTAssertEqual(r?.isError, true)
+    }
+
+    func testFinalResultIgnoresNonResultLine() {
+        XCTAssertNil(ClaudeService.finalResult(fromStreamLine: #"{"type":"stream_event"}"#))
+    }
+
+    func testMakeStreamArgumentsIncludeStreamFlags() {
+        let args = ClaudeService.makeStreamArguments(prompt: "q")
+        XCTAssertEqual(Array(args.prefix(2)), ["-p", "q"])
+        XCTAssertTrue(args.contains("--output-format"))
+        XCTAssertTrue(args.contains("stream-json"))
+        XCTAssertTrue(args.contains("--verbose"))
+        XCTAssertTrue(args.contains("--include-partial-messages"))
+    }
 }
