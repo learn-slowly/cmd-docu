@@ -161,7 +161,7 @@ CmdMD isn't sandboxed (it already loads Mermaid/KaTeX over the network), so
 
 ## Release flow
 
-`scripts/package_app.sh` builds release, bundles `dist/CmdMD.app` (+ `AppIcon.icns`
+`scripts/package_app.sh` builds release, bundles `dist/cmdALL.app` (+ `AppIcon.icns`
 and the brand book glyph), ad-hoc signs, and zips. Pushing a `vX.Y.Z` tag triggers
 `release.yml`, which runs `scripts/test_package_app.sh` on a macОS runner and
-publishes `CmdMD-macos.zip`. Bump the two version strings in `package_app.sh`.
+publishes `cmdALL-macos.zip`. Bump the two version strings in `package_app.sh`.

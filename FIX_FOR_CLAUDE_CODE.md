@@ -82,7 +82,7 @@ string replacement (Mach-O offsets preserved):
 
 ```
 old (any builder):  …/.build/<arch>/release/Highlightr_Highlightr.bundle
-new:                /Applications/CmdMD.app/Contents/Resources/Highlightr_Highlightr.bundle
+new:                /Applications/cmdALL.app/Contents/Resources/Highlightr_Highlightr.bundle
 ```
 
 `package_app.sh` runs it right after the executable + bundles are staged and just before

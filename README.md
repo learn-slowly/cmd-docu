@@ -136,7 +136,7 @@ Defaults mirror common Obsidian bindings; every action is remappable in **Settin
 
 ## Sending to a vault
 
-CmdMD connects to your Obsidian vaults (it reads Obsidian's own registry to offer one‑click
+cmdALL connects to your Obsidian vaults (it reads Obsidian's own registry to offer one‑click
 connect). When you **Send** (`⇧⌘T`), a note is copied or moved into a destination folder:
 
 - A **global default send folder** (Settings → Vaults) applies everywhere…

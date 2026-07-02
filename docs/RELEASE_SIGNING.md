@@ -64,7 +64,7 @@ automatically signs, notarizes, and staples — no warning for end users.
 ## 5. (Optional) sign + notarize locally
 
 ```bash
-bash scripts/package_app.sh          # builds dist/CmdMD.app (ad-hoc)
+bash scripts/package_app.sh          # builds dist/cmdALL.app (ad-hoc)
 export MACOS_CERTIFICATE_PWD=… MACOS_SIGN_IDENTITY=… \
        MACOS_NOTARY_APPLE_ID=… MACOS_NOTARY_PASSWORD=… MACOS_NOTARY_TEAM_ID=…
 export MACOS_CERTIFICATE="$(base64 -i cert.p12)"
@@ -74,8 +74,8 @@ bash scripts/sign_and_notarize.sh    # → notarized, stapled dmg + zip
 Verify the result:
 
 ```bash
-spctl -a -vvv -t install dist/CmdMD-*.dmg     # should say "accepted / Notarized Developer ID"
-xcrun stapler validate dist/CmdMD-*.dmg
+spctl -a -vvv -t install dist/cmdALL-*.dmg     # should say "accepted / Notarized Developer ID"
+xcrun stapler validate dist/cmdALL-*.dmg
 ```
 
 ---
