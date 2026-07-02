@@ -35,7 +35,7 @@ final class FileTreeListingTests: XCTestCase {
     }
 
     func testUnsupportedFilesAreNotListed() {
-        for ext in ["zip", "mp3", "exe"] {
+        for ext in ["zip", "avi", "exe"] {
             XCTAssertFalse(listable("doc.\(ext)"), "\(ext) should not be listed")
         }
     }

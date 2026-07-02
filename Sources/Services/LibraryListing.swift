@@ -20,13 +20,19 @@ enum LibraryListing {
         ) else { return [] }
 
         var items: [FileTreeItem] = []
+        // 같은 폴더 파일명 집합 — 짝꿍 노트 숨김·배지 판별용(추가 FS 호출 없음).
+        let siblingNames = Set(contents.map { $0.lastPathComponent })
         for url in contents {
             guard let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]) else { continue }
             let isDirectory = resourceValues.isDirectory ?? false
             if isDirectory {
                 items.append(FileTreeItem(url: url, isDirectory: true))
             } else if AppState.isListableInFileTree(url) {
-                items.append(FileTreeItem(url: url, isDirectory: false))
+                // 짝꿍 노트는 숨긴다 — 미디어 행이 대표(배지로 존재 표시).
+                if CompanionNote.isCompanionNote(url, siblings: siblingNames) { continue }
+                let hasNote = DocumentKind(from: url) == .media
+                    && siblingNames.contains(CompanionNote.noteURL(for: url).lastPathComponent)
+                items.append(FileTreeItem(url: url, isDirectory: false, hasCompanionNote: hasNote))
             }
         }
         return items

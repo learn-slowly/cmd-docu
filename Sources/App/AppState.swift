@@ -1202,14 +1202,15 @@ final class AppState {
         }
     }
 
-    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF + 오피스.
-    /// 이미지 확장자는 DocumentKind.imageExtensions, PDF는 DocumentKind.pdfExtensions, 오피스는 DocumentKind.officeExtensions(단일 판별원)를 따른다.
+    /// 사이드바 파일 트리에 표시할 파일인지 — 마크다운류(md/markdown/txt) + 이미지 + PDF + 오피스 + 미디어.
+    /// 각 확장자 집합은 DocumentKind(단일 판별원)를 따른다.
     static func isListableInFileTree(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown" || ext == "txt"
             || DocumentKind.imageExtensions.contains(ext)
             || DocumentKind.pdfExtensions.contains(ext)
             || DocumentKind.officeExtensions.contains(ext)
+            || DocumentKind.mediaExtensions.contains(ext)
     }
 
     /// 파일트리를 동기·순수하게 빌드한다. `Task.detached`에서 안전히 호출 가능.
@@ -1227,6 +1228,8 @@ final class AppState {
         ) else { return [] }
 
         var items: [FileTreeItem] = []
+        // 같은 폴더 파일명 집합 — 짝꿍 노트 숨김·배지 판별용(추가 FS 호출 없음).
+        let siblingNames = Set(contents.map { $0.lastPathComponent })
 
         for itemURL in contents.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
             guard let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]) else { continue }
@@ -1238,7 +1241,11 @@ final class AppState {
                 items.append(FileTreeItem(url: itemURL, isDirectory: true, isExpanded: isExpanded, children: children))
             } else {
                 if isListableInFileTree(itemURL) {
-                    items.append(FileTreeItem(url: itemURL, isDirectory: false))
+                    // 짝꿍 노트는 목록에서 숨긴다 — 미디어 행이 대표(배지로 존재 표시).
+                    if CompanionNote.isCompanionNote(itemURL, siblings: siblingNames) { continue }
+                    let hasNote = DocumentKind(from: itemURL) == .media
+                        && siblingNames.contains(CompanionNote.noteURL(for: itemURL).lastPathComponent)
+                    items.append(FileTreeItem(url: itemURL, isDirectory: false, hasCompanionNote: hasNote))
                 }
             }
         }

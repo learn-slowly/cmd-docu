@@ -53,12 +53,12 @@ final class FileTreeBuildTests: XCTestCase {
 
     func testNonListableFilesAreExcluded() {
         makeFile("archive.zip")
-        makeFile("sound.mp3")
+        makeFile("clip.avi")
 
         let items = AppState.buildFileTree(at: tempDir, expanded: [])
         let names = items.map { $0.name }
         XCTAssertFalse(names.contains("archive.zip"), "zip 파일은 제외되어야 한다")
-        XCTAssertFalse(names.contains("sound.mp3"), "mp3 파일은 제외되어야 한다")
+        XCTAssertFalse(names.contains("clip.avi"), "지원하지 않는 동영상 확장자는 제외되어야 한다")
     }
 
     func testDirectoriesAreIncluded() {

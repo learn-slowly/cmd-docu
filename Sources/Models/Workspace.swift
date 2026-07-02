@@ -123,13 +123,17 @@ struct FileTreeItem: Identifiable, Hashable {
     let isDirectory: Bool
     var isExpanded: Bool
     var children: [FileTreeItem]
+    /// 이 미디어 파일에 짝꿍 노트(파일명.ext.md)가 있는가 — 목록 배지용(빌드 시 채움).
+    var hasCompanionNote: Bool
 
-    init(url: URL, isDirectory: Bool = false, isExpanded: Bool = false, children: [FileTreeItem] = []) {
+    init(url: URL, isDirectory: Bool = false, isExpanded: Bool = false,
+         children: [FileTreeItem] = [], hasCompanionNote: Bool = false) {
         self.id = UUID()
         self.url = url
         self.isDirectory = isDirectory
         self.isExpanded = isExpanded
         self.children = children
+        self.hasCompanionNote = hasCompanionNote
     }
 
     var name: String {
@@ -146,7 +150,10 @@ struct FileTreeItem: Identifiable, Hashable {
         case "txt": return "doc.plaintext"
         case "json": return "curlybraces"
         case "yml", "yaml": return "list.bullet.rectangle"
-        default: return "doc"
+        default:
+            if DocumentKind.audioExtensions.contains(ext) { return "music.note" }
+            if DocumentKind.videoExtensions.contains(ext) { return "film" }
+            return "doc"
         }
     }
 
