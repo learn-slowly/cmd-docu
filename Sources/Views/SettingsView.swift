@@ -383,7 +383,7 @@ struct PreviewSettingsView: View {
                 Toggle("Mermaid diagrams", isOn: $state.settings.enableMermaid)
                 Toggle("KaTeX math ($...$, $$...$$)", isOn: $state.settings.enableKaTeX)
 
-                Text("Mermaid, KaTeX, and code highlighting load from a CDN — they degrade gracefully when offline.")
+                Text("Mermaid, KaTeX, and code highlighting load from bundled assets (offline-ready) and fall back to a CDN only if the bundle is missing.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

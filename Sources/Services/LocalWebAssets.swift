@@ -25,6 +25,32 @@ enum LocalWebAssets {
         return nil
     }
 
+    /// SPM 리소스 번들(CmdMD_CmdMD.bundle) 위치를 반환한다.
+    /// `Bundle.module`은 패키지된 .app에서 trap 이력이 있어 회피하고,
+    /// findHighlightrBundleURL과 동일한 3-루트 탐색을 쓴다.
+    private static func findAppResourceBundleURL() -> URL? {
+        let bundleName = "CmdMD_CmdMD.bundle"
+        var roots: [URL] = []
+        if let resources = Bundle.main.resourceURL { roots.append(resources) }
+        roots.append(Bundle.main.bundleURL)
+        if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
+            roots.append(exeDir)
+        }
+        let fm = FileManager.default
+        for root in roots {
+            let candidate = root.appendingPathComponent(bundleName)
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return nil
+    }
+
+    /// SPM 리소스 번들 내부 `web/…` 하위 파일을 UTF-8로 읽는다. 번들·파일 없으면 nil.
+    private static func readWebResource(_ relativePath: String) -> String? {
+        guard let base = findAppResourceBundleURL() else { return nil }
+        let url = base.appendingPathComponent("web").appendingPathComponent(relativePath)
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
     // MARK: - 자산 캐시 (lazy static, 앱 수명 동안 1회 로드)
 
     /// highlight.min.js 전체 내용. 번들 없으면 nil(CDN 폴백 트리거).
@@ -47,6 +73,23 @@ enum LocalWebAssets {
         return try? String(contentsOf: base.appendingPathComponent("github-dark.min.css"),
                            encoding: .utf8)
     }()
+
+    // MARK: - KaTeX·Mermaid 자산 캐시 (SPM 리소스 번들, lazy static)
+
+    /// katex.min.js. 번들 없으면 nil(CDN 폴백 트리거).
+    static let katexJS: String? = readWebResource("katex/katex.min.js")
+
+    /// contrib/auto-render.min.js. 번들 없으면 nil.
+    static let katexAutoRenderJS: String? = readWebResource("katex/auto-render.min.js")
+
+    /// contrib/mhchem.min.js. 번들 없으면 nil.
+    static let katexMhchemJS: String? = readWebResource("katex/mhchem.min.js")
+
+    /// katex.inline.min.css — 폰트를 woff2 data URI로 인라인한 전처리판. 번들 없으면 nil.
+    static let katexCSS: String? = readWebResource("katex/katex.inline.min.css")
+
+    /// mermaid.min.js(UMD). 번들 없으면 nil.
+    static let mermaidJS: String? = readWebResource("mermaid/mermaid.min.js")
 
     // MARK: - 순수 조립 함수 (테스트 가능, 입력=콘텐츠)
 
@@ -80,5 +123,41 @@ enum LocalWebAssets {
             <script>\(js)</script>
             \(initScript)
             """
+    }
+
+    /// KaTeX 자산(CSS·katex JS·mhchem·auto-render)을 인라인 블록으로 조립한다.
+    ///
+    /// - Returns: HTML 인라인 블록. **하나라도 nil이면 nil**(CDN 폴백 트리거).
+    ///   delimiters 목록은 MarkdownRenderer의 CDN판과 문자 단위로 동일하게 유지한다.
+    static func katexBlock(css: String?, js: String?, mhchem: String?, autoRender: String?) -> String? {
+        guard let css, let js, let mhchem, let autoRender else { return nil }
+        return """
+            <style>\(css)</style>
+            <script>\(js)</script>
+            <script>\(mhchem)</script>
+            <script>\(autoRender)</script>
+            <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                if (typeof renderMathInElement === 'undefined') return;
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\\\[', right: '\\\\]', display: true},
+                        {left: '\\\\(', right: '\\\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            });
+            </script>
+            """
+    }
+
+    /// Mermaid UMD JS를 인라인 `<script>`로 감싼다. initialize 스니펫은 렌더러가 기존 그대로 뒤에 붙인다.
+    ///
+    /// - Returns: `<script>…</script>` 블록. **js가 nil이면 nil**(CDN 폴백 트리거).
+    static func mermaidBlock(js: String?) -> String? {
+        guard let js else { return nil }
+        return "<script>\(js)</script>"
     }
 }

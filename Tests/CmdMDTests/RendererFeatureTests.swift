@@ -68,6 +68,17 @@ final class RendererFeatureTests: XCTestCase {
         XCTAssertFalse(html.contains("katex"))
     }
 
+    // 인라인(번들)·CDN 폴백 양쪽 모두에 존재하는 auto-render 초기화 마커로 검증.
+    func testKaTeXAutoRenderIncludedWhenEnabled() {
+        let html = render("$a$", configure: { $0.enableKaTeX = true })
+        XCTAssertTrue(html.contains("renderMathInElement"), "KaTeX auto-render 초기화가 포함되어야 한다(인라인·CDN 공통)")
+    }
+
+    func testKaTeXAutoRenderAbsentWhenDisabled() {
+        let html = render("$a$")
+        XCTAssertFalse(html.contains("renderMathInElement"))
+    }
+
     // MARK: Code highlighting
 
     func testHighlightJSIncludedForCodeBlocks() {
@@ -97,6 +108,17 @@ final class RendererFeatureTests: XCTestCase {
     func testMermaidEnabledRendersDiagramContainer() {
         let html = render("```mermaid\ngraph TD;\n```")
         XCTAssertTrue(html.contains("class=\"mermaid\""))
+    }
+
+    // initialize 스니펫은 인라인·CDN 폴백 양쪽에서 동일하게 붙는 공통 마커.
+    func testMermaidInitializeIncludedForDiagram() {
+        let html = render("```mermaid\ngraph TD;\n```")
+        XCTAssertTrue(html.contains("mermaid.initialize"), "mermaid 초기화 스니펫이 포함되어야 한다(인라인·CDN 공통)")
+    }
+
+    func testMermaidInitializeAbsentWithoutDiagram() {
+        let html = render("just text")
+        XCTAssertFalse(html.contains("mermaid.initialize"))
     }
 
     // MARK: Heading slugs

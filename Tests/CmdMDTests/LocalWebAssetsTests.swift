@@ -62,4 +62,37 @@ final class LocalWebAssetsTests: XCTestCase {
         XCTAssertNotNil(block)
         XCTAssertTrue(block!.contains("language-mermaid"), "mermaid 클래스 제외 로직이 포함되어야 한다")
     }
+
+    // MARK: - KaTeX 조립 (하나라도 nil → nil, CDN 폴백)
+
+    func testKatexBlockNilWhenAnyAssetMissing() {
+        XCTAssertNil(LocalWebAssets.katexBlock(css: "c", js: nil, mhchem: "m", autoRender: "a"))
+    }
+
+    func testKatexBlockNilWhenCssMissing() {
+        XCTAssertNil(LocalWebAssets.katexBlock(css: nil, js: "j", mhchem: "m", autoRender: "a"))
+    }
+
+    func testKatexBlockContainsRenderMathInElement() {
+        let block = LocalWebAssets.katexBlock(css: "c", js: "J", mhchem: "M", autoRender: "A")
+        XCTAssertNotNil(block)
+        XCTAssertTrue(block!.contains("renderMathInElement"), "auto-render 초기화 코드가 포함되어야 한다")
+        XCTAssertTrue(block!.contains("<style>c</style>"), "CSS가 인라인 <style>로 포함되어야 한다")
+        XCTAssertTrue(block!.contains("J"), "katex JS 내용이 포함되어야 한다")
+        XCTAssertTrue(block!.contains("M"), "mhchem JS 내용이 포함되어야 한다")
+        XCTAssertTrue(block!.contains("A"), "auto-render JS 내용이 포함되어야 한다")
+    }
+
+    // MARK: - Mermaid 조립 (js nil → nil)
+
+    func testMermaidBlockNilWithoutJS() {
+        XCTAssertNil(LocalWebAssets.mermaidBlock(js: nil))
+    }
+
+    func testMermaidBlockWrapsScript() {
+        let block = LocalWebAssets.mermaidBlock(js: "MJS")
+        XCTAssertNotNil(block)
+        XCTAssertTrue(block!.contains("MJS"), "mermaid JS 내용이 포함되어야 한다")
+        XCTAssertTrue(block!.contains("<script>"), "<script> 태그로 감싸야 한다")
+    }
 }

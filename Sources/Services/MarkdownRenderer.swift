@@ -522,8 +522,8 @@ class MarkdownRenderer {
         // misbehaves under WKWebView's file:// base URL, so the global build is
         // the reliable choice here. v11 still auto-renders `.mermaid` via
         // startOnLoad.
-        let mermaidScript = hasMermaid ? """
-            <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+        // 로컬 번들 우선(인라인 주입 — 오프라인 동작), 없으면 CDN <script src>로 폴백.
+        let mermaidInit = """
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
                     if (typeof mermaid === 'undefined') return;
@@ -535,7 +535,10 @@ class MarkdownRenderer {
                     });
                 });
             </script>
-            """ : ""
+            """
+        let mermaidSource = LocalWebAssets.mermaidBlock(js: LocalWebAssets.mermaidJS)
+            ?? "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js\"></script>"
+        let mermaidScript = hasMermaid ? mermaidSource + "\n" + mermaidInit : ""
 
         let mermaidCSS = hasMermaid ? """
             .mermaid {
@@ -551,13 +554,20 @@ class MarkdownRenderer {
             }
             """ : ""
 
-        let katexIncludes = options.enableKaTeX ? """
+        // 로컬 번들 우선(인라인 주입 — CSS 폰트는 woff2 data URI, 오프라인 동작), 없으면 CDN 폴백.
+        let katexCDN = """
             <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
             <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>
             <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/mhchem.min.js"></script>
             <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"
                 onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '\\\\[', right: '\\\\]', display: true}, {left: '\\\\(', right: '\\\\)', display: false}, {left: '$', right: '$', display: false}], throwOnError: false});"></script>
-            """ : ""
+            """
+        let katexIncludes = options.enableKaTeX
+            ? (LocalWebAssets.katexBlock(css: LocalWebAssets.katexCSS,
+                                         js: LocalWebAssets.katexJS,
+                                         mhchem: LocalWebAssets.katexMhchemJS,
+                                         autoRender: LocalWebAssets.katexAutoRenderJS) ?? katexCDN)
+            : ""
 
         let highlightIncludes = (options.enableCodeHighlight && hasCode)
             ? hljsIncludes(theme: options.preview.codeBlockTheme)

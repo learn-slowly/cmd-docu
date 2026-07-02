@@ -21,6 +21,21 @@ cmd-docu는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPAC
   미리보기 렌더러(`LocalWebAssets`)도 동일 번들 파일을 인라인 주입하므로 별도 항목으로 기재.
   §4 BSD-3-Clause 전문은 아래 별도 항목 참조.
 
+### KaTeX 0.16.47
+- 저장소: https://github.com/KaTeX/KaTeX
+- 라이선스: MIT License
+- Copyright (c) 2013-2020 Khan Academy and other contributors
+- 비고: 수식 렌더링. cmd-docu가 `Sources/Resources/web/katex/`에 vendored(katex.min.js·mhchem.min.js·auto-render.min.js) 후
+  미리보기 렌더러(`LocalWebAssets`)가 인라인 주입한다. CSS는 폰트(woff2)를 base64 data URI로 인라인한 전처리판
+  (`katex.inline.min.css`, `scripts/inline_katex_fonts.py` 산출물)을 사용한다. §4 MIT 전문 공통 본문 참조.
+
+### Mermaid 11.16.0
+- 저장소: https://github.com/mermaid-js/mermaid
+- 라이선스: MIT License
+- Copyright (c) 2014-2022 Knut Sveidqvist
+- 비고: 다이어그램 렌더링. cmd-docu가 `Sources/Resources/web/mermaid/mermaid.min.js`(UMD)로 vendored 후
+  `LocalWebAssets`가 인라인 주입한다. §4 MIT 전문 공통 본문 참조.
+
 ### Highlightr 2.3.0
 - 저장소: https://github.com/raspu/Highlightr
 - 라이선스: MIT License
@@ -46,14 +61,17 @@ cmd-docu는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPAC
 
 ---
 
-## 2. 런타임에 CDN으로 로드 (앱 바이너리에 미포함)
+## 2. 렌더 자산 로드 방식 (로컬 번들 우선, 누락 시 CDN 폴백)
 
-다이어그램·수식 렌더링을 위해 실행 시 CDN에서 불러오며, 앱에 번들되지 않습니다.
+다이어그램·수식·코드 하이라이팅 자산은 **로컬 번들(§1)을 우선 인라인 주입**하고, 번들을 찾지 못한 환경
+(예: 미패키지 `swift run`·번들 손상)에서만 CDN으로 폴백합니다. 폴백 대상은 다음과 같습니다.
 
-- **Mermaid** — 다이어그램. MIT License로 알려져 있습니다(정확한 고지는 https://github.com/mermaid-js/mermaid 참조).
-- **KaTeX** — 수식. MIT License로 알려져 있습니다(정확한 고지는 https://github.com/KaTeX/KaTeX 참조).
+- **Mermaid** — 다이어그램. 로컬 번들(§1) 우선, 누락 시 `cdn.jsdelivr.net/npm/mermaid@11` 폴백.
+- **KaTeX** — 수식. 로컬 번들(§1) 우선, 누락 시 `cdn.jsdelivr.net/npm/katex@0.16` 폴백.
+- **highlight.js** — 코드 하이라이팅. 로컬 번들(§1) 우선, 누락 시 `cdn.jsdelivr.net/gh/highlightjs/cdn-release@11` 폴백.
 
-> CDN 로드분은 재배포가 아니므로 라이선스 동봉 의무는 약하나, 사용 사실을 위와 같이 밝혀 둡니다.
+> 정상 배포 `.app`에서는 로컬 번들이 항상 존재하므로 CDN을 호출하지 않습니다(오프라인 동작).
+> CDN 폴백분은 재배포가 아니므로 라이선스 동봉 의무는 약하나, 사용 사실을 위와 같이 밝혀 둡니다.
 
 ## 3. 외부 CLI (Process 호출, 앱에 미포함)
 
@@ -66,7 +84,7 @@ cmd-docu는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPAC
 
 ## 4. 라이선스 전문
 
-### MIT License (Highlightr, Yams 공통 본문)
+### MIT License (KaTeX, Mermaid, Highlightr, Yams 공통 본문)
 
 > 저작권 고지는 위 각 항목의 Copyright 줄을 따릅니다. 아래는 공통 본문입니다.
 
