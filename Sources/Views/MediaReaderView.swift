@@ -126,9 +126,10 @@ struct MediaReaderView: View {
                 if isEditing {
                     noteEditor
                 } else {
+                    // 일반 마크다운 문서 미리보기와 동일하게 frontmatter는 감춘다(편집 모드는 원문).
                     MarkdownPreviewView(
                         documentID: tabID,
-                        markdown: content,
+                        markdown: CompanionNote.bodyStrippingFrontmatter(content),
                         baseURL: url.deletingLastPathComponent(),
                         options: appState.renderOptions(),
                         scrollSyncEnabled: false

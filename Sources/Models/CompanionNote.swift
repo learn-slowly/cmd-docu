@@ -70,6 +70,19 @@ enum CompanionNote {
         return summary
     }
 
+    /// 노트 내용에서 frontmatter 블록을 뗀 본문을 돌려준다(미리보기용 — 편집 모드는 원문 그대로).
+    /// 블록 판정 규칙은 summary(fromNoteContent:)와 동일("---\n" 시작 + "\n---" 닫힘).
+    static func bodyStrippingFrontmatter(_ content: String) -> String {
+        guard content.hasPrefix("---\n") else { return content }
+        let afterOpen = content.dropFirst(4)
+        guard let close = afterOpen.range(of: "\n---") else { return content }
+        var body = afterOpen[close.upperBound...]
+        // 닫는 펜스 줄의 나머지를 스킵하고 다음 줄부터 본문.
+        guard let fenceLineEnd = body.firstIndex(of: "\n") else { return "" }
+        body = body[body.index(after: fenceLineEnd)...]
+        return String(body.drop(while: { $0 == "\n" }))
+    }
+
     /// 짝꿍 노트 파일에서 summary를 비동기로 읽는다(라이브러리 리스트 셀 lazy 표시용).
     static func loadSummary(noteURL: URL) async -> String? {
         let task = Task.detached(priority: .utility) { () -> String? in

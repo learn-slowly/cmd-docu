@@ -101,4 +101,26 @@ final class CompanionNoteTests: XCTestCase {
         let content = CompanionNote.initialContent(mediaFileName: "a.wav", metadata: meta)
         XCTAssertNil(CompanionNote.summary(fromNoteContent: content))
     }
+
+    // MARK: - 미리보기용 frontmatter 제거
+
+    func testBodyStrippingFrontmatterRemovesBlock() {
+        let doc = "---\nmedia: \"a.mp3\"\nsummary: \"흐머\"\n---\n\n# 제목\n\n본문\n"
+        XCTAssertEqual(CompanionNote.bodyStrippingFrontmatter(doc), "# 제목\n\n본문\n")
+    }
+
+    func testBodyStrippingFrontmatterKeepsPlainContent() {
+        XCTAssertEqual(CompanionNote.bodyStrippingFrontmatter("# 그냥 본문\n"), "# 그냥 본문\n")
+        // 닫는 펜스가 없으면 원문 유지(깨진 frontmatter를 지우지 않는다).
+        XCTAssertEqual(CompanionNote.bodyStrippingFrontmatter("---\nmedia: x\n본문"),
+                       "---\nmedia: x\n본문")
+    }
+
+    func testBodyStrippingFrontmatterOnInitialContent() {
+        let meta = MediaMetadata(durationSeconds: 222, embeddedTitle: "제목", format: "mp3", createdAt: nil)
+        let content = CompanionNote.initialContent(mediaFileName: "a.mp3", metadata: meta)
+        let body = CompanionNote.bodyStrippingFrontmatter(content)
+        XCTAssertFalse(body.contains("media:"), "frontmatter가 남으면 안 된다")
+        XCTAssertTrue(body.hasPrefix("# 제목"), "본문은 제목부터 시작")
+    }
 }
