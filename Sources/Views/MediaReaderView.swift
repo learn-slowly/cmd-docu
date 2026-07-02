@@ -54,6 +54,10 @@ struct MediaReaderView: View {
             player?.pause()
             saveIfEditing()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            // 앱 종료 시 onDisappear가 보장되지 않으므로 별도로 저장 경로를 확보한다.
+            saveIfEditing()
+        }
     }
 
     // MARK: - 플레이어
@@ -239,9 +243,13 @@ struct MediaReaderView: View {
         }
     }
 
-    /// 탭 전환·닫기 시 편집 중이던 내용을 잃지 않도록 저장.
+    /// 탭 전환·닫기·앱 종료 시 편집 중이던 내용을 잃지 않도록 저장.
     private func saveIfEditing() {
         guard isEditing, case .loaded(let content) = noteState, editBuffer != content else { return }
-        try? editBuffer.write(to: noteURL, atomically: true, encoding: .utf8)
+        do {
+            try editBuffer.write(to: noteURL, atomically: true, encoding: .utf8)
+        } catch {
+            appState.showToast("짝꿍 노트 저장 실패: \(error.localizedDescription)")
+        }
     }
 }
