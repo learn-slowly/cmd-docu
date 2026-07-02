@@ -657,7 +657,10 @@ struct RuleEditorSheet: View {
                             TextField("value", text: $condition.value)
 
                             Button {
-                                rule.conditions.removeAll { $0.id == condition.id }
+                                // 배타적 접근 위반 방지: removeAll(쓰기 접근) 중에 바인딩 요소
+                                // condition을 재읽기하면 즉사한다(버킷 삭제 b0dce58과 동형).
+                                let conditionID = condition.id
+                                rule.conditions.removeAll { $0.id == conditionID }
                             } label: {
                                 Image(systemName: "minus.circle")
                             }
