@@ -13,7 +13,7 @@ Contents/Resources, so the fallback resolves at runtime.
 It is an in-place, equal-length, NUL-padded replacement, so all Mach-O offsets are preserved.
 Run it BEFORE codesign; the subsequent `codesign --force --deep --sign -` re-seals the binary.
 
-usage: fix-highlightr-bundle.py <path/to/CmdMD.app/Contents/MacOS/CmdMD>
+usage: fix-highlightr-bundle.py <path/to/cmdALL.app/Contents/MacOS/CmdMD>
 
 NOTE: the replacement path assumes the documented /Applications install location. For full
 install-location independence, build the .app with an Xcode/xcodebuild app target instead (its
@@ -21,7 +21,7 @@ resource accessor checks Bundle.main.resourceURL, i.e. Contents/Resources).
 """
 import sys
 
-NEW = b"/Applications/CmdMD.app/Contents/Resources/Highlightr_Highlightr.bundle"
+NEW = b"/Applications/cmdALL.app/Contents/Resources/Highlightr_Highlightr.bundle"
 NEEDLE = b"Highlightr_Highlightr.bundle"
 
 
