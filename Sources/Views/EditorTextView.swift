@@ -430,6 +430,10 @@ struct MarkdownTextEditor: NSViewRepresentable {
             observers.append(center.addObserver(forName: .formatLink, object: nil, queue: .main) { [weak self] _ in
                 self?.insertLink()
             })
+            // 전제: 현재는 화면에 MarkdownTextEditor 인스턴스가 동시에 하나만 마운트된다는
+            // 불변식에 기대 object 필터 없이 구독한다. 향후 마크다운·오피스 편집·미디어 노트
+            // 에디터가 동시에 마운트되는 화면이 생기면 이 구독이 전부에게 브로드캐스트돼
+            // 중복 삽입이 발생할 수 있음 — 그때는 대상 에디터를 식별하는 가드가 필요하다.
             observers.append(center.addObserver(forName: .insertClaudeResponse, object: nil, queue: .main) { [weak self] note in
                 guard let text = note.object as? String else { return }
                 self?.insertPlainText(text)

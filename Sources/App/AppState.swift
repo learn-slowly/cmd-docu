@@ -564,12 +564,16 @@ final class AppState {
 
     /// Claude 응답을 기본 볼트에 새 노트로 저장한다. 원본 문서는 손대지 않는다
     /// (QuickCaptureView.sendToVault와 같은 패턴 — 이쪽은 활성 탭 없이도 동작).
+    /// 성공 시 true, 실패(응답 없음·볼트 미설정·sendToVault 오류)면 false를 반환한다 —
+    /// 호출부가 이 반환값으로 성공 피드백 표시 여부를 게이트해야 한다(post-hoc claudeError
+    /// 검사보다 견고: claudeError는 이전 호출의 stale 값이 남아있을 수 있음).
     @MainActor
-    func saveClaudeResponseAsNote() async {
-        guard let resp = claudeResponse, !resp.isEmpty else { return }
+    @discardableResult
+    func saveClaudeResponseAsNote() async -> Bool {
+        guard let resp = claudeResponse, !resp.isEmpty else { return false }
         guard let vault = defaultVault else {
             claudeError = "저장할 볼트가 없습니다. Vault Manager에서 볼트를 먼저 등록해 주세요."
-            return
+            return false
         }
         let doc = MarkdownDocument(title: Self.noteTitle(fromPrompt: claudePrompt), content: resp, isDraft: true)
         var options = SendOptions()
@@ -579,8 +583,10 @@ final class AppState {
         options.injectFrontmatter = settings.injectFrontmatterByDefault
         do {
             try await sendToVault(document: doc, options: options, quiet: true)
+            return true
         } catch {
             claudeError = "노트 저장 실패: \(error.localizedDescription)"
+            return false
         }
     }
 

@@ -84,8 +84,9 @@ struct ClaudePanelView: View {
 
                     Button {
                         Task {
-                            await appState.saveClaudeResponseAsNote()
-                            flashFeedback("저장됨")
+                            if await appState.saveClaudeResponseAsNote() {
+                                flashFeedback("저장됨")
+                            }
                         }
                     } label: {
                         Label("노트로 저장", systemImage: "square.and.arrow.down")

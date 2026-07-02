@@ -162,8 +162,9 @@ final class AppClaudeTests: XCTestCase {
         let app = AppState(dataDirectory: tempDir)
         app.claudeResponse = "응답"
 
-        await app.saveClaudeResponseAsNote()
+        let saved = await app.saveClaudeResponseAsNote()
 
+        XCTAssertFalse(saved, "볼트 미설정 시 false를 반환해 호출부가 성공 피드백을 표시하지 않도록 해야 한다")
         XCTAssertEqual(app.claudeError, "저장할 볼트가 없습니다. Vault Manager에서 볼트를 먼저 등록해 주세요.")
     }
 
@@ -172,8 +173,9 @@ final class AppClaudeTests: XCTestCase {
         let app = AppState(dataDirectory: tempDir)
         app.claudeResponse = nil
 
-        await app.saveClaudeResponseAsNote()
+        let saved = await app.saveClaudeResponseAsNote()
 
+        XCTAssertFalse(saved)
         XCTAssertNil(app.claudeError)
     }
 
@@ -187,8 +189,9 @@ final class AppClaudeTests: XCTestCase {
         app.claudePrompt = "이 문서를 요약해줘"
         app.claudeResponse = "요약된 응답 내용"
 
-        await app.saveClaudeResponseAsNote()
+        let saved = await app.saveClaudeResponseAsNote()
 
+        XCTAssertTrue(saved, "정상 저장 시 true를 반환해야 호출부의 성공 피드백 게이트가 작동한다")
         XCTAssertNil(app.claudeError)
         let inboxDir = vaultRoot.appendingPathComponent("Inbox", isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: inboxDir.path)) ?? []
