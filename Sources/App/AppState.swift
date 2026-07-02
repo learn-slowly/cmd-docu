@@ -550,8 +550,9 @@ final class AppState {
 
     /// Claude 응답을 현재 노트 본문에 반영한다. 마크다운 탭에서만 동작(다른 종류는 무시).
     /// 에디터가 붙어 있는 reader 모드의 source/split에선 커서 위치 삽입을 알림으로 위임하고,
-    /// 그 외(reader의 preview, 또는 라이브러리 모드 — 둘 다 MarkdownTextEditor가 비마운트라
-    /// 알림을 받을 구독자가 없다)엔 본문 끝에 덧붙인다(insertImageMarkdown과 같은 패턴).
+    /// 그 외엔 본문 끝에 덧붙인다(insertImageMarkdown과 같은 패턴) — 라이브러리 모드는
+    /// MarkdownTextEditor가 비마운트라 구독자가 없고, reader의 preview는 에디터가 오프스크린
+    /// 마운트 상태지만 커서/포커스가 없어 커서 삽입이 무의미하다.
     func insertClaudeResponseIntoCurrentNote() {
         guard currentTabKind == .markdown, let doc = currentDocument,
               let resp = claudeResponse, !resp.isEmpty else { return }
