@@ -25,7 +25,12 @@ let package = Package(
                 "Highlightr",
                 "Yams",
             ],
-            path: "Sources"
+            path: "Sources",
+            linkerSettings: [
+                // SwiftUI VideoPlayer는 _AVKit_SwiftUI 오버레이만 자동 링크되고 AVKit 본체가 빠져
+                // 런타임에 AVPlayerView 수퍼클래스 디맹글 실패로 크래시한다 — 명시 링크 필수.
+                .linkedFramework("AVKit")
+            ]
         ),
         .testTarget(
             name: "CmdMDTests",
