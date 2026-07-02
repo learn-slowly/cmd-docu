@@ -68,9 +68,12 @@ cmd-docu는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPAC
 
 - **Mermaid** — 다이어그램. 로컬 번들(§1) 우선, 누락 시 `cdn.jsdelivr.net/npm/mermaid@11` 폴백.
 - **KaTeX** — 수식. 로컬 번들(§1) 우선, 누락 시 `cdn.jsdelivr.net/npm/katex@0.16` 폴백.
-- **highlight.js** — 코드 하이라이팅. 로컬 번들(§1) 우선, 누락 시 `cdn.jsdelivr.net/gh/highlightjs/cdn-release@11` 폴백.
+- **highlight.js** — 코드 하이라이팅. **기본(github) 테마일 때만** 로컬 번들(§1)을 인라인 주입하고,
+  누락 시 `cdn.jsdelivr.net/gh/highlightjs/cdn-release@11` 폴백. github 외 다른 코드 테마는
+  번들 존재 여부와 무관하게 항상 이 CDN에서 불러옵니다(`MarkdownRenderer.hljsIncludes` 실동작).
 
-> 정상 배포 `.app`에서는 로컬 번들이 항상 존재하므로 CDN을 호출하지 않습니다(오프라인 동작).
+> 정상 배포 `.app`에서 Mermaid·KaTeX·기본(github) 코드 테마는 로컬 번들이 항상 존재하므로 CDN을 호출하지
+> 않습니다(오프라인 동작). 다만 github 외 코드 테마를 선택하면 오프라인 여부와 무관하게 CDN을 호출합니다.
 > CDN 폴백분은 재배포가 아니므로 라이선스 동봉 의무는 약하나, 사용 사실을 위와 같이 밝혀 둡니다.
 
 ## 3. 외부 CLI (Process 호출, 앱에 미포함)

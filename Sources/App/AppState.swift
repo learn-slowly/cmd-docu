@@ -549,16 +549,17 @@ final class AppState {
     }
 
     /// Claude 응답을 현재 노트 본문에 반영한다. 마크다운 탭에서만 동작(다른 종류는 무시).
-    /// 에디터가 붙어 있는 source/split에선 커서 위치 삽입을 알림으로 위임하고,
-    /// 에디터가 없는 preview에선 본문 끝에 덧붙인다(insertImageMarkdown과 같은 패턴).
+    /// 에디터가 붙어 있는 reader 모드의 source/split에선 커서 위치 삽입을 알림으로 위임하고,
+    /// 그 외(reader의 preview, 또는 라이브러리 모드 — 둘 다 MarkdownTextEditor가 비마운트라
+    /// 알림을 받을 구독자가 없다)엔 본문 끝에 덧붙인다(insertImageMarkdown과 같은 패턴).
     func insertClaudeResponseIntoCurrentNote() {
         guard currentTabKind == .markdown, let doc = currentDocument,
               let resp = claudeResponse, !resp.isEmpty else { return }
         let block = "\n\n" + resp + "\n"
-        if viewMode == .preview {
-            updateContent(doc.content + block)
-        } else {
+        if mainMode == .reader && viewMode != .preview {
             NotificationCenter.default.post(name: .insertClaudeResponse, object: block)
+        } else {
+            updateContent(doc.content + block)
         }
     }
 
@@ -1621,6 +1622,7 @@ final class AppState {
         documents.removeValue(forKey: tab.documentId)
         originalContents.removeValue(forKey: tab.documentId)
         officeStates.removeValue(forKey: tab.id)
+        pendingMediaScrollLines.removeValue(forKey: tab.id)
 
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs.remove(at: index)

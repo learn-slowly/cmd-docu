@@ -70,9 +70,10 @@ enum CompanionNote {
             .replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 
-    /// frontmatter 블록을 yaml·body로 분리한다(공용 — FileService.parseFrontmatter와 규칙 정렬).
+    /// frontmatter 블록을 yaml·body로 분리한다(공용 헬퍼).
     /// 여는 펜스는 첫 줄 트림이 "---"일 때만 인정. 닫는 펜스는 "---" 또는 "..." 둘 다
     /// 허용하고 뒤 공백을 관용한다. 닫는 펜스를 못 찾으면 nil(깨진 frontmatter는 원문 취급).
+    /// 닫는 펜스 규칙은 FileService.parseFrontmatter와 정렬(여는 펜스 판정·개행 분리 방식은 상이).
     static func splitFrontmatter(_ content: String) -> (yaml: String, body: String)? {
         var text = content
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }   // BOM 관용(FileService와 정렬)

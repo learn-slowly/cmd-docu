@@ -130,6 +130,24 @@ final class AppClaudeTests: XCTestCase {
     }
 
     @MainActor
+    func testInsertClaudeResponseAppendsToContentInLibraryMode() {
+        // 라이브러리 모드에선 MarkdownTextEditor(알림 구독자)가 비마운트라
+        // 알림 게시로는 아무 일도 안 일어난다 — append 폴백이어야 한다.
+        let app = AppState(dataDirectory: tempDir)
+        let tab = EditorTab(kind: .markdown)
+        app.tabs = [tab]
+        app.activeTabId = tab.id
+        app.documents[tab.documentId] = MarkdownDocument(content: "본문")
+        app.mainMode = .library
+        app.viewMode = .source
+        app.claudeResponse = "응답 내용"
+
+        app.insertClaudeResponseIntoCurrentNote()
+
+        XCTAssertEqual(app.currentDocument?.content, "본문\n\n응답 내용\n")
+    }
+
+    @MainActor
     func testInsertClaudeResponseNoOpWhenNotMarkdownKind() {
         let app = AppState(dataDirectory: tempDir)
         let tab = EditorTab(kind: .office)
