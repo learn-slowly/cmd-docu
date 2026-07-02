@@ -33,6 +33,12 @@ struct MainEditorView: View {
                       let url = appState.currentTabFileURL,
                       let tabID = appState.activeTabId {
                 OfficeReaderView(tabID: tabID, fileURL: url)
+            } else if appState.currentTabKind == .media,
+                      let url = appState.currentTabFileURL,
+                      let tabID = appState.activeTabId {
+                MediaReaderView(tabID: tabID, url: url)
+                    // 파일이 바뀌면 뷰 상태(편집 버퍼·플레이어)를 리셋 — onDisappear가 먼저 저장한다.
+                    .id(url)
             } else if let document = appState.currentDocument {
                 // 탭 전환 시 NSTextView / WKWebView를 재생성하지 않도록 패널을 유지 — 성능 최적화.
                 DocumentEditorView(document: document)
