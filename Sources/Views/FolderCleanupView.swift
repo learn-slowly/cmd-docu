@@ -75,13 +75,20 @@ struct FolderCleanupView: View {
             // CleanupBucket이 Identifiable이라 요소 바인딩으로 바로 전환 가능.
             ForEach($state.cleanupScheme) { $bucket in
                 HStack(spacing: 6) {
-                    // 폴더명 — 입력 시 sanitize 후 id·relativePath도 동기화
+                    // 폴더명 — 입력 시 sanitize 후 relativePath만 동기화.
+                    // id는 생성 시점 값으로 고정한다(절대 여기서 바꾸지 않는다):
+                    // ForEach($state.cleanupScheme)가 id로 행 정체성을 추적하므로,
+                    // 키 입력마다 id를 바꾸면 매번 새 행으로 인식돼 백킹 NSTextField가
+                    // 파기·재생성되며 포커스를 잃는다(한 글자 치면 포커스가 튐).
+                    // MoveExecutor는 id로 버킷을 찾고 목적지는 relativePath로 해석하므로
+                    // id 고정이어도 rename된 relativePath로 정확히 이동한다.
+                    // 대가: rename 후에도 CleanupPlanner가 Claude에게 보내는 프롬프트
+                    // 라벨은 rename 전 이름으로 남는다(hint는 갱신되니 영향은 미미).
                     TextField("폴더명", text: Binding(
                         get: { bucket.name },
                         set: { newVal in
                             let clean = CleanupPlanner.sanitizeBucketName(newVal)
                             bucket.name = clean
-                            bucket.id = clean
                             bucket.relativePath = clean
                         }
                     ))
