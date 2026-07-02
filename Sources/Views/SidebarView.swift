@@ -429,6 +429,12 @@ struct FileTreeItemRow: View {
                     .font(.caption2)
                     .foregroundColor(.yellow)
             }
+            if item.hasCompanionNote {
+                Image(systemName: "note.text")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("짝꿍 노트 있음")
+            }
         }
         .opacity(paraCategory == .archive ? 0.45 : 1.0)
     }

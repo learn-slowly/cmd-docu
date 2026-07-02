@@ -180,6 +180,16 @@ struct LibraryGridCell: View {
         VStack(spacing: 6) {
             imageArea
                 .frame(width: 64, height: 64)
+                .overlay(alignment: .topTrailing) {
+                    if item.hasCompanionNote {
+                        Image(systemName: "note.text")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(2)
+                            .background(.thinMaterial, in: .rect(cornerRadius: 3))
+                            .help("짝꿍 노트 있음")
+                    }
+                }
 
             Text(item.name)
                 .font(.caption)
@@ -230,6 +240,9 @@ struct LibraryListCell: View {
     @Environment(AppState.self) private var appState
     let item: FileTreeItem
 
+    /// 짝꿍 노트의 summary — 셀이 보일 때만 lazy 로드(썸네일 패턴, 셀 사라지면 취소).
+    @State private var summary: String?
+
     private var paraCategory: ParaCategory {
         ParaLens.classify(item.url, under: appState.currentFolder)
     }
@@ -241,13 +254,33 @@ struct LibraryListCell: View {
                 .foregroundStyle(iconColor)
                 .frame(width: 20)
 
-            Text(item.name)
-                .lineLimit(1)
-                .font(paraCategory == .projects && item.isDirectory ? .body.weight(.medium) : .body)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name)
+                    .lineLimit(1)
+                    .font(paraCategory == .projects && item.isDirectory ? .body.weight(.medium) : .body)
+                if let summary {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            if item.hasCompanionNote {
+                Spacer(minLength: 4)
+                Image(systemName: "note.text")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("짝꿍 노트 있음")
+            }
         }
         .opacity(paraCategory == .archive ? 0.45 : 1.0)
         .contentShape(Rectangle())
         .padding(.vertical, 2)
+        .task(id: item.url) {
+            guard item.hasCompanionNote else { summary = nil; return }
+            summary = await CompanionNote.loadSummary(noteURL: CompanionNote.noteURL(for: item.url))
+        }
     }
 
     private var iconColor: Color {
