@@ -27,6 +27,11 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Vaults", systemImage: "folder")
                 }
+
+            ToolsSettingsView()
+                .tabItem {
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                }
         }
         .frame(width: 560, height: 500)
     }
@@ -662,6 +667,97 @@ struct ShortcutRow: View {
             NSEvent.removeMonitor(m)
             monitor = nil
         }
+    }
+}
+
+// MARK: - Tools (외부 CLI 상태·신규 기능 설정 통합)
+
+/// kordoc·claude CLI 탐지 상태와 신규 기능(라우팅·검색 인덱스·RAG) 설정을 한 곳에 모은 탭.
+/// 경로 탐지는 동기 리졸버만 호출한다(프로세스 실행·버전 프로브 없음 — 스펙 §3).
+struct ToolsSettingsView: View {
+    @Environment(AppState.self) private var appState
+
+    @State private var kordocPath: String?
+    @State private var claudePath: String?
+
+    var body: some View {
+        @Bindable var state = appState
+
+        Form {
+            Section {
+                toolStatusRows(name: "kordoc (npx)", path: kordocPath,
+                               missingHint: "미설치 — Node 18+와 npx가 필요합니다. 한글·오피스 문서 읽기/쓰기가 비활성화됩니다.")
+            } header: {
+                Text("kordoc")
+            }
+
+            Section {
+                toolStatusRows(name: "claude CLI", path: claudePath,
+                               missingHint: "미설치 — Claude 연동(패널·라우팅·RAG·폴더 정리)이 비활성화됩니다.")
+                Toggle("Claude 스마트 라우팅 (PARA)", isOn: $state.settings.claudeRoutingEnabled)
+                Text("볼트로 보낼 때 규칙에 안 맞으면 Claude가 PARA 폴더를 제안합니다. (Vault Manager의 PARA 탭과 같은 설정)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Claude")
+            }
+
+            Section {
+                if appState.settings.indexedFolders.isEmpty {
+                    Text("등록된 폴더 없음")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appState.settings.indexedFolders, id: \.self) { path in
+                        Text(path)
+                            .font(.callout)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Toggle("질의 확장 (RAG)", isOn: $state.settings.ragExpandQuery)
+                Button("내용 검색 열기…") {
+                    appState.showIndexSearch = true
+                }
+            } header: {
+                Text("검색 인덱스")
+            } footer: {
+                Text("폴더 등록·해제는 내용 검색 창에서 합니다. 질의 확장은 자료에 묻기(RAG)가 검색어를 넓히는 옵션입니다.")
+                    .font(.caption)
+            }
+
+            Section {
+                Button("상태 새로고침") { refresh() }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { refresh() }
+    }
+
+    /// 경로를 찾으면 모노스페이스로, 못 찾으면 "미설치"와 안내 캡션을 표시한다.
+    @ViewBuilder
+    private func toolStatusRows(name: String, path: String?, missingHint: String) -> some View {
+        LabeledContent(name) {
+            if let path {
+                Text(path)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text("미설치")
+                    .foregroundStyle(.orange)
+            }
+        }
+        if path == nil {
+            Text(missingHint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func refresh() {
+        kordocPath = KordocService.resolveNpxPath()
+        claudePath = ClaudeService.resolveClaudePath()
     }
 }
 
