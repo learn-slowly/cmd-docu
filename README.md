@@ -2,7 +2,7 @@
 
 <img src="Resources/appicon-1024.png" width="120" alt="CmdMD icon" />
 
-# CmdMD
+# cmdALL
 
 **A review‑first Markdown editor & Obsidian vault router for macOS.**
 
@@ -24,7 +24,7 @@ Native Swift / SwiftUI · macOS 14+ · CMDS‑branded, light & dark.
 
 ---
 
-> **이 저장소는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPACE)의 포크 `cmd-docu`입니다.**
+> **이 저장소는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPACE)의 포크 `cmdALL`입니다(저장소명은 `cmd-docu`).**
 > 원본의 마크다운 리더 위에 **이미지·PDF 보기**, **한글/오피스(HWP·DOCX·XLSX) 읽기**, **HWP/HWPX 편집·양식 채우기(서식 보존)**, **종류를 가로지르는 내용 검색(FTS5 인덱스·한국어 부분일치)**, **Claude 연동(`claude -p`) — 문서 질의·자료에 묻기(RAG)·PARA 라우팅·폴더 정리**, **PARA 라이브러리 뷰**를 더한 개인용 도구입니다.
 > 문서 엔진은 외부 CLI [kordoc](https://www.npmjs.com/package/kordoc), AI는 로컬 `claude` CLI를 `Process`로 호출합니다(앱에 재구현하지 않음).
 > 원작자와 라이선스(MIT) 고지는 그대로 유지합니다. 원본과 무관하며 원작자의 보증을 받지 않았습니다.
@@ -92,14 +92,14 @@ then file it into the correct vault folder with templates and rules.
 
 Grab the latest build from the [**Releases**](../../releases) page:
 
-- **`CmdMD-<version>.dmg`** — open it and drag `CmdMD.app` onto the **Applications** shortcut.
-- **`CmdMD-macos.zip`** — unzip and move `CmdMD.app` to `/Applications` (same thing, no mount).
+- **`cmdALL-<version>.dmg`** — open it and drag `cmdALL.app` onto the **Applications** shortcut.
+- **`cmdALL-macos.zip`** — unzip and move `cmdALL.app` to `/Applications` (same thing, no mount).
 
 The app is **ad‑hoc signed**, so on first launch Gatekeeper may warn. Either right‑click →
 **Open**, or clear the quarantine flag:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/CmdMD.app
+xattr -dr com.apple.quarantine /Applications/cmdALL.app
 ```
 
 ### Build from source
@@ -112,10 +112,10 @@ cd cmd-docu
 
 swift build                         # debug build
 swift run                           # run it
-swift test                          # 382 tests (XCTest 364 + Swift Testing 18, 정식 Xcode 필요)
+swift test                          # 384 tests (XCTest 366 + Swift Testing 18, 정식 Xcode 필요)
 
 swift build -c release              # release binary
-bash scripts/package_app.sh         # → dist/CmdMD.app + dist/CmdMD-macos.zip
+bash scripts/package_app.sh         # → dist/cmdALL.app + dist/cmdALL-macos.zip
 ```
 
 > 포크 기능 사용 전제: 한글/오피스 변환·편집은 **Node 18+**(`npx kordoc`), Claude 연동은 로컬 **`claude`** CLI 로그인.
