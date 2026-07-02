@@ -421,11 +421,12 @@ final class AppState {
     }
 
     /// 질의 컨텍스트를 고른다(순수 함수). 선택영역 > 마크다운 본문 > 오피스 변환 마크다운 > 빈 문자열.
-    static func claudeContext(selection: String, markdown: String?, officeMarkdown: String?) -> String {
+    static func claudeContext(selection: String, markdown: String?, officeMarkdown: String?, mediaNote: String? = nil) -> String {
         let sel = selection.trimmingCharacters(in: .whitespacesAndNewlines)
         if !sel.isEmpty { return sel }
         if let md = markdown, !md.isEmpty { return md }
         if let om = officeMarkdown, !om.isEmpty { return om }
+        if let mn = mediaNote, !mn.isEmpty { return mn }
         return ""
     }
 
@@ -497,9 +498,16 @@ final class AppState {
             return result.markdown
         }()
         let selection = Self.claudeSelection(forKind: currentTabKind, selection: currentSelectionText)
+        // media 탭이면 짝꿍 노트 전문을 컨텍스트로(frontmatter 포함 — duration·summary 메타가 질문에 유용).
+        // 한계: 편집 중 미저장 버퍼는 뷰 로컬 @State라 디스크 기준(탭 전환 시 자동저장돼 실사용 영향 작음).
+        let mediaNote: String? = {
+            guard currentTabKind == .media, let url = currentTabFileURL else { return nil }
+            return try? String(contentsOf: CompanionNote.noteURL(for: url), encoding: .utf8)
+        }()
         let context = Self.claudeContext(selection: selection,
                                          markdown: currentDocument?.content,
-                                         officeMarkdown: officeMarkdown)
+                                         officeMarkdown: officeMarkdown,
+                                         mediaNote: mediaNote)
 
         claudeBusy = true
         claudeError = nil

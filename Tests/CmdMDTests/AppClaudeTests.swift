@@ -60,4 +60,14 @@ final class AppClaudeTests: XCTestCase {
     func testSelectionIgnoredForPdfKind() {
         XCTAssertEqual(AppState.claudeSelection(forKind: .pdf, selection: "선택"), "")
     }
+
+    func testContextUsesMediaNoteWhenOthersEmpty() {
+        let ctx = AppState.claudeContext(selection: "", markdown: nil, officeMarkdown: nil, mediaNote: "노트 본문")
+        XCTAssertEqual(ctx, "노트 본문")
+    }
+
+    func testMediaNoteIgnoredWhenMarkdownPresent() {
+        let ctx = AppState.claudeContext(selection: "", markdown: "md", officeMarkdown: nil, mediaNote: "노트")
+        XCTAssertEqual(ctx, "md")
+    }
 }
