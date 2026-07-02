@@ -6,18 +6,32 @@ import PDFKit
 enum RagPassageExtractor {
     struct Passage: Equatable { let text: String; let location: RagLocation }
 
-    /// 본문 문자열에서 질의어 첫 매치가 든 문단을 반환(순수). 매치 없으면 앞 maxChars·줄 1.
+    /// 본문 문자열에서 질의어가 가장 많이 겹치는 줄의 문단을 반환(순수). 매치 없으면 앞 maxChars·줄 1.
+    /// 첫 매치만 쓰면 문서 앞머리의 스치는 언급이 정답 문단을 밀어낸다(스모크 발견 2026-07-02)
+    /// — 서로 다른 질의어 매치 수가 최대인 줄을 고르고, 동률이면 이른 줄(기존 동작 보존).
     static func passage(inText body: String, terms: [String], maxChars: Int = 1200) -> Passage {
-        let cleanTerms = terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let cleanTerms = terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
                               .filter { !$0.isEmpty }
         let lower = body.lowercased()
-        // 가장 이른 매치 오프셋(정수) 탐색.
+        // 줄 단위로 매치 수를 세어 최다 매치 줄의 첫 매치 오프셋을 고른다.
         var best: Int? = nil
-        for term in cleanTerms {
-            if let r = lower.range(of: term.lowercased()) {
-                let off = lower.distance(from: lower.startIndex, to: r.lowerBound)
-                if best == nil || off < best! { best = off }
+        var bestScore = 0
+        var lineStart = 0
+        for lineSub in lower.split(separator: "\n", omittingEmptySubsequences: false) {
+            var score = 0
+            var firstInLine: Int? = nil
+            for term in cleanTerms {
+                if let r = lineSub.range(of: term) {
+                    score += 1
+                    let inLine = lineSub.distance(from: lineSub.startIndex, to: r.lowerBound)
+                    if firstInLine == nil || inLine < firstInLine! { firstInLine = inLine }
+                }
             }
+            if score > bestScore, let firstInLine {
+                bestScore = score
+                best = lineStart + firstInLine
+            }
+            lineStart += lineSub.count + 1   // +1 = 개행
         }
         guard let matchOff = best else {
             // 앞 maxChars 잘라 반환. 끝 공백·줄바꿈은 제거(자연 텍스트 경계).

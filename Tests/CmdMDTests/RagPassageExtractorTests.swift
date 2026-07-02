@@ -36,4 +36,20 @@ final class RagPassageExtractorTests: XCTestCase {
         XCTAssertEqual(p.location, .line(1))
         XCTAssertEqual(p.text, "본문 내용")
     }
+
+    // 스모크 발견(2026-07-02): 문서 앞머리의 스치는 언급(1개 용어)이 정답 문단(여러 용어 겹침)을 밀어냈다.
+    // 첫 매치가 아니라 "서로 다른 질의어가 가장 많이 겹치는 줄"을 골라야 한다.
+    func testPassagePrefersLineWithMostTermMatches() {
+        let body = "검색 이야기로 시작하는 서문이다.\n\n한참 뒤의 문단.\n\ncmd-docu 검색 스모크의 비밀 코드는 홍시-42다."
+        let p = RagPassageExtractor.passage(inText: body, terms: ["검색", "비밀", "코드는"])
+        XCTAssertTrue(p.text.contains("홍시-42"), "질의어 3개가 겹치는 문단이 근거여야 한다")
+        XCTAssertEqual(p.location, .line(5))
+    }
+
+    func testTieFallsBackToEarliestLine() {
+        // 동률(각 1개 매치)이면 기존처럼 이른 줄.
+        let body = "첫 문단 선거 언급\n\n둘째 문단 선거 언급"
+        let p = RagPassageExtractor.passage(inText: body, terms: ["선거"])
+        XCTAssertEqual(p.location, .line(1))
+    }
 }
