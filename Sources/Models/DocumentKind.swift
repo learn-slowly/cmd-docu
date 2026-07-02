@@ -6,6 +6,7 @@ enum DocumentKind: String, Codable {
     case image
     case pdf
     case office
+    case media
 }
 
 extension DocumentKind {
@@ -34,7 +35,21 @@ extension DocumentKind {
         fillableExtensions.contains(url.pathExtension.lowercased())
     }
 
-    /// 확장자(대소문자 무시): 이미지 → PDF → 오피스 → 마크다운(기본).
+    /// AVFoundation이 네이티브 재생하는 음악 확장자(소문자).
+    static let audioExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "aiff", "flac"]
+
+    /// AVFoundation이 네이티브 재생하는 동영상 확장자(소문자).
+    static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
+
+    /// 미디어(음악+동영상) 확장자 합집합.
+    static let mediaExtensions: Set<String> = audioExtensions.union(videoExtensions)
+
+    /// 이 파일이 동영상인가 — 미디어 리더 레이아웃 분기용(동영상=좌우 분할, 음악=상단 바).
+    static func isVideo(_ url: URL) -> Bool {
+        videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// 확장자(대소문자 무시): 이미지 → PDF → 오피스 → 미디어 → 마크다운(기본).
     init(from url: URL) {
         let ext = url.pathExtension.lowercased()
         if DocumentKind.imageExtensions.contains(ext) {
@@ -43,6 +58,8 @@ extension DocumentKind {
             self = .pdf
         } else if DocumentKind.officeExtensions.contains(ext) {
             self = .office
+        } else if DocumentKind.mediaExtensions.contains(ext) {
+            self = .media
         } else {
             self = .markdown
         }
