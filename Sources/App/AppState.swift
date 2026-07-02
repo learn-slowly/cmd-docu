@@ -537,6 +537,53 @@ final class AppState {
         }
     }
 
+    // MARK: - Claude 응답 저장(본문 삽입·노트로 저장)
+
+    /// 프롬프트를 새 노트 제목으로 다듬는다(순수 함수). 트림 후 개행은 공백으로 바꾸고
+    /// 파일명이 과도하게 길어지지 않도록 40자에서 자른다. 빈 프롬프트는 기본 제목으로.
+    static func noteTitle(fromPrompt prompt: String) -> String {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+        guard !trimmed.isEmpty else { return "Claude 응답" }
+        return String(trimmed.prefix(40))
+    }
+
+    /// Claude 응답을 현재 노트 본문에 반영한다. 마크다운 탭에서만 동작(다른 종류는 무시).
+    /// 에디터가 붙어 있는 source/split에선 커서 위치 삽입을 알림으로 위임하고,
+    /// 에디터가 없는 preview에선 본문 끝에 덧붙인다(insertImageMarkdown과 같은 패턴).
+    func insertClaudeResponseIntoCurrentNote() {
+        guard currentTabKind == .markdown, let doc = currentDocument,
+              let resp = claudeResponse, !resp.isEmpty else { return }
+        let block = "\n\n" + resp + "\n"
+        if viewMode == .preview {
+            updateContent(doc.content + block)
+        } else {
+            NotificationCenter.default.post(name: .insertClaudeResponse, object: block)
+        }
+    }
+
+    /// Claude 응답을 기본 볼트에 새 노트로 저장한다. 원본 문서는 손대지 않는다
+    /// (QuickCaptureView.sendToVault와 같은 패턴 — 이쪽은 활성 탭 없이도 동작).
+    @MainActor
+    func saveClaudeResponseAsNote() async {
+        guard let resp = claudeResponse, !resp.isEmpty else { return }
+        guard let vault = defaultVault else {
+            claudeError = "저장할 볼트가 없습니다. Vault Manager에서 볼트를 먼저 등록해 주세요."
+            return
+        }
+        let doc = MarkdownDocument(title: Self.noteTitle(fromPrompt: claudePrompt), content: resp, isDraft: true)
+        var options = SendOptions()
+        options.targetVault = vault
+        options.targetFolder = effectiveSendFolder(for: vault)
+        options.conflictResolution = settings.conflictResolution
+        options.injectFrontmatter = settings.injectFrontmatterByDefault
+        do {
+            try await sendToVault(document: doc, options: options, quiet: true)
+        } catch {
+            claudeError = "노트 저장 실패: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Update checking
 
     /// Compares two version strings ("v1.4.4" / "1.4.4") component-wise.

@@ -430,6 +430,10 @@ struct MarkdownTextEditor: NSViewRepresentable {
             observers.append(center.addObserver(forName: .formatLink, object: nil, queue: .main) { [weak self] _ in
                 self?.insertLink()
             })
+            observers.append(center.addObserver(forName: .insertClaudeResponse, object: nil, queue: .main) { [weak self] note in
+                guard let text = note.object as? String else { return }
+                self?.insertPlainText(text)
+            })
             observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] note in
                 guard let self, let window = self.textView?.window, (note.object as? NSWindow) === window else { return }
                 self.completionPopup.dismiss()
@@ -535,6 +539,19 @@ struct MarkdownTextEditor: NSViewRepresentable {
             // Select the "url" placeholder for immediate typing.
             let urlLocation = sel.location + (replacement as NSString).length - 4
             textView.setSelectedRange(NSRange(location: urlLocation, length: 3))
+        }
+
+        /// Claude 응답 등 외부에서 만든 텍스트를 커서 위치에 그대로 삽입한다.
+        /// Claude 패널의 버튼에서 오는 요청이라 포맷 단축키(wrapSelection 등)와 달리
+        /// 에디터가 포커스를 갖고 있지 않아도 삽입해야 한다(isActiveEditor 가드 없음).
+        private func insertPlainText(_ text: String) {
+            guard let textView else { return }
+            let sel = textView.selectedRange()
+            guard textView.shouldChangeText(in: sel, replacementString: text) else { return }
+            textView.textStorage?.replaceCharacters(in: sel, with: text)
+            textView.didChangeText()
+            let endLocation = sel.location + (text as NSString).length
+            textView.setSelectedRange(NSRange(location: endLocation, length: 0))
         }
 
         // MARK: Key commands

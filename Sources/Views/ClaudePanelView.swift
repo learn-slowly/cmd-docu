@@ -6,6 +6,7 @@ import AppKit
 struct ClaudePanelView: View {
     @Environment(AppState.self) private var appState
     @FocusState private var promptFocused: Bool
+    @State private var feedback: String?
 
     var body: some View {
         @Bindable var state = appState
@@ -65,10 +66,37 @@ struct ClaudePanelView: View {
 
             if let resp = appState.claudeResponse, !appState.claudeBusy {
                 HStack {
+                    if let feedback {
+                        Text(feedback)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
+                    Button {
+                        appState.insertClaudeResponseIntoCurrentNote()
+                        flashFeedback("삽입됨")
+                    } label: {
+                        Label("본문에 삽입", systemImage: "text.cursor")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .disabled(appState.currentTabKind != .markdown || appState.currentDocument == nil)
+
+                    Button {
+                        Task {
+                            await appState.saveClaudeResponseAsNote()
+                            flashFeedback("저장됨")
+                        }
+                    } label: {
+                        Label("노트로 저장", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(resp, forType: .string)
+                        flashFeedback("복사됨")
                     } label: {
                         Label("복사", systemImage: "doc.on.doc")
                     }
@@ -107,5 +135,15 @@ struct ClaudePanelView: View {
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { promptFocused = true }
+    }
+
+    /// 짧은 완료 캡션을 2초간 보여준다(토스트 대신 패널 안에서 바로 보이도록).
+    private func flashFeedback(_ message: String) {
+        feedback = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if feedback == message {
+                feedback = nil
+            }
+        }
     }
 }

@@ -400,4 +400,6 @@ extension Notification.Name {
     static let formatBold = Notification.Name("formatBold")
     static let formatItalic = Notification.Name("formatItalic")
     static let formatLink = Notification.Name("formatLink")
+    /// Claude 응답을 마크다운 에디터 커서 위치에 삽입하라는 알림. object: String(삽입할 텍스트 블록).
+    static let insertClaudeResponse = Notification.Name("insertClaudeResponse")
 }
