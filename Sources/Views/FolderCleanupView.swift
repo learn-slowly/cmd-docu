@@ -64,34 +64,38 @@ struct FolderCleanupView: View {
     // MARK: - 스킴 편집: 버킷 이름·힌트 수정·삭제·추가
 
     private var schemeEditorView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        @Bindable var state = appState
+
+        return VStack(alignment: .leading, spacing: 6) {
             Text("정리 스킴 (편집 가능)")
                 .font(.subheadline).bold()
 
-            ForEach(appState.cleanupScheme.indices, id: \.self) { i in
+            // 안정 id(요소 바인딩) 기준 ForEach — 인덱스 기준이면 삭제 시 뒤 항목들의
+            // 배열 위치가 한 칸씩 당겨지며 id도 함께 바뀌어 삭제 애니메이션이 깨진다.
+            // CleanupBucket이 Identifiable이라 요소 바인딩으로 바로 전환 가능.
+            ForEach($state.cleanupScheme) { $bucket in
                 HStack(spacing: 6) {
                     // 폴더명 — 입력 시 sanitize 후 id·relativePath도 동기화
                     TextField("폴더명", text: Binding(
-                        get: { appState.cleanupScheme[i].name },
+                        get: { bucket.name },
                         set: { newVal in
                             let clean = CleanupPlanner.sanitizeBucketName(newVal)
-                            appState.cleanupScheme[i].name = clean
-                            appState.cleanupScheme[i].id = clean
-                            appState.cleanupScheme[i].relativePath = clean
+                            bucket.name = clean
+                            bucket.id = clean
+                            bucket.relativePath = clean
                         }
                     ))
                     .frame(minWidth: 120, maxWidth: 200)
 
                     // 설명(hint)
-                    TextField("설명", text: Binding(
-                        get: { appState.cleanupScheme[i].hint },
-                        set: { appState.cleanupScheme[i].hint = $0 }
-                    ))
-                    .frame(minWidth: 160)
+                    TextField("설명", text: $bucket.hint)
+                        .frame(minWidth: 160)
 
-                    // 버킷 삭제
+                    // 버킷 삭제 — id 기준 제거라 남은 행들의 정체성이 흔들리지 않는다.
                     Button(role: .destructive) {
-                        appState.cleanupScheme.remove(at: i)
+                        withAnimation {
+                            state.cleanupScheme.removeAll { $0.id == bucket.id }
+                        }
                     } label: {
                         Image(systemName: "trash")
                     }
@@ -99,11 +103,15 @@ struct FolderCleanupView: View {
                 }
             }
 
-            // 버킷 추가
+            // 버킷 추가 — 기본 이름이 이미 있으면(연속 추가 등) id 충돌을 피해 UUID로 대체.
+            // id는 ForEach 정체성이자 CleanupPlanner가 Claude에게 보여주는 라벨이라 반드시
+            // 유일해야 한다(중복 시 두 행이 같은 정체성을 공유해 ForEach가 깨진다).
             Button("버킷 추가") {
-                let name = "새폴더"
-                appState.cleanupScheme.append(
-                    CleanupBucket(id: name, name: name, hint: "", relativePath: name)
+                let base = "새폴더"
+                let existingIds = Set(state.cleanupScheme.map { $0.id })
+                let newId = existingIds.contains(base) ? UUID().uuidString : base
+                state.cleanupScheme.append(
+                    CleanupBucket(id: newId, name: base, hint: "", relativePath: base)
                 )
             }
             .padding(.top, 2)
