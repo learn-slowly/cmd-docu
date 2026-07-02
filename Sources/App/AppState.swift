@@ -1210,9 +1210,10 @@ final class AppState {
         fileTreeTask?.cancel()
         fileTreeTask = Task.detached(priority: .userInitiated) { [weak self] in
             let tree = AppState.buildFileTree(at: folder, expanded: snapshot)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, let self else { return }
             // 호출 인스턴스에 대입 — static shared 참조 제거(다중 인스턴스·테스트 안전).
-            await MainActor.run { self?.fileTree = tree }
+            // let 재바인딩으로 Swift 6 'captured var self' 경고 해소.
+            await MainActor.run { self.fileTree = tree }
         }
     }
 
