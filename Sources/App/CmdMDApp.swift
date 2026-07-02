@@ -147,6 +147,11 @@ struct CmdMDApp: App {
                 }
                 .appShortcut(appState.keyBinding(for: .askClaude))
 
+                Button("폴더 정리 (배치)") {
+                    appState.resetCleanup()
+                    appState.showFolderCleanup = true
+                }
+
                 Divider()
                 
                 Button("Toggle Tab Bar") {
