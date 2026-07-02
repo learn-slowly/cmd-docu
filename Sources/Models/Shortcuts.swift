@@ -86,6 +86,10 @@ enum AppShortcut: String, CaseIterable, Identifiable {
     case reloadFromDisk
     case openFolder
     case askClaude
+    case indexSearch
+    case askCorpus
+    case toggleLibraryMode
+    case folderCleanup
 
     var id: String { rawValue }
 
@@ -109,6 +113,10 @@ enum AppShortcut: String, CaseIterable, Identifiable {
         case .reloadFromDisk: return "Reload from Disk"
         case .openFolder:     return "Open Folder…"
         case .askClaude:      return "Ask Claude"
+        case .indexSearch:       return "Search Index (내용 검색)"
+        case .askCorpus:         return "Ask Corpus (자료에 묻기)"
+        case .toggleLibraryMode: return "Toggle Reader/Library"
+        case .folderCleanup:     return "Folder Cleanup (폴더 정리)"
         }
     }
 
@@ -132,6 +140,10 @@ enum AppShortcut: String, CaseIterable, Identifiable {
         case .reloadFromDisk:  return KeyBinding(key: "r", command: true, option: true)
         case .openFolder:      return KeyBinding(key: "o", command: true, option: true)
         case .askClaude:       return KeyBinding(key: "a", command: true, shift: true)
+        case .indexSearch:       return KeyBinding(key: "f", command: true, option: true)
+        case .askCorpus:         return KeyBinding(key: "a", command: true, option: true)
+        case .toggleLibraryMode: return KeyBinding(key: "l", command: true, shift: true)
+        case .folderCleanup:     return KeyBinding(key: "k", command: true, option: true)
         }
     }
 }

@@ -126,6 +126,11 @@ struct CmdMDApp: App {
                 }
                 .appShortcut(appState.keyBinding(for: .previewMode))
 
+                Button("Toggle Reader/Library") {
+                    appState.mainMode = appState.mainMode == .reader ? .library : .reader
+                }
+                .appShortcut(appState.keyBinding(for: .toggleLibraryMode))
+
                 Divider()
 
                 Button("Toggle Sidebar") {
@@ -151,6 +156,7 @@ struct CmdMDApp: App {
                     appState.resetCleanup()
                     appState.showFolderCleanup = true
                 }
+                .appShortcut(appState.keyBinding(for: .folderCleanup))
 
                 Divider()
                 
@@ -237,6 +243,18 @@ struct CmdMDApp: App {
                     appState.sidebarVisible = true
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("내용 검색 (인덱스)...") {
+                    appState.showIndexSearch = true
+                }
+                .appShortcut(appState.keyBinding(for: .indexSearch))
+
+                Button("자료에 묻기 (RAG)...") {
+                    appState.showAskCorpus = true
+                }
+                .appShortcut(appState.keyBinding(for: .askCorpus))
             }
             
             CommandMenu("Vault") {
