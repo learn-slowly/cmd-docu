@@ -223,7 +223,7 @@ final class AppState {
         if let url = currentTabFileURL {
             return url.deletingPathExtension().lastPathComponent
         }
-        return "cmd-docu"
+        return "cmdALL"
     }
 
     /// 활성 탭의 종류(없으면 마크다운).
@@ -628,7 +628,7 @@ final class AppState {
                 // 포크 저장소의 릴리스를 본다(원본 CmdMD가 아님). 포크에 릴리스가
                 // 없으면 업데이트를 권하지 않는다 — 원본 릴리스로 덮어쓰는 사고 방지.
                 var request = URLRequest(url: URL(string: "https://api.github.com/repos/learn-slowly/cmd-docu/releases/latest")!)
-                request.setValue("cmd-docu", forHTTPHeaderField: "User-Agent")
+                request.setValue("cmdALL", forHTTPHeaderField: "User-Agent")
                 request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
                 request.timeoutInterval = 10
 

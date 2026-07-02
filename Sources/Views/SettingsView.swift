@@ -138,13 +138,13 @@ struct GeneralSettingsView: View {
                 LabeledContent("Fork by", value: AppInfo.forkMaker)
                 LabeledContent("Original", value: AppInfo.originalMaker)
                 Link(destination: AppInfo.github) {
-                    Label("cmd-docu (GitHub)", systemImage: "chevron.left.forwardslash.chevron.right")
+                    Label("cmdALL (GitHub)", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
-                Button("About cmd-docu…") { appState.showAbout = true }
+                Button("About cmdALL…") { appState.showAbout = true }
             } header: {
                 Text("About")
             } footer: {
-                Text("cmd-docu — CmdMD(© 2026 CMDSPACE) 포크 · MIT License")
+                Text("cmdALL — CmdMD(© 2026 CMDSPACE) 포크 · MIT License")
                     .font(.caption)
             }
         }

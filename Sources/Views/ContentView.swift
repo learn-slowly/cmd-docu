@@ -314,7 +314,7 @@ struct OnboardingView: View {
                 BrandLogo(size: 84, showWordmark: true)
 
                 VStack(spacing: 4) {
-                    Text("Welcome to cmd-docu")
+                    Text("Welcome to cmdALL")
                         .font(.title2.bold())
                     Text("리뷰 우선 마크다운 에디터 · Obsidian 볼트 라우터")
                         .font(.callout)
@@ -420,7 +420,7 @@ struct WindowAccessor: NSViewRepresentable {
 
 enum AppInfo {
     static var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.8.5"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9.0"
     }
     static var build: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
@@ -461,7 +461,7 @@ struct AboutView: View {
             BrandLogo(size: 76, showWordmark: true)
 
             VStack(spacing: 3) {
-                Text("cmd-docu")
+                Text("cmdALL")
                     .font(.title2.bold())
                 Text(AppInfo.versionLabel)
                     .font(.caption)

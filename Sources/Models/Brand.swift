@@ -109,7 +109,7 @@ extension NSAppearance {
 
 // MARK: - Brand logo
 
-/// cmd-docu 마크 색(슬레이트 → 앰버). 앱 아이콘(scripts/make_icon.swift)과 동일.
+/// cmdALL 마크 색(슬레이트 → 앰버). 앱 아이콘(scripts/make_icon.swift)과 동일.
 enum DocBrand {
     static let slate    = Color(hex: "1E293B")
     static let slateMid = Color(hex: "475569")
@@ -136,7 +136,7 @@ struct FoldedDoc: Shape {
     }
 }
 
-/// cmd-docu 캐노니컬 마크: 슬레이트→앰버 타일 위에 쌓인 흰 문서 + AI 스파크.
+/// cmdALL 캐노니컬 마크: 슬레이트→앰버 타일 위에 쌓인 흰 문서 + AI 스파크.
 /// 앱 아이콘과 같은 모티프(인앱 hero용). 순수 벡터라 swift run·패키지 모두 동일.
 struct BrandLogo: View {
     var size: CGFloat = 76
