@@ -810,8 +810,22 @@ final class AppState {
         activeTabId = tab.id
     }
 
+    /// 짝꿍 노트 URL이면 대응 미디어 URL을 반환(미디어 실재 시). 아니면 nil.
+    /// 검색·위키링크 등 모든 열기 진입로에서 노트 대신 미디어 뷰를 열기 위한 판별원.
+    static func mediaRedirectTarget(for url: URL) -> URL? {
+        guard let mediaURL = CompanionNote.mediaURL(for: url),
+              FileManager.default.fileExists(atPath: mediaURL.path) else { return nil }
+        return mediaURL
+    }
+
     @MainActor
     private func loadAndActivateDocument(at url: URL, inNewTab: Bool) async {
+        // 짝꿍 노트를 직접 열면 대응 미디어로 리다이렉트 — 노트는 미디어 뷰 안에서 열람·편집한다.
+        if let mediaURL = Self.mediaRedirectTarget(for: url) {
+            await loadAndActivateDocument(at: mediaURL, inNewTab: inNewTab)
+            return
+        }
+
         if let existingTab = tabs.first(where: { $0.fileURL == url }) {
             activeTabId = existingTab.id
             return
