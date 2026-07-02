@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Build a drag-to-install DMG from a built CmdMD.app.
-# Usage: scripts/make_dmg.sh [path/to/CmdMD.app] [output.dmg]
-# Defaults: dist/CmdMD.app -> dist/CmdMD-<version>.dmg
+# Build a drag-to-install DMG from a built cmdALL.app.
+# Usage: scripts/make_dmg.sh [path/to/cmdALL.app] [output.dmg]
+# Defaults: dist/cmdALL.app -> dist/cmdALL-<version>.dmg
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP="${1:-dist/CmdMD.app}"
+APP="${1:-dist/cmdALL.app}"
 if [[ ! -d "$APP" ]]; then
   echo "error: app not found at '$APP' — run scripts/package_app.sh first" >&2
   exit 1
 fi
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-VOL_NAME="CmdMD ${VERSION}"
-DMG="${2:-dist/CmdMD-${VERSION}.dmg}"
+VOL_NAME="cmdALL ${VERSION}"
+DMG="${2:-dist/cmdALL-${VERSION}.dmg}"
 
-echo "==> Building DMG for CmdMD ${VERSION}"
+echo "==> Building DMG for cmdALL ${VERSION}"
 
 # Stage the app + an /Applications symlink so users can drag-to-install.
 STAGING="$(mktemp -d)"

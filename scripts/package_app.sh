@@ -2,22 +2,26 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="CmdMD"
+# 앱 번들 이름(겉면)과 실행파일 이름(내부 식별자)을 분리한다.
+# 실행파일·CFBundleExecutable은 CmdMD 유지 — 데이터 디렉터리(Application
+# Support/CmdMD)·업스트림 머지와 얽힌 내부 이름은 바꾸지 않는다(스펙 §1).
+BUNDLE_NAME="cmdALL"
+EXECUTABLE_NAME="CmdMD"
 DIST_DIR="$ROOT_DIR/dist"
-APP_DIR="$DIST_DIR/$APP_NAME.app"
+APP_DIR="$DIST_DIR/$BUNDLE_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
-EXECUTABLE="$MACOS_DIR/$APP_NAME"
+EXECUTABLE="$MACOS_DIR/$EXECUTABLE_NAME"
 PLIST="$CONTENTS_DIR/Info.plist"
 APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
-ZIP_FILE="$DIST_DIR/$APP_NAME-macos.zip"
+ZIP_FILE="$DIST_DIR/$BUNDLE_NAME-macos.zip"
 
-echo "Building $APP_NAME release..."
+echo "Building $BUNDLE_NAME release..."
 BUILD_BIN_DIR="$(swift build --configuration release --show-bin-path)"
 swift build --configuration release
 
-BUILT_EXECUTABLE="$BUILD_BIN_DIR/$APP_NAME"
+BUILT_EXECUTABLE="$BUILD_BIN_DIR/$EXECUTABLE_NAME"
 if [[ ! -x "$BUILT_EXECUTABLE" ]]; then
   echo "Release executable not found: $BUILT_EXECUTABLE" >&2
   exit 1
@@ -79,7 +83,7 @@ cat > "$PLIST" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>cmd-docu</string>
+  <string>cmdALL</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -113,11 +117,11 @@ cat > "$PLIST" <<'PLIST'
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>cmd-docu</string>
+  <string>cmdALL</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.8.5</string>
+  <string>0.9.0</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -140,16 +144,16 @@ cat > "$PLIST" <<'PLIST'
 PLIST
 
 if command -v codesign >/dev/null 2>&1; then
-  echo "Ad-hoc signing $APP_NAME.app..."
+  echo "Ad-hoc signing $BUNDLE_NAME.app..."
   codesign --force --deep --sign - "$APP_DIR"
   codesign --verify --deep --strict --verbose=2 "$APP_DIR" >/dev/null
 else
-  echo "codesign not found; leaving $APP_NAME.app unsigned."
+  echo "codesign not found; leaving $BUNDLE_NAME.app unsigned."
 fi
 
 (
   cd "$DIST_DIR"
-  zip -qry -X "$(basename "$ZIP_FILE")" "$APP_NAME.app"
+  zip -qry -X "$(basename "$ZIP_FILE")" "$BUNDLE_NAME.app"
 )
 
 echo "Created $ZIP_FILE"

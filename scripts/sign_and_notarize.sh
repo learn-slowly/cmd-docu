@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Developer ID sign + notarize + staple CmdMD for Gatekeeper-clean distribution.
-# Produces a notarized, stapled dist/CmdMD-<version>.dmg and dist/CmdMD-macos.zip.
+# Developer ID sign + notarize + staple cmdALL for Gatekeeper-clean distribution.
+# Produces a notarized, stapled dist/cmdALL-<version>.dmg and dist/cmdALL-macos.zip.
 #
 # Runs only when signing credentials are present (CI gates it on secrets); the
 # normal build stays ad-hoc signed without these. Required env vars:
@@ -14,7 +14,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP="dist/CmdMD.app"
+APP="dist/cmdALL.app"
 [[ -d "$APP" ]] || { echo "error: $APP missing — run scripts/package_app.sh first" >&2; exit 1; }
 
 : "${MACOS_CERTIFICATE:?}" "${MACOS_CERTIFICATE_PWD:?}" "${MACOS_SIGN_IDENTITY:?}"
@@ -22,7 +22,7 @@ APP="dist/CmdMD.app"
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 WORK="${RUNNER_TEMP:-/tmp}"
-DMG="dist/CmdMD-${VERSION}.dmg"
+DMG="dist/cmdALL-${VERSION}.dmg"
 
 # ── 1. Import the cert into a throwaway keychain ───────────────────────────────
 KEYCHAIN="$WORK/cmdmd-signing.keychain-db"
@@ -64,11 +64,11 @@ echo "==> Stapling notarization ticket"
 xcrun stapler staple "$APP"
 
 # Distributable zip (stapled app inside)
-( cd dist && rm -f CmdMD-macos.zip && ditto -c -k --sequesterRsrc --keepParent CmdMD.app CmdMD-macos.zip )
+( cd dist && rm -f cmdALL-macos.zip && ditto -c -k --sequesterRsrc --keepParent cmdALL.app cmdALL-macos.zip )
 
 # Distributable DMG (stapled app inside), then staple the DMG container too
 scripts/make_dmg.sh "$APP" "$DMG"
 xcrun stapler staple "$DMG"
 
-echo "==> Done. Notarized + stapled: $DMG and dist/CmdMD-macos.zip"
+echo "==> Done. Notarized + stapled: $DMG and dist/cmdALL-macos.zip"
 xcrun stapler validate "$DMG" || true

@@ -54,15 +54,15 @@ jobs:
       - name: Generate checksums
         run: |
           cd dist
-          shasum -a 256 CmdMD-macos.zip CmdMD-*.dmg > SHA256SUMS.txt
+          shasum -a 256 cmdALL-macos.zip cmdALL-*.dmg > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/CmdMD-macos.zip
-            dist/CmdMD-*.dmg
+            dist/cmdALL-macos.zip
+            dist/cmdALL-*.dmg
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
           generate_release_notes: true

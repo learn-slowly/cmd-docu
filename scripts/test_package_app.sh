@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_SCRIPT="$ROOT_DIR/scripts/package_app.sh"
 DIST_DIR="$ROOT_DIR/dist"
-APP_DIR="$DIST_DIR/CmdMD.app"
+APP_DIR="$DIST_DIR/cmdALL.app"
 EXECUTABLE="$APP_DIR/Contents/MacOS/CmdMD"
 PLIST="$APP_DIR/Contents/Info.plist"
-ZIP_FILE="$DIST_DIR/CmdMD-macos.zip"
+ZIP_FILE="$DIST_DIR/cmdALL-macos.zip"
 
 fail() {
   echo "FAIL: $1" >&2
