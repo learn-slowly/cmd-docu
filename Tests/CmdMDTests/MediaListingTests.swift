@@ -58,4 +58,26 @@ final class MediaListingTests: XCTestCase {
         XCTAssertEqual(FileTreeItem(url: URL(fileURLWithPath: "/tmp/a.mp3")).icon, "music.note")
         XCTAssertEqual(FileTreeItem(url: URL(fileURLWithPath: "/tmp/a.mp4")).icon, "film")
     }
+
+    func testCaseInsensitiveSiblingMatchingInTreeAndLibrary() throws {
+        // 미디어 Clip.MOV + 노트 Clip.mov.md — 대소문자가 섞여도 트리·라이브러리 둘 다
+        // 노트는 숨기고 미디어엔 배지가 붙어야 한다.
+        let caseDir = dir.appendingPathComponent("case-mismatch")
+        try FileManager.default.createDirectory(at: caseDir, withIntermediateDirectories: true)
+        for name in ["Clip.MOV", "Clip.mov.md"] {
+            FileManager.default.createFile(
+                atPath: caseDir.appendingPathComponent(name).path,
+                contents: Data("x".utf8))
+        }
+
+        let treeItems = AppState.buildFileTree(at: caseDir, expanded: [])
+        XCTAssertTrue(treeItems.map(\.name).contains("Clip.MOV"))
+        XCTAssertFalse(treeItems.map(\.name).contains("Clip.mov.md"), "대소문자가 섞여도 짝꿍 노트는 숨긴다")
+        XCTAssertEqual(treeItems.first { $0.name == "Clip.MOV" }?.hasCompanionNote, true)
+
+        let libraryItems = LibraryListing.entries(of: caseDir)
+        XCTAssertTrue(libraryItems.map(\.name).contains("Clip.MOV"))
+        XCTAssertFalse(libraryItems.map(\.name).contains("Clip.mov.md"))
+        XCTAssertEqual(libraryItems.first { $0.name == "Clip.MOV" }?.hasCompanionNote, true)
+    }
 }

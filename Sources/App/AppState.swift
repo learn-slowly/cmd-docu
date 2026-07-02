@@ -1243,8 +1243,8 @@ final class AppState {
         ) else { return [] }
 
         var items: [FileTreeItem] = []
-        // 같은 폴더 파일명 집합 — 짝꿍 노트 숨김·배지 판별용(추가 FS 호출 없음).
-        let siblingNames = Set(contents.map { $0.lastPathComponent })
+        // 같은 폴더 파일명 → 소문자 키(대소문자 무시) — 짝꿍 노트 숨김·배지 판별용(추가 FS 호출 없음).
+        let siblingKeys = CompanionNote.siblingKeys(contents.map { $0.lastPathComponent })
 
         for itemURL in contents.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
             guard let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]) else { continue }
@@ -1257,9 +1257,8 @@ final class AppState {
             } else {
                 if isListableInFileTree(itemURL) {
                     // 짝꿍 노트는 목록에서 숨긴다 — 미디어 행이 대표(배지로 존재 표시).
-                    if CompanionNote.isCompanionNote(itemURL, siblings: siblingNames) { continue }
-                    let hasNote = DocumentKind(from: itemURL) == .media
-                        && siblingNames.contains(CompanionNote.noteURL(for: itemURL).lastPathComponent)
+                    if CompanionNote.isCompanionNote(itemURL, siblingKeys: siblingKeys) { continue }
+                    let hasNote = CompanionNote.hasCompanionNote(for: itemURL, siblingKeys: siblingKeys)
                     items.append(FileTreeItem(url: itemURL, isDirectory: false, hasCompanionNote: hasNote))
                 }
             }

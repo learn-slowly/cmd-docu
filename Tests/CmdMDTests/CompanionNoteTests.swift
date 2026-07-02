@@ -37,12 +37,26 @@ final class CompanionNoteTests: XCTestCase {
 
     func testIsCompanionNoteRequiresSiblingMedia() {
         let note = URL(fileURLWithPath: "/tmp/a.mp3.md")
-        XCTAssertTrue(CompanionNote.isCompanionNote(note, siblings: ["a.mp3", "a.mp3.md"]))
+        XCTAssertTrue(CompanionNote.isCompanionNote(note, siblingKeys: CompanionNote.siblingKeys(["a.mp3", "a.mp3.md"])))
         // 고아 노트(대응 미디어 없음)는 일반 노트로 취급 — 숨기지 않는다.
-        XCTAssertFalse(CompanionNote.isCompanionNote(note, siblings: ["a.mp3.md"]))
+        XCTAssertFalse(CompanionNote.isCompanionNote(note, siblingKeys: CompanionNote.siblingKeys(["a.mp3.md"])))
         // 일반 md는 siblings와 무관하게 false.
         XCTAssertFalse(CompanionNote.isCompanionNote(
-            URL(fileURLWithPath: "/tmp/일반.md"), siblings: ["일반.md", "a.mp3"]))
+            URL(fileURLWithPath: "/tmp/일반.md"), siblingKeys: CompanionNote.siblingKeys(["일반.md", "a.mp3"])))
+    }
+
+    func testSiblingMatchingIsCaseInsensitive() {
+        // 미디어가 Clip.MOV, 노트가 Clip.mov.md — 숨김·배지 모두 성립해야 한다
+        let keys = CompanionNote.siblingKeys(["Clip.MOV", "Clip.mov.md"])
+        XCTAssertTrue(CompanionNote.isCompanionNote(URL(fileURLWithPath: "/t/Clip.mov.md"), siblingKeys: keys))
+        XCTAssertTrue(CompanionNote.hasCompanionNote(for: URL(fileURLWithPath: "/t/Clip.MOV"), siblingKeys: keys))
+    }
+
+    func testUppercaseMdNoteMatches() {
+        // 노트 확장자가 .MD — a.mp3에 배지, a.mp3.MD 숨김
+        let keys = CompanionNote.siblingKeys(["a.mp3", "a.mp3.MD"])
+        XCTAssertTrue(CompanionNote.isCompanionNote(URL(fileURLWithPath: "/t/a.mp3.MD"), siblingKeys: keys))
+        XCTAssertTrue(CompanionNote.hasCompanionNote(for: URL(fileURLWithPath: "/t/a.mp3"), siblingKeys: keys))
     }
 
     // MARK: - 초기 내용
@@ -89,6 +103,11 @@ final class CompanionNoteTests: XCTestCase {
         XCTAssertEqual(CompanionNote.summary(fromNoteContent: doc), "삐약이 추모곡 첫 데모")
     }
 
+    func testSummaryParsesDotsClosingFence() {
+        let content = "---\nsummary: 회의 메모\n...\n본문"
+        XCTAssertEqual(CompanionNote.summary(fromNoteContent: content), "회의 메모")
+    }
+
     func testSummaryNilWhenEmptyOrMissing() {
         XCTAssertNil(CompanionNote.summary(fromNoteContent: "---\nsummary: \"\"\n---\n"))
         XCTAssertNil(CompanionNote.summary(fromNoteContent: "---\nmedia: \"a.mp3\"\n---\n"))
@@ -122,5 +141,15 @@ final class CompanionNoteTests: XCTestCase {
         let body = CompanionNote.bodyStrippingFrontmatter(content)
         XCTAssertFalse(body.contains("media:"), "frontmatter가 남으면 안 된다")
         XCTAssertTrue(body.hasPrefix("# 제목"), "본문은 제목부터 시작")
+    }
+
+    func testBodyStrippingHandlesDotsClosingFence() {
+        let content = "---\nsummary: s\n...\n본문 시작"
+        XCTAssertEqual(CompanionNote.bodyStrippingFrontmatter(content), "본문 시작")
+    }
+
+    func testClosingFenceToleratesTrailingSpace() {
+        let content = "---\nsummary: s\n--- \n본문"
+        XCTAssertEqual(CompanionNote.bodyStrippingFrontmatter(content), "본문")
     }
 }

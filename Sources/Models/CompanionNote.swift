@@ -19,12 +19,24 @@ enum CompanionNote {
         return stripped
     }
 
-    /// 같은 폴더 열거 목록(siblings: 파일명 집합) 기준으로 짝꿍 노트인지 판별.
+    /// 같은 폴더 파일명들 → 소문자 키 집합. macOS 기본 볼륨(APFS)이 대소문자를
+    /// 구분하지 않는 것과 정렬되도록, siblings 매칭은 이 키 집합 위에서 한다.
+    static func siblingKeys<S: Sequence>(_ names: S) -> Set<String> where S.Element == String {
+        Set(names.map { $0.lowercased() })
+    }
+
+    /// 같은 폴더 열거 목록(siblingKeys: siblingKeys(_:)의 산출물) 기준으로 짝꿍 노트인지 판별.
     /// 대응 미디어가 실재할 때만 true — 고아 노트는 일반 노트로 취급(숨기지 않음).
-    /// 렌더·빌드 중 추가 FS 호출을 피하려고 siblings를 인자로 받는다.
-    static func isCompanionNote(_ url: URL, siblings: Set<String>) -> Bool {
+    /// 렌더·빌드 중 추가 FS 호출을 피하려고 siblingKeys를 인자로 받는다.
+    static func isCompanionNote(_ url: URL, siblingKeys: Set<String>) -> Bool {
         guard let media = mediaURL(for: url) else { return false }
-        return siblings.contains(media.lastPathComponent)
+        return siblingKeys.contains(media.lastPathComponent.lowercased())
+    }
+
+    /// 미디어 파일에 짝꿍 노트가 있는가(배지 표시용). siblingKeys는 siblingKeys(_:)의 산출물.
+    static func hasCompanionNote(for url: URL, siblingKeys: Set<String>) -> Bool {
+        guard DocumentKind(from: url) == .media else { return false }
+        return siblingKeys.contains(noteURL(for: url).lastPathComponent.lowercased())
     }
 
     /// 노트 초기 내용 — frontmatter 자동 채움(§스펙 3.2) + 제목 본문.
@@ -58,12 +70,29 @@ enum CompanionNote {
             .replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 
+    /// frontmatter 블록을 yaml·body로 분리한다(공용 — FileService.parseFrontmatter와 규칙 정렬).
+    /// 여는 펜스는 첫 줄 트림이 "---"일 때만 인정. 닫는 펜스는 "---" 또는 "..." 둘 다
+    /// 허용하고 뒤 공백을 관용한다. 닫는 펜스를 못 찾으면 nil(깨진 frontmatter는 원문 취급).
+    static func splitFrontmatter(_ content: String) -> (yaml: String, body: String)? {
+        var text = content
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }   // BOM 관용(FileService와 정렬)
+        let lines = text.components(separatedBy: "\n")
+        guard let first = lines.first, first.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
+        for (i, line) in lines.enumerated().dropFirst() {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t == "---" || t == "..." {   // 닫는펜스 두 표기 모두(FileService.parseFrontmatter와 동일 규칙)
+                let yaml = lines[1..<i].joined(separator: "\n")
+                var body = lines[(i + 1)...].joined(separator: "\n")
+                while body.hasPrefix("\n") { body.removeFirst() }
+                return (yaml, body)
+            }
+        }
+        return nil
+    }
+
     /// 노트 내용에서 frontmatter의 summary를 읽는다(순수). 없거나 빈 값이면 nil.
     static func summary(fromNoteContent content: String) -> String? {
-        guard content.hasPrefix("---\n") else { return nil }
-        let afterOpen = content.dropFirst(4)
-        guard let close = afterOpen.range(of: "\n---") else { return nil }
-        let yamlString = String(afterOpen[..<close.lowerBound])
+        guard let (yamlString, _) = splitFrontmatter(content) else { return nil }
         guard let yaml = (try? Yams.load(yaml: yamlString)) as? [String: Any],
               let summary = yaml["summary"] as? String,
               !summary.isEmpty else { return nil }
@@ -71,16 +100,10 @@ enum CompanionNote {
     }
 
     /// 노트 내용에서 frontmatter 블록을 뗀 본문을 돌려준다(미리보기용 — 편집 모드는 원문 그대로).
-    /// 블록 판정 규칙은 summary(fromNoteContent:)와 동일("---\n" 시작 + "\n---" 닫힘).
+    /// 블록 판정 규칙은 splitFrontmatter(_:)와 동일. 닫는 펜스를 못 찾으면 원문 그대로.
     static func bodyStrippingFrontmatter(_ content: String) -> String {
-        guard content.hasPrefix("---\n") else { return content }
-        let afterOpen = content.dropFirst(4)
-        guard let close = afterOpen.range(of: "\n---") else { return content }
-        var body = afterOpen[close.upperBound...]
-        // 닫는 펜스 줄의 나머지를 스킵하고 다음 줄부터 본문.
-        guard let fenceLineEnd = body.firstIndex(of: "\n") else { return "" }
-        body = body[body.index(after: fenceLineEnd)...]
-        return String(body.drop(while: { $0 == "\n" }))
+        guard let (_, body) = splitFrontmatter(content) else { return content }
+        return body
     }
 
     /// 짝꿍 노트 파일에서 summary를 비동기로 읽는다(라이브러리 리스트 셀 lazy 표시용).
