@@ -682,6 +682,11 @@ struct ToolsSettingsView: View {
     @State private var claudePath: String?
     @State private var hasChecked = false
 
+    /// 파일 연결 상태(그룹 id 키): 현재 기본 앱 이름·성공 표시·부분 실패 확장자.
+    @State private var defaultAppNames: [String: String] = [:]
+    @State private var associatedGroups: Set<String> = []
+    @State private var associationFailures: [String: [String]] = [:]
+
     var body: some View {
         @Bindable var state = appState
 
@@ -728,6 +733,22 @@ struct ToolsSettingsView: View {
             }
 
             Section {
+                if FileAssociationService.appBundleURL == nil {
+                    Text("패키징된 앱(/Applications의 cmdALL.app)에서만 사용할 수 있습니다.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(FileTypeGroup.all) { group in
+                        associationRow(for: group)
+                    }
+                }
+            } header: {
+                Text("파일 연결")
+            } footer: {
+                Text("다른 앱으로 되돌리려면 Finder에서 파일 정보(⌘I) → 다음으로 열기에서 바꾸세요.")
+                    .font(.caption)
+            }
+
+            Section {
                 Button("상태 새로고침") { refresh() }
             }
         }
@@ -764,7 +785,59 @@ struct ToolsSettingsView: View {
         }
     }
 
+    /// 그룹 한 행: 그룹명+확장자 캡션 / 현재 기본 앱 이름 / "cmdALL로" 버튼(+성공 체크·부분 실패 캡션).
+    @ViewBuilder
+    private func associationRow(for group: FileTypeGroup) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                if associatedGroups.contains(group.id) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                Text(defaultAppNames[group.id] ?? "없음")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Button("cmdALL로") { associate(group) }
+            }
+        } label: {
+            Text(group.name)
+            Text(group.extensions.joined(separator: ", "))
+        }
+        if let failed = associationFailures[group.id] {
+            Text("일부 실패: \(failed.joined(separator: ", "))")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private func associate(_ group: FileTypeGroup) {
+        Task { @MainActor in
+            switch await FileAssociationService.setAsDefault(group: group) {
+            case .success:
+                associatedGroups.insert(group.id)
+                associationFailures[group.id] = nil
+            case .failure(.partialFailure(let failed)):
+                associatedGroups.remove(group.id)
+                associationFailures[group.id] = failed
+            case .failure(.notPackagedApp):
+                associationFailures[group.id] = group.extensions
+            }
+            refreshDefaultAppNames()
+        }
+    }
+
+    /// 현재 기본 앱 이름 일괄 재조회 — 가벼운 LS 질의(프로세스 스폰 없음, Tools 탭 원칙 유지).
+    private func refreshDefaultAppNames() {
+        guard FileAssociationService.appBundleURL != nil else { return }
+        var names: [String: String] = [:]
+        for group in FileTypeGroup.all {
+            names[group.id] = FileAssociationService.currentDefaultAppName(for: group)
+        }
+        defaultAppNames = names
+    }
+
     private func refresh() {
+        refreshDefaultAppNames()
         // 리졸버는 후보 경로 밖 설치에서 `which` 셸 프로브(프로세스 스폰·무제한 대기)로
         // 폴백할 수 있어 메인 스레드에서 직접 부르지 않는다 — 탐지는 백그라운드, 반영만 메인.
         Task.detached(priority: .userInitiated) {
