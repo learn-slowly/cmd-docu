@@ -388,7 +388,13 @@ struct FileTreeItemRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            appState.selectFolderForLibrary(item.url)
+                            // ⌘클릭 = 선택 토글만(모드 전환 없음, F1b 스펙 §3.2)
+                            if NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
+                                appState.toggleFileSelection(item.url)
+                            } else {
+                                appState.clearFileSelection()
+                                appState.selectFolderForLibrary(item.url)
+                            }
                         }
                 }
                 // 행 전체 우클릭 히트영역 확보.
@@ -414,7 +420,12 @@ struct FileTreeItemRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    appState.openDocument(at: item.url, inNewTab: true)
+                    if NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
+                        appState.toggleFileSelection(item.url)
+                    } else {
+                        appState.clearFileSelection()
+                        appState.openDocument(at: item.url, inNewTab: true)
+                    }
                 }
                 .contextMenu {
                     FileTreeContextMenu(item: item)
@@ -440,6 +451,10 @@ struct FileTreeItemRow: View {
             }
         }
         .opacity(paraCategory == .archive ? 0.45 : 1.0)
+        .padding(.horizontal, 2)
+        .background(appState.fileSelection.contains(item.url)
+                    ? Color.cmdsAccent.opacity(0.18) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 4))
     }
 
     /// PARA 분류에 따라 스타일을 적용한 Label을 반환한다.
