@@ -571,7 +571,14 @@ struct FavoritesListView: View {
             ForEach(appState.favorites) { favorite in
                 FavoriteRow(favorite: favorite)
                     .onTapGesture {
-                        if FileManager.default.fileExists(atPath: favorite.url.path) {
+                        // 폴더 즐겨찾기: 파일 전용 openDocument로는 무동작이던 버그 —
+                        // File > Open Folder와 동일하게 작업 폴더를 전환한다(스펙 §3).
+                        var isDirectory: ObjCBool = false
+                        guard FileManager.default.fileExists(atPath: favorite.url.path,
+                                                             isDirectory: &isDirectory) else { return }
+                        if isDirectory.boolValue {
+                            appState.openFolder(at: favorite.url)
+                        } else {
                             appState.openDocument(at: favorite.url, inNewTab: true)
                         }
                     }
@@ -605,18 +612,30 @@ struct FavoritesListView: View {
 
 struct FavoriteRow: View {
     let favorite: FavoriteItem
-    
+
+    /// 즐겨찾기는 사용자가 손수 등록하는 소수 목록이라 행당 1회 FS 조회를 허용한다
+    /// (파일 트리의 "렌더 중 FS 호출 0" 원칙은 수백 행 규모 얘기 — 스펙 §3).
+    private var isDirectory: Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: favorite.url.path, isDirectory: &isDir)
+            && isDir.boolValue
+    }
+
     var body: some View {
+        let directory = isDirectory
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Image(systemName: "star.fill")
+                Image(systemName: directory ? "folder.fill" : "star.fill")
                     .font(.caption)
-                    .foregroundColor(.yellow)
-                Text(favorite.displayName)
+                    .foregroundColor(directory ? .secondary : .yellow)
+                // 폴더명은 확장자 개념이 없으니 그대로 — displayName의
+                // deletingPathExtension이 점(.) 든 폴더명을 자르던 표시 버그 수정.
+                Text(directory ? (favorite.alias ?? favorite.url.lastPathComponent)
+                               : favorite.displayName)
                     .font(.headline)
                     .lineLimit(1)
             }
-            
+
             Text(favorite.url.deletingLastPathComponent().path)
                 .font(.caption)
                 .foregroundStyle(.secondary)

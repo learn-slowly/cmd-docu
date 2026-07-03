@@ -752,15 +752,21 @@ final class AppState {
         panel.allowsMultipleSelection = false
 
         if panel.runModal() == .OK, let url = panel.url {
-            currentFolder = url
-            // currentFolder가 실제로 바뀌는 지점에서만 selectedFolder를 리셋한다.
-            selectedFolder = url
-            selectedSidebarTab = .files
-            sidebarVisible = true
-            loadFileTree()
-            rebuildNoteIndex()
-            saveSession()
+            openFolder(at: url)
         }
+    }
+
+    /// 작업 폴더를 지정 URL로 전환한다 — File > Open Folder의 성공 분기와 동일.
+    /// 즐겨찾기 폴더 열기 등 패널 없는 진입로가 재사용한다.
+    func openFolder(at url: URL) {
+        currentFolder = url
+        // currentFolder가 실제로 바뀌는 지점에서만 selectedFolder를 리셋한다.
+        selectedFolder = url
+        selectedSidebarTab = .files
+        sidebarVisible = true
+        loadFileTree()
+        rebuildNoteIndex()
+        saveSession()
     }
 
     /// 사이드바 폴더 행 탭 시 라이브러리 모드로 전환하고 표시 폴더를 설정한다.
