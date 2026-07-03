@@ -64,7 +64,7 @@ read connects onward: content search, ask-your-corpus (RAG), PARA routing, file 
 - **폴더 정리(배치)** — 어수선한 폴더를 Claude가 분류 스킴 제안 → 파일 배정 → 행별로 승인한 항목만 이동. **삭제 없음**, 배치 단위 undo(이동 로그).
 - **미디어 플레이어 + 짝꿍 노트** — 음악(mp3·m4a·aac·wav·aiff·flac)·동영상(mp4·mov·m4v)을 열면 플레이어와 짝꿍 마크다운 노트(`파일명.ext.md`)가 한 화면에. 길이·제목은 자동으로 채워지고, 메모는 기존 검색·RAG에 그대로 걸립니다(재생하지 않고도 그 파일이 뭔지 아는 것).
 - **PARA 라이브러리 뷰** — 리더⇄라이브러리 모드 토글로 폴더를 격자/리스트로 훑기(QuickLook 썸네일). 사이드바는 PARA 렌즈(Projects 강조·Archive 흐리게), 폴더별 보기 방식을 기억.
-- **파일 관리(F1a)** — 트리·라이브러리 우클릭으로 이름 변경·새 폴더·휴지통 이동(확인 후 실행, 영구 삭제 없음). 이름 변경·휴지통 이동은 **작업 로그에 남아 앱 안에서 되돌리기** 가능. `⌥⌘I` 정보 보기(크기·날짜·해상도/페이지/길이, 폴더 크기 비동기 계산)와 라이브러리 리스트의 크기·수정일 열까지 — 이름 하나 바꾸려고 Finder를 열 일이 없습니다.
+- **파일 관리(F1a·F1b)** — 트리·라이브러리 우클릭으로 이름 변경·새 폴더·휴지통 이동(확인 후 실행, 영구 삭제 없음). **다중 선택**(라이브러리 클릭=선택·⌘/⇧클릭·⌘A, 더블클릭=열기 — Finder식)과 **배치 이동·복사·휴지통**, `⌘C`/`⌘V`/`⌥⌘V`는 **Finder와 양방향 상호운용**(페이스트보드 .fileURL). 모든 작업이 **로그에 남아 앱 안에서 배치 단위로 되돌리기** 가능(복사 되돌리기도 사본을 휴지통으로 — 영구 삭제 없음). `⌥⌘I` 정보 보기(크기·날짜·해상도/페이지/길이, 폴더 크기 비동기 계산)와 라이브러리 리스트의 크기·수정일 열까지 — 파일 몇 개 옮기려고 Finder를 열 일이 없습니다.
 
 > 외부 도구가 없으면 해당 기능만 안내 후 비활성화되고, 앱은 크래시하지 않습니다.
 > kordoc은 Node 18+가 필요하고(`npx kordoc`), Claude 연동은 로컬 `claude` 로그인이 선행됩니다.
@@ -95,7 +95,7 @@ cd cmd-docu
 
 swift build                         # debug build
 swift run                           # run it
-swift test                          # 450 tests (XCTest 432 + Swift Testing 18, 정식 Xcode 필요)
+swift test                          # 503 tests (XCTest 485 + Swift Testing 18, 정식 Xcode 필요)
 
 swift build -c release              # release binary
 bash scripts/package_app.sh         # → dist/cmdALL.app + dist/cmdALL-macos.zip
