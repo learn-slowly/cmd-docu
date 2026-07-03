@@ -88,6 +88,10 @@ struct FileOpsHistoryView: View {
             return "휴지통: \(entry.originalURL.lastPathComponent)"
         case .rename:
             return "이름 변경: \(entry.originalURL.lastPathComponent) → \(entry.resultURL.lastPathComponent)"
+        case .move:
+            return "이동: \(entry.originalURL.lastPathComponent) → \(entry.resultURL.lastPathComponent)"
+        case .copy:
+            return "복사: \(entry.originalURL.lastPathComponent) → \(entry.resultURL.lastPathComponent)"
         }
     }
 }
