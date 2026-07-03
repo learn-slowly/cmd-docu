@@ -110,6 +110,9 @@ struct ContentView: View {
         .sheet(isPresented: $state.showFolderCleanup) {
             FolderCleanupView()
         }
+        .sheet(item: $state.renameRequest) { request in
+            RenameSheetView(request: request)
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(

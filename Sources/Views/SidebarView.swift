@@ -470,6 +470,13 @@ struct FileTreeContextMenu: View {
     }
     
     var body: some View {
+        Button {
+            appState.renameRequest = RenameRequest(url: item.url)
+        } label: {
+            Label("이름 변경…", systemImage: "pencil")
+        }
+        Divider()
+
         if item.isDirectory {
             Button {
                 createNewFile(in: item.url)
@@ -522,9 +529,9 @@ struct FileTreeContextMenu: View {
         Divider()
         
         Button(role: .destructive) {
-            moveToTrash(item.url)
+            appState.trashWithConfirmation(item.url)
         } label: {
-            Label("Move to Trash", systemImage: "trash")
+            Label("휴지통으로 이동", systemImage: "trash")
         }
     }
     
@@ -538,11 +545,6 @@ struct FileTreeContextMenu: View {
 
     private func revealInFinder(_ url: URL) {
         NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-    }
-    
-    private func moveToTrash(_ url: URL) {
-        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-        appState.loadFileTree()
     }
 
     /// All Markdown files directly in `folder` and its subfolders (for batch send).

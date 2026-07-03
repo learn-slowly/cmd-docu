@@ -12,9 +12,9 @@ struct LibraryView: View {
         appState.selectedFolder ?? appState.currentFolder
     }
 
-    /// 폴더(또는 정렬 기준 currentFolder)가 바뀔 때만 재계산하기 위한 키.
+    /// 폴더(또는 정렬 기준 currentFolder)가 바뀔 때, 그리고 파일 작업 후 재계산하기 위한 키.
     private var folderKey: String {
-        "\(displayFolder?.path ?? "∅")|\(appState.currentFolder?.path ?? "∅")"
+        "\(displayFolder?.path ?? "∅")|\(appState.currentFolder?.path ?? "∅")|\(appState.fileOpsGeneration)"
     }
 
     /// 캐시된 항목 목록. .task(id: folderKey)로 폴더 변경 시에만 갱신.
@@ -115,6 +115,7 @@ struct LibraryView: View {
                         .onTapGesture {
                             handleTap(item: item)
                         }
+                        .contextMenu { LibraryCellContextMenu(item: item) }
                 }
             }
             .padding(16)
@@ -131,6 +132,7 @@ struct LibraryView: View {
                     .onTapGesture {
                         handleTap(item: item)
                     }
+                    .contextMenu { LibraryCellContextMenu(item: item) }
                     .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
             }
         }
@@ -304,5 +306,34 @@ struct LibraryListCell: View {
             return .cmdsAccent
         }
         return .secondary
+    }
+}
+
+// MARK: - 컨텍스트 메뉴
+
+/// 라이브러리 셀 우클릭 메뉴 — 그리드·리스트 공통(스펙 §3). 빈 영역 우클릭은 범위 밖.
+struct LibraryCellContextMenu: View {
+    @Environment(AppState.self) private var appState
+    let item: FileTreeItem
+
+    var body: some View {
+        Button {
+            appState.renameRequest = RenameRequest(url: item.url)
+        } label: {
+            Label("이름 변경…", systemImage: "pencil")
+        }
+        if item.isDirectory {
+            Button {
+                appState.createNewFolder(in: item.url)
+            } label: {
+                Label("이 안에 새 폴더", systemImage: "folder.badge.plus")
+            }
+        }
+        Divider()
+        Button(role: .destructive) {
+            appState.trashWithConfirmation(item.url)
+        } label: {
+            Label("휴지통으로 이동", systemImage: "trash")
+        }
     }
 }
