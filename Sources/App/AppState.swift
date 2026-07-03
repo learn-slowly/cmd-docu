@@ -39,7 +39,11 @@ final class AppState {
     var mainMode: MainMode = .reader
     /// 라이브러리 뷰가 보여줄 폴더. 기본·리셋값은 currentFolder.
     var selectedFolder: URL? = nil {
-        didSet { restoreLibraryLayoutForSelectedFolder() }
+        didSet {
+            restoreLibraryLayoutForSelectedFolder()
+            // 폴더 이동 = 선택 해제(Finder 동일, F1b 스펙 §2). 같은 값 재대입은 무시.
+            if oldValue != selectedFolder { clearFileSelection() }
+        }
     }
     /// 라이브러리 뷰 레이아웃(grid/list). 폴더별 기억 포함.
     var libraryLayout: LibraryLayout = .grid {
@@ -47,6 +51,12 @@ final class AppState {
     }
     /// 복원 중 libraryLayout didSet이 재저장하지 않도록 막는 플래그.
     private var isRestoringLayout = false
+
+    // MARK: - 다중 선택 (F1b)
+    /// 라이브러리·트리 공유 선택 집합. URL 키 — FileTreeItem.id는 재빌드마다 새 UUID라 못 쓴다.
+    var fileSelection: Set<URL> = []
+    /// ⇧범위 선택 앵커(라이브러리 전용).
+    var selectionAnchor: URL? = nil
 
     // File System
     var vaults: [Vault] = []
@@ -1918,9 +1928,38 @@ final class AppState {
         }
     }
 
-    /// 파일 작업 성공 후 공통 갱신 — 세대 토큰·트리·세션.
+    // MARK: - 다중 선택 (F1b)
+
+    /// 라이브러리 클릭 한 번 처리 — 리졸버(순수)에 위임. ordered = 화면 표시 순서(entries).
+    func handleFileClick(_ url: URL, modifier: SelectionModifier, ordered: [URL]) {
+        let result = FileSelectionHelper.resolve(current: fileSelection, anchor: selectionAnchor,
+                                                 clicked: url, modifier: modifier, ordered: ordered)
+        fileSelection = result.selection
+        selectionAnchor = result.anchor
+    }
+
+    /// 트리 ⌘클릭 토글 — 범위 선택이 없어 ordered 불필요.
+    func toggleFileSelection(_ url: URL) {
+        handleFileClick(url, modifier: .command, ordered: [])
+    }
+
+    func clearFileSelection() {
+        fileSelection = []
+        selectionAnchor = nil
+    }
+
+    /// 파일 작업 후 사라진 URL을 선택에서 제거 — 유령 선택에 배치가 실행되는 것을 방지.
+    private func pruneFileSelection() {
+        fileSelection = fileSelection.filter { FileManager.default.fileExists(atPath: $0.path) }
+        if let anchor = selectionAnchor, !FileManager.default.fileExists(atPath: anchor.path) {
+            selectionAnchor = nil
+        }
+    }
+
+    /// 파일 작업 성공 후 공통 갱신 — 세대 토큰·트리·세션·선택 prune.
     private func completeFileOperation() {
         fileOpsGeneration += 1
+        pruneFileSelection()
         loadFileTree()
         saveSession()
     }
