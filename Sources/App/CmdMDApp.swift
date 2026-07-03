@@ -182,7 +182,13 @@ struct CmdMDApp: App {
                 }
                 .keyboardShortcut("w", modifiers: .command)
                 .disabled(appState.tabs.isEmpty)
-                
+
+                Button("Close All Tabs") {
+                    appState.closeAllTabs()
+                }
+                .keyboardShortcut("w", modifiers: [.command, .option])
+                .disabled(appState.tabs.isEmpty)
+
                 Divider()
                 
                 Button("Next Tab") {

@@ -152,7 +152,13 @@ struct TabContextMenu: View {
         } label: {
             Label("Close Tabs to the Right", systemImage: "arrow.right.to.line")
         }
-        
+
+        Button {
+            appState.closeAllTabs()
+        } label: {
+            Label("Close All Tabs", systemImage: "xmark.circle")
+        }
+
         Divider()
         
         Button {

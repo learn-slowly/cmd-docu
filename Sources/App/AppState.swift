@@ -1679,6 +1679,67 @@ final class AppState {
         }
     }
 
+    /// 핀 고정을 제외한 모든 탭을 닫는다. 더티 탭이 있고 확인 설정이 켜져 있으면
+    /// 요약 알림 1회(모두 저장/저장 안 함/취소 — 개별 확인 연타 대신). 저장에
+    /// 실패했거나 저장할 곳이 없는(URL 없는) 더티 탭은 닫지 않고 남긴다.
+    func closeAllTabs() {
+        let targets = tabs.filter { !$0.isPinned }
+        guard !targets.isEmpty else { return }
+        let dirtyTargets = targets.filter { isTabDirty($0) }
+
+        guard !dirtyTargets.isEmpty, settings.confirmBeforeClosingDirtyTabs else {
+            targets.forEach { closeTab($0) }
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "저장 안 된 변경이 있는 탭이 \(dirtyTargets.count)개 있습니다."
+        alert.informativeText = "저장하지 않고 닫으면 변경 내용이 사라집니다."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "모두 저장 후 닫기")
+        alert.addButton(withTitle: "저장 안 하고 닫기")
+        alert.addButton(withTitle: "취소")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            Task { @MainActor in
+                var keptTabIds = Set<UUID>()
+                for tab in dirtyTargets {
+                    let saved = await saveDocument(forTabId: tab.id)
+                    if !saved { keptTabIds.insert(tab.id) }
+                }
+                for tab in targets where !keptTabIds.contains(tab.id) {
+                    closeTab(tab)
+                }
+                if !keptTabIds.isEmpty {
+                    showToast("저장하지 못한 탭 \(keptTabIds.count)개는 남겨뒀습니다")
+                }
+            }
+        case .alertSecondButtonReturn:
+            targets.forEach { closeTab($0) }
+        default:
+            break
+        }
+    }
+
+    /// 특정 탭의 문서를 디스크에 저장한다(파일 URL 있는 문서만 — 없으면 false).
+    /// 성공 시 그 탭의 더티 기준선(originalContents)을 갱신한다.
+    @MainActor
+    private func saveDocument(forTabId tabId: UUID) async -> Bool {
+        guard let tab = tabs.first(where: { $0.id == tabId }),
+              var document = documents[tab.documentId],
+              let url = document.fileURL else { return false }
+        do {
+            try await fileService.saveDocument(document, to: url)
+            originalContents[tab.documentId] = document.fullText
+            document.modifiedAt = Date()
+            documents[tab.documentId] = document
+            return true
+        } catch {
+            return false
+        }
+    }
+
     func toggleTabPin(_ tab: EditorTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs[index].isPinned.toggle()
