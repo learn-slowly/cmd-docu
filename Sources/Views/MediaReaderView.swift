@@ -112,6 +112,10 @@ struct MediaReaderView: View {
         let playable = (try? await asset.load(.isPlayable)) ?? false
         if playable {
             player = AVPlayer(url: url)
+            if let player {
+                // 정지 책임은 AppState로 이전 — onDisappear는 창 숨김·탭 전환에서 못 미덥다(실측).
+                appState.registerMediaPlayer(player, forTab: tabID)
+            }
         } else {
             playerFailed = true
         }

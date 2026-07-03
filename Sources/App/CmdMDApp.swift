@@ -360,6 +360,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showQuickCapture()
             }
         }
+
+        // 메뉴바 상주 앱이라 창 닫기는 파괴가 아니라 숨김 — 뷰 onDisappear가 안 불려
+        // 미디어가 계속 울린다(실측, 2026-07-03). 어떤 창이든 닫히면 전 미디어 정지.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main
+        ) { _ in
+            AppState.shared?.pauseAllMediaPlayers()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

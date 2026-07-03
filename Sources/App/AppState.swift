@@ -2,6 +2,7 @@ import SwiftUI
 import Observation
 import UniformTypeIdentifiers
 import PDFKit
+import AVFoundation
 
 @Observable
 final class AppState {
@@ -12,7 +13,9 @@ final class AppState {
 
     // Tab System
     var tabs: [EditorTab] = []
-    var activeTabId: UUID?
+    var activeTabId: UUID? {
+        didSet { if oldValue != activeTabId { pauseInactiveMediaPlayers() } }
+    }
     var documents: [UUID: MarkdownDocument] = [:]
     var originalContents: [UUID: String] = [:]
     /// kordoc 오피스 변환 상태(키 = EditorTab.id). office 탭은 MarkdownDocument가 없다.
@@ -21,6 +24,9 @@ final class AppState {
     /// 리다이렉트된 경우, 알림 구독자가 없어 소실되던 줄 정보를 탭별로 담아둔다.
     /// MediaReaderView가 노트 로드 후 소비하고 지운다. 비영속(세션 저장 안 함).
     var pendingMediaScrollLines: [UUID: Int] = [:]
+    /// media 탭의 AVPlayer(키 = EditorTab.id). 정지 책임은 뷰가 아니라 AppState가 가진다 —
+    /// 창 숨김·탭 전환에서 onDisappear가 신뢰 불가함이 실측됐다(2026-07-03, 오디오 35초+ 잔존).
+    var mediaPlayers: [UUID: AVPlayer] = [:]
 
     // View State
     var viewMode: ViewMode = AppState.launchDefaults.viewMode
@@ -1630,6 +1636,7 @@ final class AppState {
         originalContents.removeValue(forKey: tab.documentId)
         officeStates.removeValue(forKey: tab.id)
         pendingMediaScrollLines.removeValue(forKey: tab.id)
+        mediaPlayers.removeValue(forKey: tab.id)?.pause()
 
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs.remove(at: index)
@@ -1644,6 +1651,27 @@ final class AppState {
             }
         }
         saveSession()
+    }
+
+    // MARK: - 미디어 플레이어 소유권
+
+    /// 미디어 탭의 플레이어를 등록한다 — 정지 책임은 뷰가 아니라 AppState가 가진다.
+    /// 뷰 생명주기(onDisappear)는 창 숨김·탭 전환에서 신뢰 불가함이 실측됐다(2026-07-03).
+    func registerMediaPlayer(_ player: AVPlayer, forTab tabID: UUID) {
+        mediaPlayers[tabID]?.pause()
+        mediaPlayers[tabID] = player
+    }
+
+    /// 활성 탭이 아닌 미디어 플레이어를 전부 정지한다(탭 전환 시).
+    func pauseInactiveMediaPlayers() {
+        for (id, player) in mediaPlayers where id != activeTabId {
+            player.pause()
+        }
+    }
+
+    /// 모든 미디어 플레이어를 정지한다(창 닫기 — 메뉴바 상주 앱이라 창은 숨겨질 뿐 뷰가 살아 있다).
+    func pauseAllMediaPlayers() {
+        for player in mediaPlayers.values { player.pause() }
     }
 
     func closeTabWithConfirmation(_ tab: EditorTab) {
