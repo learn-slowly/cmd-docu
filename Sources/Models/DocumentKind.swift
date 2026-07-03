@@ -16,6 +16,10 @@ extension DocumentKind {
     /// 보기를 네이티브 PDF 뷰로 가르는 확장자 집합(소문자).
     static let pdfExtensions: Set<String> = ["pdf"]
 
+    /// 기본(마크다운) 뷰로 여는 텍스트 확장자(소문자) — 파일 연결(기본 앱 등록) 그룹 정의용.
+    /// Info.plist 문서형 선언(md/markdown/mdown)과 앱이 여는 txt를 포함한다.
+    static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "txt"]
+
     /// kordoc으로 마크다운 변환해 보는 한글·오피스 확장자(소문자).
     static let officeExtensions: Set<String> = ["hwp", "hwpx", "hwpml", "doc", "docx", "xls", "xlsx"]
 
