@@ -1881,6 +1881,19 @@ final class AppState {
         return ok
     }
 
+    /// 현재 컨텍스트의 정보 보기 대상 — 리더=활성 탭 파일(없으면 무동작),
+    /// 라이브러리=표시 중 폴더(selectedFolder ?? currentFolder). 스펙 §7.2.
+    func showFileInfoForCurrentContext() {
+        switch mainMode {
+        case .reader:
+            guard let url = activeTab?.fileURL else { return }
+            fileInfoRequest = FileInfoRequest(url: url)
+        case .library:
+            guard let folder = selectedFolder ?? currentFolder else { return }
+            fileInfoRequest = FileInfoRequest(url: folder)
+        }
+    }
+
     /// 파일 작업 성공 후 공통 갱신 — 세대 토큰·트리·세션.
     private func completeFileOperation() {
         fileOpsGeneration += 1

@@ -188,4 +188,33 @@ final class AppFileOpsTests: XCTestCase {
         let plain = try makeFile("일반.md")
         XCTAssertNil(AppState.companionNoteForOperation(mediaURL: plain))   // 미디어 아님
     }
+
+    // MARK: 정보 보기 대상 규칙 (스펙 §7.2)
+
+    func testShowFileInfoTargetInReaderMode() throws {
+        let file = try makeFile("정보대상.md")
+        appState.mainMode = .reader
+        appState.fileInfoRequest = nil
+        appState.showFileInfoForCurrentContext()
+        XCTAssertNil(appState.fileInfoRequest)          // 탭 없음 → 비활성(무동작)
+
+        _ = openTab(at: file)
+        appState.activeTabId = appState.tabs.last?.id
+        appState.showFileInfoForCurrentContext()
+        XCTAssertEqual(appState.fileInfoRequest?.url, file)
+    }
+
+    func testShowFileInfoTargetInLibraryMode() {
+        appState.mainMode = .library
+        appState.currentFolder = work
+        appState.selectedFolder = nil
+        appState.showFileInfoForCurrentContext()
+        XCTAssertEqual(appState.fileInfoRequest?.url, work)   // selectedFolder 없으면 currentFolder
+
+        let sub = work.appendingPathComponent("하위")
+        try? FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        appState.selectedFolder = sub
+        appState.showFileInfoForCurrentContext()
+        XCTAssertEqual(appState.fileInfoRequest?.url, sub)
+    }
 }

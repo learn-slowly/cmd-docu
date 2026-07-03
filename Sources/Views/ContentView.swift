@@ -113,6 +113,9 @@ struct ContentView: View {
         .sheet(item: $state.renameRequest) { request in
             RenameSheetView(request: request)
         }
+        .sheet(item: $state.fileInfoRequest) { request in
+            FileInfoView(request: request)
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(

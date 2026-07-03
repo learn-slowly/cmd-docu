@@ -15,6 +15,12 @@ final class ShortcutDefaultsTests: XCTestCase {
                        KeyBinding(key: "k", command: true, option: true))
     }
 
+    func testFileInfoShortcutDefault() {
+        // F1a 정보 보기 — ⌘I는 Format Italic 선점(마크다운 에디터 관례)이라 ⌥⌘I.
+        XCTAssertEqual(AppShortcut.fileInfo.defaultBinding,
+                       KeyBinding(key: "i", command: true, option: true))
+    }
+
     func testDefaultBindingsAreUnique() {
         let bindings = AppShortcut.allCases.map(\.defaultBinding)
         XCTAssertEqual(Set(bindings).count, bindings.count,

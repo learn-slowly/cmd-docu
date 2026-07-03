@@ -290,6 +290,16 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "정보 보기",
+                subtitle: "현재 파일 또는 폴더의 종류·크기·날짜",
+                icon: "info.circle",
+                shortcut: appState.keyBinding(for: .fileInfo).displayString,
+                keywords: ["정보", "info", "크기", "size", "날짜", "get info", "파일 정보"]
+            ) {
+                appState.showFileInfoForCurrentContext()
+            },
+
+            Command(
                 title: "Ask Claude",
                 subtitle: "Ask Claude about the open document",
                 icon: "sparkles",
@@ -403,7 +413,7 @@ struct Command: Identifiable {
                 title: "Toggle Inspector",
                 subtitle: "Show or hide the inspector panel",
                 icon: "sidebar.right",
-                shortcut: "⌥⌘I",
+                shortcut: appState.keyBinding(for: .toggleInspector).displayString,
                 keywords: ["inspector", "toggle", "info", "details", "toc", "properties"]
             ) {
                 appState.inspectorVisible.toggle()

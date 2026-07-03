@@ -158,6 +158,11 @@ struct CmdMDApp: App {
                 }
                 .appShortcut(appState.keyBinding(for: .folderCleanup))
 
+                Button("정보 보기") {
+                    appState.showFileInfoForCurrentContext()
+                }
+                .appShortcut(appState.keyBinding(for: .fileInfo))
+
                 Divider()
                 
                 Button("Toggle Tab Bar") {

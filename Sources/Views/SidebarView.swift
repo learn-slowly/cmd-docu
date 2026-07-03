@@ -475,6 +475,11 @@ struct FileTreeContextMenu: View {
         } label: {
             Label("이름 변경…", systemImage: "pencil")
         }
+        Button {
+            appState.fileInfoRequest = FileInfoRequest(url: item.url)
+        } label: {
+            Label("정보 보기", systemImage: "info.circle")
+        }
         Divider()
 
         if item.isDirectory {
