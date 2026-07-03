@@ -5,6 +5,11 @@ import AVFoundation
 /// 미디어 플레이어 정지 소유권 — 뷰 생명주기(onDisappear)가 창 숨김·탭 전환에서
 /// 신뢰 불가함이 실측됐다(2026-07-03, 35초+ 오디오 잔존). AppState가 소유권을 가져와
 /// 탭 전환·탭 닫기·창 닫기 시점에 능동적으로 정지시키는지 검증한다.
+///
+/// v2: 창 2개가 같은 탭을 보여주면 뷰마다 AVPlayer를 따로 만들어 등록하는데,
+/// 레지스트리는 탭당 1개(마지막 등록)만 유지해 밀려난 플레이어가 재생되면
+/// pauseAll/pauseInactive가 못 잡는다(고아, 실측). 그래서 뷰는 직접 만들지 않고
+/// `mediaPlayer(forTab:url:)`로 탭당 단일 인스턴스를 획득해야 한다.
 final class AppMediaPlayerLifecycleTests: XCTestCase {
 
     private var tempDir: URL!
@@ -21,23 +26,40 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
     }
 
     /// 존재하지 않는 URL이라도 AVPlayer 인스턴스 자체는 생성된다(재생 불필요).
-    private func makePlayer() -> AVPlayer {
-        AVPlayer(url: URL(fileURLWithPath: "/tmp/존재하지않는파일-\(UUID().uuidString).mp3"))
+    private func makeURL(_ name: String = UUID().uuidString) -> URL {
+        URL(fileURLWithPath: "/tmp/존재하지않는파일-\(name).mp3")
+    }
+
+    // MARK: - v2 획득 API: 탭당 단일 공유 플레이어
+
+    @MainActor
+    func testSameTabSameURLReturnsSameInstance() {
+        let app = AppState(dataDirectory: tempDir)
+        let tabID = UUID()
+        let url = makeURL()
+
+        // 창 2개가 같은 탭을 보여주는 상황 시뮬레이션 — 두 뷰가 각자 획득해도 인스턴스는 하나.
+        let first = app.mediaPlayer(forTab: tabID, url: url)
+        let second = app.mediaPlayer(forTab: tabID, url: url)
+
+        XCTAssertTrue(first === second, "같은 탭·같은 url이면 동일 인스턴스여야 한다(고아 플레이어 불가)")
+        XCTAssertTrue(app.mediaPlayers[tabID] === first, "레지스트리에도 그 인스턴스가 있어야 한다")
     }
 
     @MainActor
-    func testRegisteringSameTabPausesPreviousPlayer() {
+    func testURLChangeReplacesAndPausesPreviousPlayer() {
         let app = AppState(dataDirectory: tempDir)
         let tabID = UUID()
-        let first = makePlayer()
-        let second = makePlayer()
 
-        app.registerMediaPlayer(first, forTab: tabID)
-        app.registerMediaPlayer(second, forTab: tabID)
+        let old = app.mediaPlayer(forTab: tabID, url: makeURL("a"))
+        let new = app.mediaPlayer(forTab: tabID, url: makeURL("b"))
 
-        XCTAssertEqual(first.timeControlStatus, .paused, "같은 탭에 새 플레이어를 등록하면 이전 플레이어는 정지해야 한다")
-        XCTAssertTrue(app.mediaPlayers[tabID] === second, "등록된 플레이어는 최신 것으로 교체돼야 한다")
+        XCTAssertFalse(old === new, "url이 바뀌면 새 플레이어로 교체돼야 한다")
+        XCTAssertEqual(old.timeControlStatus, .paused, "교체로 밀려나는 이전 플레이어는 정지해야 한다")
+        XCTAssertTrue(app.mediaPlayers[tabID] === new, "레지스트리는 최신 플레이어를 가져야 한다")
     }
+
+    // MARK: - 정지 훅: 탭 닫기·탭 전환·창 닫기
 
     @MainActor
     func testCloseTabRemovesAndPausesPlayer() {
@@ -45,8 +67,7 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         let tab = EditorTab(fileURL: URL(fileURLWithPath: "/tmp/a.mp3"), title: "a", kind: .media)
         app.tabs = [tab]
         app.activeTabId = tab.id
-        let player = makePlayer()
-        app.registerMediaPlayer(player, forTab: tab.id)
+        let player = app.mediaPlayer(forTab: tab.id, url: makeURL())
 
         app.closeTab(tab)
 
@@ -61,12 +82,10 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         let tabB = EditorTab(fileURL: URL(fileURLWithPath: "/tmp/b.mp3"), title: "b", kind: .media)
         app.tabs = [tabA, tabB]
         app.activeTabId = tabA.id
-        let playerA = makePlayer()
-        let playerB = makePlayer()
-        app.registerMediaPlayer(playerA, forTab: tabA.id)
-        app.registerMediaPlayer(playerB, forTab: tabB.id)
+        let playerA = app.mediaPlayer(forTab: tabA.id, url: makeURL("a"))
+        _ = app.mediaPlayer(forTab: tabB.id, url: makeURL("b"))
 
-        // 탭 A를 활성 탭으로 등록한 뒤 탭 B로 전환하면 A가 정지해야 한다(비활성이 됐으므로).
+        // 탭 A가 활성일 때 플레이어를 획득한 뒤 탭 B로 전환하면 A가 정지해야 한다(비활성이 됐으므로).
         app.activeTabId = tabB.id
 
         XCTAssertEqual(playerA.timeControlStatus, .paused, "비활성 탭이 된 플레이어는 정지해야 한다")
@@ -78,10 +97,8 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         let tabA = EditorTab(fileURL: URL(fileURLWithPath: "/tmp/a.mp3"), title: "a", kind: .media)
         let tabB = EditorTab(fileURL: URL(fileURLWithPath: "/tmp/b.mp3"), title: "b", kind: .media)
         app.tabs = [tabA, tabB]
-        let playerA = makePlayer()
-        let playerB = makePlayer()
-        app.registerMediaPlayer(playerA, forTab: tabA.id)
-        app.registerMediaPlayer(playerB, forTab: tabB.id)
+        let playerA = app.mediaPlayer(forTab: tabA.id, url: makeURL("a"))
+        let playerB = app.mediaPlayer(forTab: tabB.id, url: makeURL("b"))
 
         app.pauseAllMediaPlayers()
 

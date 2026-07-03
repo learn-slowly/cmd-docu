@@ -1655,11 +1655,20 @@ final class AppState {
 
     // MARK: - 미디어 플레이어 소유권
 
-    /// 미디어 탭의 플레이어를 등록한다 — 정지 책임은 뷰가 아니라 AppState가 가진다.
-    /// 뷰 생명주기(onDisappear)는 창 숨김·탭 전환에서 신뢰 불가함이 실측됐다(2026-07-03).
-    func registerMediaPlayer(_ player: AVPlayer, forTab tabID: UUID) {
+    /// 미디어 탭의 플레이어를 돌려준다 — 없으면 만들고, url이 바뀌었으면 이전 것을 정지 후 교체.
+    /// 같은 탭을 여러 창이 보여줘도 인스턴스는 하나(컨트롤 동기화·고아 불가).
+    /// 뷰가 직접 AVPlayer를 만들지 않는 것이 규칙 — 레지스트리 밖 플레이어가 없어야
+    /// 탭 전환·탭 닫기·창 닫기 정지가 전수 보장된다(실측 근거, 2026-07-03: 창 2개가
+    /// 같은 탭을 보여줄 때 뷰마다 따로 만들면 등록에서 밀려난 고아가 계속 울렸다).
+    func mediaPlayer(forTab tabID: UUID, url: URL) -> AVPlayer {
+        if let existing = mediaPlayers[tabID],
+           (existing.currentItem?.asset as? AVURLAsset)?.url == url {
+            return existing
+        }
         mediaPlayers[tabID]?.pause()
+        let player = AVPlayer(url: url)
         mediaPlayers[tabID] = player
+        return player
     }
 
     /// 활성 탭이 아닌 미디어 플레이어를 전부 정지한다(탭 전환 시).

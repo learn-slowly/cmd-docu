@@ -111,11 +111,10 @@ struct MediaReaderView: View {
         let asset = AVURLAsset(url: url)
         let playable = (try? await asset.load(.isPlayable)) ?? false
         if playable {
-            player = AVPlayer(url: url)
-            if let player {
-                // 정지 책임은 AppState로 이전 — onDisappear는 창 숨김·탭 전환에서 못 미덥다(실측).
-                appState.registerMediaPlayer(player, forTab: tabID)
-            }
+            // 직접 생성하지 않고 AppState에서 탭당 단일 인스턴스를 획득 — 같은 탭을 여러 창이
+            // 보여줘도 플레이어는 하나라 레지스트리 밖 고아가 없고, 정지 책임은 AppState가
+            // 가진다(onDisappear는 창 숨김·탭 전환에서 못 미덥다, 실측).
+            player = appState.mediaPlayer(forTab: tabID, url: url)
         } else {
             playerFailed = true
         }
