@@ -442,7 +442,7 @@ enum AppInfo {
     static let website = URL(string: "https://damaged.kr")!
     static let github = URL(string: "https://github.com/learn-slowly/cmd-docu")!
     static let originalGithub = URL(string: "https://github.com/johnfkoo951/CmdMD")!
-    static let tagline = "한글·오피스·PDF를 읽고, Claude에게 묻고, 내용으로 검색해 알맞은 자리로 정리하는 macOS 도구."
+    static let tagline = "문서·이미지·사운드·동영상을 읽고, Claude에게 묻고, 내용으로 검색해 알맞은 자리로 정리하는 macOS 도구."
 }
 
 /// Shared row of brand links — reused by the About window and Settings.
