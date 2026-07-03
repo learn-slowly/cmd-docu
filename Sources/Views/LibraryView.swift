@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - LibraryView
 
 /// 폴더 항목을 격자/리스트로 훑는 라이브러리 뷰.
-/// 읽기·탐색 전용 — 파일 이동·삭제 없음.
+/// F1b: 다중 선택 + 배치 파일 작업 진입점(컨텍스트 메뉴·키).
 struct LibraryView: View {
     @Environment(AppState.self) private var appState
 
@@ -67,6 +67,12 @@ struct LibraryView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
+            if !appState.fileSelection.isEmpty {
+                Text("\(appState.fileSelection.count)개 선택됨")
+                    .font(.caption)
+                    .foregroundStyle(Color.cmdsAccent)
+            }
+
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -111,15 +117,15 @@ struct LibraryView: View {
             LazyVGrid(columns: columns, spacing: 16) {
                 // url 기준 동일성으로 안정화 — 재열거 시 UUID가 새로 생겨도 셀 재생성·애니메이션 파괴 방지.
                 ForEach(entries, id: \.url) { item in
-                    LibraryGridCell(item: item)
-                        .onTapGesture {
-                            handleTap(item: item)
-                        }
+                    LibraryGridCell(item: item, isSelected: appState.fileSelection.contains(item.url))
+                        .onTapGesture(count: 2) { handleDoubleClick(item: item) }
+                        .onTapGesture { handleClick(item: item) }
                         .contextMenu { LibraryCellContextMenu(item: item) }
                 }
             }
             .padding(16)
         }
+        .onTapGesture { appState.clearFileSelection() }
     }
 
     // MARK: - 리스트 뷰
@@ -128,22 +134,29 @@ struct LibraryView: View {
         List {
             // url 기준 동일성으로 안정화 — 재열거 시 UUID가 새로 생겨도 행 재생성·애니메이션 파괴 방지.
             ForEach(entries, id: \.url) { item in
-                LibraryListCell(item: item)
-                    .onTapGesture {
-                        handleTap(item: item)
-                    }
+                LibraryListCell(item: item, isSelected: appState.fileSelection.contains(item.url))
+                    .onTapGesture(count: 2) { handleDoubleClick(item: item) }
+                    .onTapGesture { handleClick(item: item) }
                     .contextMenu { LibraryCellContextMenu(item: item) }
                     .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
             }
         }
         .listStyle(.plain)
+        .onTapGesture { appState.clearFileSelection() }
     }
 
-    // MARK: - 탭 처리
+    // MARK: - 클릭 처리 (F1b — Finder식: 클릭=선택, 더블클릭=열기/드릴인)
 
-    private func handleTap(item: FileTreeItem) {
+    private func handleClick(item: FileTreeItem) {
+        let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let modifier: SelectionModifier = flags.contains(.command) ? .command
+            : (flags.contains(.shift) ? .shift : .none)
+        appState.handleFileClick(item.url, modifier: modifier, ordered: entries.map(\.url))
+    }
+
+    private func handleDoubleClick(item: FileTreeItem) {
         if item.isDirectory {
-            // 폴더 → 드릴인(library 유지)
+            // 폴더 → 드릴인(selectedFolder didSet이 선택을 클리어)
             appState.selectedFolder = item.url
         } else {
             // 파일 → 리더 전환 (openDocument 내부에서 mainMode = .reader 설정)
@@ -171,6 +184,7 @@ struct LibraryView: View {
 struct LibraryGridCell: View {
     @Environment(AppState.self) private var appState
     let item: FileTreeItem
+    let isSelected: Bool
 
     @State private var thumbnail: NSImage?
 
@@ -201,7 +215,16 @@ struct LibraryGridCell: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity)
-        .opacity(paraCategory == .archive ? 0.45 : 1.0)
+        // fill 뒤엔 View라 strokeBorder 체인 불가 — 배경(fill)과 테두리(overlay)를 분리한다.
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.cmdsAccent.opacity(0.15) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(isSelected ? Color.cmdsAccent : Color.clear, lineWidth: 1)
+        )
+        .opacity(paraCategory == .archive ? 0.45 : 1.0)   // 기존 줄 유지 — 선택 배경도 함께 dim(항목 스타일 일관)
         .contentShape(Rectangle())
         .task(id: item.url) {
             // 파일만 썸네일 생성(폴더는 폴더 아이콘 유지). 셀이 사라지면 .task가 취소된다.
@@ -241,6 +264,7 @@ struct LibraryGridCell: View {
 struct LibraryListCell: View {
     @Environment(AppState.self) private var appState
     let item: FileTreeItem
+    let isSelected: Bool
 
     /// 짝꿍 노트의 summary — 셀이 보일 때만 lazy 로드(썸네일 패턴, 셀 사라지면 취소).
     @State private var summary: String?
@@ -292,6 +316,8 @@ struct LibraryListCell: View {
                 .lineLimit(1)
                 .frame(width: 68, alignment: .trailing)
         }
+        .background(isSelected ? Color.cmdsAccent.opacity(0.15) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 4))
         .opacity(paraCategory == .archive ? 0.45 : 1.0)
         .contentShape(Rectangle())
         .padding(.vertical, 2)
