@@ -26,6 +26,7 @@ actor KordocService {
         process.executableURL = URL(fileURLWithPath: npx)
         process.arguments = ["-y", "kordoc", fileURL.path(percentEncoded: false),
                              "--format", "json", "-o", tmp.path(percentEncoded: false), "--silent"]
+        process.environment = SubprocessEnvironment.environment(forTool: npx)
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
         process.standardOutput = FileHandle.nullDevice   // -o로 출력, stdout 불필요

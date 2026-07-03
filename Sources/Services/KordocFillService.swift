@@ -32,6 +32,7 @@ actor KordocFillService {
         process.executableURL = URL(fileURLWithPath: npx)
         process.arguments = ["-y", "kordoc", "fill", "--dry-run", "--silent",
                              template.path(percentEncoded: false)]
+        process.environment = SubprocessEnvironment.environment(forTool: npx)
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
         process.standardOutput = outHandle   // dry-run JSON을 임시 파일로 받는다.
@@ -89,6 +90,7 @@ actor KordocFillService {
         process.executableURL = URL(fileURLWithPath: npx)
         process.arguments = ["-y", "kordoc", "fill", template.path(percentEncoded: false),
                              "-j", tmpJson.path(percentEncoded: false), "--silent"]
+        process.environment = SubprocessEnvironment.environment(forTool: npx)
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
         process.standardOutput = outHandle   // 채운 hwpx 바이너리를 파일로 직접 받는다(파이프 교착 회피).

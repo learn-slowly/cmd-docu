@@ -45,6 +45,7 @@ actor KordocWriteService {
                              original.path(percentEncoded: false),
                              tmpMd.path(percentEncoded: false),
                              "-o", output.path(percentEncoded: false), "--silent"]
+        process.environment = SubprocessEnvironment.environment(forTool: npx)
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
         process.standardOutput = FileHandle.nullDevice

@@ -43,6 +43,7 @@ actor ClaudeService {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: claudePath)
         process.arguments = arguments
+        process.environment = SubprocessEnvironment.environment(forTool: claudePath)
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -140,6 +141,7 @@ actor ClaudeService {
                 }
                 process.executableURL = URL(fileURLWithPath: claudePath)
                 process.arguments = Self.makeStreamArguments(prompt: prompt)
+                process.environment = SubprocessEnvironment.environment(forTool: claudePath)
 
                 let stdinPipe = Pipe()
                 let stdoutPipe = Pipe()
@@ -258,6 +260,7 @@ actor ClaudeService {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
+        process.environment = SubprocessEnvironment.environment(forTool: path)
         let outPipe = Pipe()
         let errPipe = Pipe()
         process.standardOutput = outPipe
