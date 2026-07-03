@@ -56,6 +56,7 @@ FileManager 기반 동기 함수(파일 작업은 로컬·즉시). 전부 throws
 - trash 되돌리기는 macOS 휴지통 내 파일이 사용자에 의해 비워지면 실패 — 안내로 처리.
 - 라이브러리 셀 컨텍스트 메뉴 신설로 기존 탭/클릭 제스처와의 간섭 여부는 수동 스모크로 확인.
 - 리스트 열·정보 시트의 크기/날짜는 표시 시점 스냅샷 — 외부(다른 앱)에서 바뀐 값은 재열거·시트 재열기 전까지 갱신 안 됨(현재 라이브러리 내용 자체와 동일한 stale 특성, 등록 폴더는 FSEvents가 커버).
+- 폴더 rename 시 폴더별 레이아웃 기억(`settings.libraryLayouts`)의 옛 경로 키는 잔존 — 무해(새 경로는 기본 레이아웃로 시작), 키 이관은 후속. 열린 미디어 탭의 rename은 플레이어 재생성(재생 위치 소실) — 공유 플레이어 획득 API가 URL 비교라 자연 동작, 허용 트레이드오프.
 
 ## 7. 정보 보기 (범위 추가분 — 원 F3 ⌘I를 앞당김)
 
@@ -65,7 +66,7 @@ FileManager 기반 동기 함수(파일 작업은 로컬·즉시). 전부 throws
 
 - 기본 필드: 이름·종류 라벨(`DocumentKind` 기반 한국어)·크기·위치(부모 경로)·생성일·수정일 — `URLResourceValues` 한 번에 조회(`fileSizeKey`·`creationDateKey`·`contentModificationDateKey`·`isDirectoryKey`).
 - 종류별 한 줄(전부 기존/시스템 API, 비동기 로드): 이미지=해상도(ImageIO `CGImageSourceCopyPropertiesAtIndex` — 헤더만, 전체 디코드 없음), PDF=페이지 수(PDFKit `PDFDocument.pageCount`), 미디어=길이(기존 `MediaMetadata.load` 재사용·`formatDuration` 표기), 폴더=직속 항목 수.
-- 폴더 크기: `computeFolderSize(url:) async throws -> Int64` — 재귀 합산(`FileManager.enumerator` + `totalFileAllocatedSizeKey` 폴백 `fileSizeKey`), `Task.checkCancellation`으로 취소 지원(시트 닫히면 취소). UI는 "계산 중…"→결과.
+- 폴더 크기: `computeFolderSize(url:) async throws -> Int64` — 재귀 합산(`FileManager.enumerator` + `fileSizeKey` 우선, 폴백 `totalFileAllocatedSizeKey` — 파일 행 표기와 단위 일치·테스트 결정성), `Task.checkCancellation`으로 취소 지원(시트 닫히면 취소). UI는 "계산 중…"→결과.
 - 실패 필드는 nil로 두고 나머지는 진행(MediaMetadata 관례). 크기·날짜 표기는 `ByteCountFormatter`·기존 날짜 표기 관례.
 
 ### 7.2 `FileInfoView` 시트 + 진입점
