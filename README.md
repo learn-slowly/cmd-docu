@@ -12,6 +12,10 @@ Native Swift / SwiftUI · macOS 14+ · light & dark.
 
 **[Download](https://github.com/learn-slowly/cmd-docu/releases/latest)**
 
+<br/>
+
+<img src="docs/images/library-dark.png" width="900" alt="cmdALL 라이브러리 — PARA 렌즈·다중 선택(F1b)·썸네일" />
+
 </div>
 
 ---
@@ -30,7 +34,17 @@ comes first, editing is one keystroke away (like reviewing a pull request, not w
 That reading surface now spans **Markdown, PDF, images, HWP/Office, and media**, and what you
 read connects onward: content search, ask-your-corpus (RAG), PARA routing, file management.
 
-<!-- Screenshots: 업스트림(CmdMD) 스크린샷은 제거함. cmdALL 실제 화면으로 재촬영 예정. -->
+## Screenshots
+
+| Library (PARA 렌즈·다중 선택) — Light | Library — Dark |
+|---|---|
+| <img src="docs/images/library-light.png" alt="Library light" /> | <img src="docs/images/library-dark.png" alt="Library dark" /> |
+
+| Preview (콜아웃·표·Mermaid) — Light | Preview — Dark |
+|---|---|
+| <img src="docs/images/preview-light.png" alt="Preview light" /> | <img src="docs/images/preview-dark.png" alt="Preview dark" /> |
+
+> The accent follows your appearance — **CMDS Green** in light, **CMDS Pink** in dark.
 
 ## Features (upstream CmdMD)
 

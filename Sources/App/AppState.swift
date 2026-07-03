@@ -713,6 +713,11 @@ final class AppState {
         let appDir: URL
         if let dataDirectory {
             appDir = dataDirectory
+        } else if let override = ProcessInfo.processInfo.environment["CMDMD_DATA_DIR"], !override.isEmpty {
+            // 데모·스크린샷용 격리 실행 편의 — applicationSupportDirectory는 $HOME 환경변수를
+            // 무시하므로(디렉터리 서비스 기반), 실사용 데이터를 건드리지 않는 인스턴스를 띄우려면
+            // 이 env로 데이터 디렉터리를 통째로 바꾼다. 일반 실행엔 영향 없음.
+            appDir = URL(fileURLWithPath: override, isDirectory: true)
         } else {
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             appDir = appSupport.appendingPathComponent("CmdMD")
