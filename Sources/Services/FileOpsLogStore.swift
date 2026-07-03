@@ -70,19 +70,17 @@ actor FileOpsLogStore {
         return true
     }
 
-    /// 배치 되돌리기 — 기록 순서(append 순서) 그대로 복원한다.
-    /// 주의: MoveExecutor.undo류의 reversed() 선례를 그대로 따르면 이 스토어에서는 오히려
-    /// 틀린다 — 폴더 안에 든 항목처럼 한 엔트리의 resultURL이 다른 엔트리의 결과 경로 밑에
-    /// 중첩되는 경우, 중첩된(자식) 엔트리는 조상 엔트리보다 로그에 먼저 적힌다(자식이 실제로
-    /// 먼저 이동됐으므로). 조상을 먼저 되돌리면 조상 이동의 부수효과로 자식이 함께 원위치
-    /// 쪽으로 딸려가 자식 엔트리의 resultURL이 그 순간 사라져(존재하지 않아) 실패한다.
-    /// 기록 순서대로(자식 먼저) 처리하면 자식이 아직 조상의 최종 경로에 남아있을 때 먼저
-    /// 되돌려지고, 그 다음 빈 조상을 되돌리는 순서가 되어 성공한다. 실측(RED)으로 확인.
+    /// 배치 되돌리기 — 기록 역순으로(나중 연산부터) unwind한다(MoveExecutor.undo의 reversed() 선례).
+    /// 전제: 엔트리는 **연산 시점 경로**를 기록한다(각 연산 직후 FileOperations 반환 URL).
+    /// 나중 연산이 앞 연산의 결과를 옮긴 경우(예: b를 a에 넣고 a를 dest로), 앞 엔트리의
+    /// resultURL은 나중 연산 뒤엔 존재하지 않는다 — 나중 연산부터 되돌려야 그 경로가
+    /// 복구된 뒤 앞 엔트리를 되돌릴 수 있다. 실측(RED: 자연 순서는 실패)으로 확인.
+    /// 성공분만 로그에서 제거, 실패분 보존.
     func undoBatch(batchId: UUID) -> (succeeded: [FileOpEntry], failed: [FileOpEntry]) {
         let targets = load().filter { $0.batchId == batchId }
         var succeeded: [FileOpEntry] = []
         var failed: [FileOpEntry] = []
-        for entry in targets {
+        for entry in targets.reversed() {
             if undoSingle(entry) { succeeded.append(entry) } else { failed.append(entry) }
         }
         if !succeeded.isEmpty {

@@ -152,11 +152,12 @@ final class FileOpsLogStoreTests: XCTestCase {
 
         let store = FileOpsLogStore(directory: dir)
         let batchId = UUID()
-        let entryB = FileOpEntry(kind: .move, originalURL: fileB,
-                                 resultURL: movedA.appendingPathComponent("b.md"), batchId: batchId)
+        // 연산 시점 경로로 기록(실제 로깅과 동일 — 각 연산 직후 FileOperations 반환 URL).
+        // entryB.resultURL = root/a/b.md는 a가 dest로 간 지금은 존재하지 않으므로,
+        // 역순(entryA 먼저 unwind)이 아니면 entryB 복원이 실패한다.
+        let entryB = FileOpEntry(kind: .move, originalURL: fileB, resultURL: movedB, batchId: batchId)
         let entryA = FileOpEntry(kind: .move, originalURL: folderA, resultURL: movedA, batchId: batchId)
         await store.appendBatch([entryB, entryA])
-        _ = movedB // 기록 시점 경로는 entryB에 반영됨
 
         let result = await store.undoBatch(batchId: batchId)
         XCTAssertEqual(result.succeeded.count, 2)
