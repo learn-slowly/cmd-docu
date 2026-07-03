@@ -362,10 +362,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 메뉴바 상주 앱이라 창 닫기는 파괴가 아니라 숨김 — 뷰 onDisappear가 안 불려
-        // 미디어가 계속 울린다(실측, 2026-07-03). 어떤 창이든 닫히면 전 미디어 정지.
+        // 미디어가 계속 울린다(실측, 2026-07-03). 문서 창이 닫히면 전 미디어 정지.
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main
-        ) { _ in
+        ) { notification in
+            // 시트(커맨드 팔레트 등)도 별도 NSWindow라 전 창 구독이면 시트 닫기마다
+            // 음악이 멎는다(리뷰 실측). 메인이 될 수 있는 창(문서 창)만 필터.
+            guard let window = notification.object as? NSWindow, window.canBecomeMain else { return }
             AppState.shared?.pauseAllMediaPlayers()
         }
     }

@@ -10,6 +10,12 @@ import AVFoundation
 /// 레지스트리는 탭당 1개(마지막 등록)만 유지해 밀려난 플레이어가 재생되면
 /// pauseAll/pauseInactive가 못 잡는다(고아, 실측). 그래서 뷰는 직접 만들지 않고
 /// `mediaPlayer(forTab:url:)`로 탭당 단일 인스턴스를 획득해야 한다.
+///
+/// v3: pause 검증은 vacuous 방지를 위해 먼저 play()로 rate != 0 전제를 만든 뒤
+/// 우리 정지 경로 실행 후 rate == 0을 확인한다 — pause 로직을 no-op으로 바꾸면
+/// 반드시 실패하는 형태. play()/pause()는 rate를 동기 설정하므로 headless에서도
+/// 결정적임을 프로세스 밖 프로브로 실측(존재하지 않는 URL 10/10 반복 안정:
+/// play→1.0, pause→0.0).
 final class AppMediaPlayerLifecycleTests: XCTestCase {
 
     private var tempDir: URL!
@@ -28,6 +34,14 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
     /// 존재하지 않는 URL이라도 AVPlayer 인스턴스 자체는 생성된다(재생 불필요).
     private func makeURL(_ name: String = UUID().uuidString) -> URL {
         URL(fileURLWithPath: "/tmp/존재하지않는파일-\(name).mp3")
+    }
+
+    /// 재생 중 상태 전제를 만든다 — 이 전제가 깨지면 pause 검증이 공허해지므로 즉시 실패.
+    private func startPlaying(_ player: AVPlayer, _ label: String,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        player.play()
+        XCTAssertNotEqual(player.rate, 0, "\(label): play() 후 rate != 0 전제가 성립해야 한다",
+                          file: file, line: line)
     }
 
     // MARK: - v2 획득 API: 탭당 단일 공유 플레이어
@@ -52,10 +66,12 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         let tabID = UUID()
 
         let old = app.mediaPlayer(forTab: tabID, url: makeURL("a"))
+        startPlaying(old, "이전 플레이어")
+
         let new = app.mediaPlayer(forTab: tabID, url: makeURL("b"))
 
         XCTAssertFalse(old === new, "url이 바뀌면 새 플레이어로 교체돼야 한다")
-        XCTAssertEqual(old.timeControlStatus, .paused, "교체로 밀려나는 이전 플레이어는 정지해야 한다")
+        XCTAssertEqual(old.rate, 0, "교체로 밀려나는 이전 플레이어는 정지해야 한다")
         XCTAssertTrue(app.mediaPlayers[tabID] === new, "레지스트리는 최신 플레이어를 가져야 한다")
     }
 
@@ -68,10 +84,11 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         app.tabs = [tab]
         app.activeTabId = tab.id
         let player = app.mediaPlayer(forTab: tab.id, url: makeURL())
+        startPlaying(player, "닫을 탭의 플레이어")
 
         app.closeTab(tab)
 
-        XCTAssertEqual(player.timeControlStatus, .paused, "탭을 닫으면 그 플레이어는 정지해야 한다")
+        XCTAssertEqual(player.rate, 0, "탭을 닫으면 그 플레이어는 정지해야 한다")
         XCTAssertNil(app.mediaPlayers[tab.id], "탭을 닫으면 플레이어 등록도 제거돼야 한다")
     }
 
@@ -84,11 +101,12 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         app.activeTabId = tabA.id
         let playerA = app.mediaPlayer(forTab: tabA.id, url: makeURL("a"))
         _ = app.mediaPlayer(forTab: tabB.id, url: makeURL("b"))
+        startPlaying(playerA, "활성 탭 A의 플레이어")
 
-        // 탭 A가 활성일 때 플레이어를 획득한 뒤 탭 B로 전환하면 A가 정지해야 한다(비활성이 됐으므로).
+        // 탭 A가 재생 중일 때 탭 B로 전환하면 A가 정지해야 한다(비활성이 됐으므로).
         app.activeTabId = tabB.id
 
-        XCTAssertEqual(playerA.timeControlStatus, .paused, "비활성 탭이 된 플레이어는 정지해야 한다")
+        XCTAssertEqual(playerA.rate, 0, "비활성 탭이 된 플레이어는 정지해야 한다")
     }
 
     @MainActor
@@ -99,10 +117,12 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         app.tabs = [tabA, tabB]
         let playerA = app.mediaPlayer(forTab: tabA.id, url: makeURL("a"))
         let playerB = app.mediaPlayer(forTab: tabB.id, url: makeURL("b"))
+        startPlaying(playerA, "탭 A 플레이어")
+        startPlaying(playerB, "탭 B 플레이어")
 
         app.pauseAllMediaPlayers()
 
-        XCTAssertEqual(playerA.timeControlStatus, .paused, "창 닫기(=숨김) 시 전 플레이어가 정지해야 한다")
-        XCTAssertEqual(playerB.timeControlStatus, .paused, "창 닫기(=숨김) 시 전 플레이어가 정지해야 한다")
+        XCTAssertEqual(playerA.rate, 0, "창 닫기(=숨김) 시 전 플레이어가 정지해야 한다")
+        XCTAssertEqual(playerB.rate, 0, "창 닫기(=숨김) 시 전 플레이어가 정지해야 한다")
     }
 }

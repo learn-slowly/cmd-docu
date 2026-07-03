@@ -902,6 +902,8 @@ final class AppState {
             documents.removeValue(forKey: oldTab.documentId)
             originalContents.removeValue(forKey: oldTab.documentId)
             officeStates.removeValue(forKey: oldTab.id)
+            // 탭 id는 재사용되지 않으므로 여기서 안 지우면 플레이어가 영구 잔류(누수)한다.
+            mediaPlayers.removeValue(forKey: oldTab.id)?.pause()
             tabs[activeIndex] = tab
         } else {
             tabs.append(tab)
