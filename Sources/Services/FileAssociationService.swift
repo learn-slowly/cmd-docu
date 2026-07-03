@@ -30,7 +30,7 @@ enum FileAssociationError: Error, Equatable {
 
 /// macOS 기본 앱 등록(NSWorkspace) 래퍼. UI에서만 소비하므로 MainActor로 단순화.
 /// hwp 계열처럼 시스템 선언이 없는 확장자는 UTType(filenameExtension:)이 동적 타입(dyn.*)을
-/// 돌려주는데, Launch Services는 동적 타입에도 기본 핸들러를 기록한다 — 설치 앱 수동 스모크로 실측(스펙 §5).
+/// 돌려주는데, Launch Services는 동적 타입에도 기본 핸들러를 기록하는 것으로 알려져 있다 — 설치 앱 수동 스모크로 실측 예정(스펙 §5).
 @MainActor
 enum FileAssociationService {
     /// 패키징된 .app에서 실행 중일 때만 그 번들 URL(아니면 nil — swift run 가드).

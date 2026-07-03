@@ -744,7 +744,7 @@ struct ToolsSettingsView: View {
             } header: {
                 Text("파일 연결")
             } footer: {
-                Text("다른 앱으로 되돌리려면 Finder에서 파일 정보(⌘I) → 다음으로 열기에서 바꾸세요.")
+                Text("다른 앱으로 되돌리려면 Finder에서 파일 정보(⌘I) → 다음으로 열기에서 바꾸세요. 마크다운·텍스트 그룹의 txt는 macOS 일반 텍스트(public.plain-text) 유형 전체에 적용될 수 있습니다.")
                     .font(.caption)
             }
 

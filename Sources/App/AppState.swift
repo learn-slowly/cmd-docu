@@ -2320,6 +2320,15 @@ final class AppState {
         }
     }
 
+    /// 콜드런치 세션 복원의 마지막 활성 탭 재지정 여부를 판정한다. 순수 함수 — 복원 루프가
+    /// 파일들을 순차 로드하는 동안 Finder 더블클릭(`onOpenURL`) 같은 외부 열기가 끼어들어
+    /// activeTabId를 이미 다른 탭으로 옮겼다면, 복원 마지막 줄이 그걸 덮어쓰지 않도록 막는다.
+    /// current가 nil이거나 복원 루프가 만든/연 탭 중 하나면 재지정을 허용한다.
+    static func shouldRestoreActiveTab(current: UUID?, restoredTabIds: Set<UUID>) -> Bool {
+        guard let current else { return true }
+        return restoredTabIds.contains(current)
+    }
+
     private func restoreSessionIfNeeded() {
         guard settings.restoreLastSession,
               let data = try? Data(contentsOf: sessionURL),
@@ -2341,10 +2350,15 @@ final class AppState {
         guard !files.isEmpty else { return }
 
         Task { @MainActor in
+            var restoredTabIds: Set<UUID> = []
             for url in files {
                 await loadAndActivateDocument(at: url, inNewTab: true)
+                if let activeTabId {
+                    restoredTabIds.insert(activeTabId)
+                }
             }
-            if let index = session.activeFileIndex, index < tabs.count {
+            if let index = session.activeFileIndex, index < tabs.count,
+               Self.shouldRestoreActiveTab(current: activeTabId, restoredTabIds: restoredTabIds) {
                 activeTabId = tabs[index].id
             }
         }
