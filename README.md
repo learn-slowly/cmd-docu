@@ -1,56 +1,38 @@
 <div align="center">
 
-<img src="Resources/appicon-1024.png" width="120" alt="CmdMD icon" />
+<img src="Resources/appicon-1024.png" width="120" alt="cmdALL icon" />
 
 # cmdALL
 
-**A review‑first Markdown editor & Obsidian vault router for macOS.**
+**문서·이미지·사운드·동영상을 읽고, Claude에게 묻고, 내용으로 검색해 알맞은 자리로 정리하는 macOS 도구.**
 
-Open a note, read it beautifully, then send it to the right vault folder — one keystroke each.
-Native Swift / SwiftUI · macOS 14+ · CMDS‑branded, light & dark.
+마크다운·PDF·이미지·한글/오피스·미디어를 한 앱에서 열어 읽고,
+내용 검색(FTS5)·자료에 묻기(RAG)·PARA 라우팅·파일 관리로 이어집니다.
+Native Swift / SwiftUI · macOS 14+ · light & dark.
 
-**[cmdmd.cmdspace.work](https://cmdmd.cmdspace.work)** · [Download](https://github.com/learn-slowly/cmd-docu/releases/latest) · [Website source](https://github.com/johnfkoo951/CmdMD-web)
-
-<br/>
-
-<img src="docs/images/hero.png" width="900" alt="CmdMD in light and dark CMDS themes" />
-
-<br/>
-<br/>
-
-![CmdMD demo](docs/images/demo.gif)
+**[Download](https://github.com/learn-slowly/cmd-docu/releases/latest)**
 
 </div>
 
 ---
 
-> **이 저장소는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPACE)의 포크 `cmdALL`입니다(저장소명은 `cmd-docu`).**
+> **이 저장소는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPACE)의 포크 `cmdALL`입니다(저장소명은 `cmd-docu`).** 원본 프로젝트: [cmdmd.cmdspace.work](https://cmdmd.cmdspace.work) · [Website source](https://github.com/johnfkoo951/CmdMD-web)
 > 원본의 마크다운 리더 위에 **이미지·PDF 보기**, **한글/오피스(HWP·DOCX·XLSX) 읽기**, **HWP/HWPX 편집·양식 채우기(서식 보존)**, **종류를 가로지르는 내용 검색(FTS5 인덱스·한국어 부분일치)**, **Claude 연동(`claude -p`) — 문서 질의·자료에 묻기(RAG)·PARA 라우팅·폴더 정리**, **PARA 라이브러리 뷰**를 더한 개인용 도구입니다.
 > 문서 엔진은 외부 CLI [kordoc](https://www.npmjs.com/package/kordoc), AI는 로컬 `claude` CLI를 `Process`로 호출합니다(앱에 재구현하지 않음).
 > 원작자와 라이선스(MIT) 고지는 그대로 유지합니다. 원본과 무관하며 원작자의 보증을 받지 않았습니다.
 
 ---
 
-## Why CmdMD
+## Why cmdALL
 
-Most Markdown apps open into an editor. CmdMD opens into a **rendered preview** — reading
+Most document apps open into an editor. cmdALL opens into a **rendered preview** — reading
 comes first, editing is one keystroke away (like reviewing a pull request, not writing one).
-It speaks **Obsidian‑flavored Markdown** and acts as a **router**: capture or open a note,
-then file it into the correct vault folder with templates and rules.
+That reading surface now spans **Markdown, PDF, images, HWP/Office, and media**, and what you
+read connects onward: content search, ask-your-corpus (RAG), PARA routing, file management.
 
-## Screenshots
+<!-- Screenshots: 업스트림(CmdMD) 스크린샷은 제거함. cmdALL 실제 화면으로 재촬영 예정. -->
 
-| Preview — Light | Preview — Dark |
-|---|---|
-| <img src="docs/images/cmds-light-preview.png" alt="Light preview" /> | <img src="docs/images/cmds-dark-preview.png" alt="Dark preview" /> |
-
-| Split (source + preview) — Light | Split — Dark |
-|---|---|
-| <img src="docs/images/cmds-light-split.png" alt="Light split" /> | <img src="docs/images/cmds-dark-split.png" alt="Dark split" /> |
-
-> The accent follows your appearance — **CMDS Green** in light, **CMDS Pink** in dark.
-
-## Features
+## Features (upstream CmdMD)
 
 - **Review‑first** — launches into a rendered preview; `⌘1`/`⌘2`/`⌘3` flips Source / Split / Preview.
 - **Full Markdown** — GitHub‑Flavored (tables, task lists, strikethrough) plus Obsidian
