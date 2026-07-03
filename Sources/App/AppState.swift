@@ -2144,6 +2144,79 @@ final class AppState {
         }
     }
 
+    // MARK: - 페이스트보드·키 액션 (F1b)
+
+    /// 선택 항목을 페이스트보드로(⌘C) — Finder에 붙여넣기 가능. 빈 선택이면 false(이벤트 미소비).
+    @discardableResult
+    func copySelectionToPasteboard(_ pasteboard: NSPasteboard = .general) -> Bool {
+        guard !fileSelection.isEmpty else { return false }
+        FilePasteboard.write(FileSelectionHelper.ancestorsOnly(fileSelection), to: pasteboard)
+        return true
+    }
+
+    /// 페이스트보드 파일을 폴더에 복사/이동 실행(⌘V/⌥⌘V) — folder nil이면 표시 폴더.
+    func pasteFromPasteboard(move: Bool, into folder: URL? = nil,
+                             pasteboard: NSPasteboard = .general) {
+        guard let destination = folder ?? selectedFolder ?? currentFolder else { return }
+        let urls = FilePasteboard.readFileURLs(from: pasteboard)
+        guard !urls.isEmpty else { return }
+        Task { @MainActor in
+            if move {
+                await self.performBatchMove(urls: urls, to: destination)
+            } else {
+                await self.performBatchCopy(urls: urls, to: destination)
+            }
+        }
+    }
+
+    /// 라이브러리 표시 폴더의 전 항목 선택(⌘A) — LibraryView 열거와 같은 규칙.
+    func selectAllInLibrary() {
+        guard let folder = selectedFolder ?? currentFolder else { return }
+        let ordered = ParaLens.sorted(LibraryListing.entries(of: folder), under: currentFolder)
+        fileSelection = Set(ordered.map(\.url))
+        selectionAnchor = ordered.first?.url
+    }
+
+    /// F1b 파일 키 라우팅 — 로컬 NSEvent 모니터에서 호출. true = 소비(모니터가 nil 반환).
+    /// 가드(스펙 §5): 메인 창(시트 아님) + firstResponder 비텍스트. 전역 메뉴 키 금지 원칙의 대체물.
+    func handleFileOpsKeyEvent(_ event: NSEvent) -> Bool {
+        guard let window = NSApp.keyWindow, window.canBecomeMain else { return false }
+        if window.firstResponder is NSText { return false }   // NSTextView 포함(필드 에디터도)
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // String?를 switch 리터럴 패턴에 직접 매칭할 수 없다 — 빈 문자열로 언랩.
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+        // ⎋ 선택 해제
+        if event.keyCode == 53, flags.isEmpty, !fileSelection.isEmpty {
+            clearFileSelection()
+            return true
+        }
+        // ⌘⌫ 휴지통(요약 확인 경유)
+        if event.keyCode == 51, flags == .command, !fileSelection.isEmpty {
+            batchTrashWithConfirmation(Array(fileSelection))
+            return true
+        }
+        switch (key, flags) {
+        case ("c", [.command]):
+            return copySelectionToPasteboard()
+        case ("v", [.command]):
+            guard mainMode == .library, !FilePasteboard.readFileURLs().isEmpty else { return false }
+            pasteFromPasteboard(move: false)
+            return true
+        case ("v", [.command, .option]):
+            guard mainMode == .library, !FilePasteboard.readFileURLs().isEmpty else { return false }
+            pasteFromPasteboard(move: true)
+            return true
+        case ("a", [.command]):
+            guard mainMode == .library else { return false }
+            selectAllInLibrary()
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - 다중 선택 (F1b)
 
     /// 라이브러리 클릭 한 번 처리 — 리졸버(순수)에 위임. ordered = 화면 표시 순서(entries).

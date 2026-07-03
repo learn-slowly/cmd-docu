@@ -353,6 +353,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     private let launchDefaults = AppLaunchDefaults()
     private var globalMonitor: Any?
+    private var fileOpsMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         DispatchQueue.main.async { [launchDefaults] in
@@ -380,12 +381,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let window = notification.object as? NSWindow, window.canBecomeMain else { return }
             AppState.shared?.pauseAllMediaPlayers()
         }
+
+        // F1b 파일 작업 키(⌘C/⌘V/⌥⌘V/⌘A/⌘⌫/⎋) — 로컬 모니터 + AppState 가드.
+        // 전역 메뉴 .keyboardShortcut은 에디터의 시스템 복사/붙여넣기를 강탈하므로 금지(스펙 §5).
+        fileOpsMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if AppState.shared?.handleFileOpsKeyEvent(event) == true { return nil }
+            return event
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
+        }
+        if let monitor = fileOpsMonitor {
+            NSEvent.removeMonitor(monitor)
+            fileOpsMonitor = nil
         }
     }
 
