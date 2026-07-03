@@ -1705,6 +1705,8 @@ final class AppState {
             Task { @MainActor in
                 var keptTabIds = Set<UUID>()
                 for tab in dirtyTargets {
+                    // 저장 도중 사용자가 직접 닫은 탭은 건너뛴다(실패 집계 아님).
+                    guard tabs.contains(where: { $0.id == tab.id }) else { continue }
                     let saved = await saveDocument(forTabId: tab.id)
                     if !saved { keptTabIds.insert(tab.id) }
                 }
@@ -1723,17 +1725,21 @@ final class AppState {
     }
 
     /// 특정 탭의 문서를 디스크에 저장한다(파일 URL 있는 문서만 — 없으면 false).
-    /// 성공 시 그 탭의 더티 기준선(originalContents)을 갱신한다.
+    /// 성공 시 그 탭의 더티 기준선(originalContents)을 "디스크에 쓴 내용"으로 갱신한다.
+    /// 스냅샷을 documents에 통째로 되돌려쓰지 않는다 — 비동기 쓰기 중 입력된
+    /// 키스트로크를 덮어쓰는 레이스 방지(saveCurrentDocument와 동일 규칙).
     @MainActor
     private func saveDocument(forTabId tabId: UUID) async -> Bool {
         guard let tab = tabs.first(where: { $0.id == tabId }),
-              var document = documents[tab.documentId],
+              let document = documents[tab.documentId],
               let url = document.fileURL else { return false }
         do {
             try await fileService.saveDocument(document, to: url)
             originalContents[tab.documentId] = document.fullText
-            document.modifiedAt = Date()
-            documents[tab.documentId] = document
+            if var live = documents[tab.documentId] {
+                live.modifiedAt = Date()
+                documents[tab.documentId] = live
+            }
             return true
         } catch {
             return false
