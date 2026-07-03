@@ -135,4 +135,34 @@ final class LibraryListingTests: XCTestCase {
         XCTAssertEqual(sorted.first?.name, "10000_Projects",
                        "ParaLens.sorted 적용 시 projects가 맨 앞이어야 한다")
     }
+
+    // MARK: - 리스트 열 메타(크기·수정일)
+
+    func testEntriesFillFileMetadata() throws {
+        // 파일: fileSize·modifiedAt 채움 / 폴더: fileSize nil·modifiedAt 채움 (리스트 열용, 스펙 §7.3)
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("listing-meta-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Data(repeating: 0, count: 42).write(to: dir.appendingPathComponent("파일.md"))
+        try FileManager.default.createDirectory(
+            at: dir.appendingPathComponent("폴더"), withIntermediateDirectories: true)
+
+        let entries = LibraryListing.entries(of: dir)
+        let file = try XCTUnwrap(entries.first(where: { !$0.isDirectory }))
+        let folder = try XCTUnwrap(entries.first(where: { $0.isDirectory }))
+
+        XCTAssertEqual(file.fileSize, 42)
+        XCTAssertNotNil(file.modifiedAt)
+        XCTAssertNil(folder.fileSize)
+        XCTAssertNotNil(folder.modifiedAt)
+    }
+
+    func testTreeScanLeavesMetadataNil() {
+        // 사이드바 트리 경로(buildFileTree)는 메타를 읽지 않는다 — 비용 불변 확인.
+        let item = FileTreeItem(url: URL(fileURLWithPath: "/tmp/x.md"))
+        XCTAssertNil(item.fileSize)
+        XCTAssertNil(item.modifiedAt)
+    }
 }

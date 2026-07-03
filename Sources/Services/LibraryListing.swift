@@ -15,7 +15,7 @@ enum LibraryListing {
     static func entries(of folder: URL) -> [FileTreeItem] {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: folder,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
@@ -23,15 +23,20 @@ enum LibraryListing {
         // 같은 폴더 파일명 → 소문자 키(대소문자 무시) — 짝꿍 노트 숨김·배지 판별용(추가 FS 호출 없음).
         let siblingKeys = CompanionNote.siblingKeys(contents.map { $0.lastPathComponent })
         for url in contents {
-            guard let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]) else { continue }
+            guard let resourceValues = try? url.resourceValues(
+                forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]) else { continue }
             let isDirectory = resourceValues.isDirectory ?? false
+            let modifiedAt = resourceValues.contentModificationDate
             if isDirectory {
-                items.append(FileTreeItem(url: url, isDirectory: true))
+                // 폴더 크기는 리스트에서 "--"(스펙 §7.3) — modifiedAt만 채운다.
+                items.append(FileTreeItem(url: url, isDirectory: true, modifiedAt: modifiedAt))
             } else if AppState.isListableInFileTree(url) {
                 // 짝꿍 노트는 숨긴다 — 미디어 행이 대표(배지로 존재 표시).
                 if CompanionNote.isCompanionNote(url, siblingKeys: siblingKeys) { continue }
                 let hasNote = CompanionNote.hasCompanionNote(for: url, siblingKeys: siblingKeys)
-                items.append(FileTreeItem(url: url, isDirectory: false, hasCompanionNote: hasNote))
+                items.append(FileTreeItem(url: url, isDirectory: false, hasCompanionNote: hasNote,
+                                          fileSize: resourceValues.fileSize.map(Int64.init),
+                                          modifiedAt: modifiedAt))
             }
         }
         return items

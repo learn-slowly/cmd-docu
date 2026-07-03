@@ -267,13 +267,28 @@ struct LibraryListCell: View {
                 }
             }
 
+            Spacer(minLength: 4)
+
             if item.hasCompanionNote {
-                Spacer(minLength: 4)
                 Image(systemName: "note.text")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .help("짝꿍 노트 있음")
             }
+
+            // 수정일·크기 열 — 표시만(정렬은 F3). 고정폭·모노 숫자로 세로 정렬 유지.
+            Text(item.modifiedAt?.formatted(.dateTime.year().month().day()) ?? "--")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .frame(width: 92, alignment: .trailing)
+            Text(item.isDirectory ? "--" : (item.fileSize.map(FileInfoService.formatSize) ?? "--"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .frame(width: 68, alignment: .trailing)
         }
         .opacity(paraCategory == .archive ? 0.45 : 1.0)
         .contentShape(Rectangle())

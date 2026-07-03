@@ -125,15 +125,22 @@ struct FileTreeItem: Identifiable, Hashable {
     var children: [FileTreeItem]
     /// 이 미디어 파일에 짝꿍 노트(파일명.ext.md)가 있는가 — 목록 배지용(빌드 시 채움).
     var hasCompanionNote: Bool
+    /// 라이브러리 리스트 열용 메타 — 라이브러리 열거(LibraryListing)만 채운다.
+    /// 사이드바 트리 스캔(buildFileTree)은 nil 유지 → 트리 비용 불변.
+    var fileSize: Int64?
+    var modifiedAt: Date?
 
     init(url: URL, isDirectory: Bool = false, isExpanded: Bool = false,
-         children: [FileTreeItem] = [], hasCompanionNote: Bool = false) {
+         children: [FileTreeItem] = [], hasCompanionNote: Bool = false,
+         fileSize: Int64? = nil, modifiedAt: Date? = nil) {
         self.id = UUID()
         self.url = url
         self.isDirectory = isDirectory
         self.isExpanded = isExpanded
         self.children = children
         self.hasCompanionNote = hasCompanionNote
+        self.fileSize = fileSize
+        self.modifiedAt = modifiedAt
     }
 
     var name: String {
