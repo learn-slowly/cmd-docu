@@ -116,6 +116,9 @@ struct ContentView: View {
         .sheet(item: $state.fileInfoRequest) { request in
             FileInfoView(request: request)
         }
+        .sheet(isPresented: $state.showFileOpsHistory) {
+            FileOpsHistoryView()
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(

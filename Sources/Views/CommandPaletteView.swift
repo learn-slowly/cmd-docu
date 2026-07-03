@@ -300,6 +300,16 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "파일 작업 기록",
+                subtitle: "휴지통·이름 변경 기록을 보고 되돌리기",
+                icon: "clock.arrow.circlepath",
+                shortcut: nil,
+                keywords: ["기록", "되돌리기", "undo", "휴지통", "history", "파일 작업"]
+            ) {
+                appState.showFileOpsHistory = true
+            },
+
+            Command(
                 title: "Ask Claude",
                 subtitle: "Ask Claude about the open document",
                 icon: "sparkles",

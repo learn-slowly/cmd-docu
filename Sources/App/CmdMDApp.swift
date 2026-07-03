@@ -163,6 +163,10 @@ struct CmdMDApp: App {
                 }
                 .appShortcut(appState.keyBinding(for: .fileInfo))
 
+                Button("파일 작업 기록") {
+                    appState.showFileOpsHistory = true
+                }
+
                 Divider()
                 
                 Button("Toggle Tab Bar") {
