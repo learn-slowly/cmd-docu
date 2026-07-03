@@ -8,6 +8,7 @@ enum FileOperationError: LocalizedError, Equatable {
     case alreadyExists(String)
     case sourceMissing
     case failed(String)
+    case invalidDestination(String)
 
     var errorDescription: String? {
         switch self {
@@ -17,11 +18,12 @@ enum FileOperationError: LocalizedError, Equatable {
         case .alreadyExists(let name): return "같은 위치에 '\(name)'이(가) 이미 있습니다."
         case .sourceMissing: return "원본을 찾을 수 없습니다. 이동되었거나 삭제된 항목일 수 있습니다."
         case .failed(let message): return "작업에 실패했습니다: \(message)"
+        case .invalidDestination(let reason): return "이동할 수 없는 위치입니다: \(reason)"
         }
     }
 }
 
-/// 단일 항목 파일 작업(F1a) — FileManager 기반 동기 함수. 영구 삭제 없음(휴지통 이동만).
+/// 단일 항목 파일 작업(F1a·F1b) — FileManager 기반 동기 함수. 영구 삭제 없음(휴지통 이동만).
 enum FileOperations {
 
     /// 같은 디렉터리 안에서 이름을 바꾼다. `newName`은 확장자 포함 전체 파일명.
@@ -75,5 +77,57 @@ enum FileOperations {
             throw FileOperationError.failed("휴지통 내 위치를 확인하지 못했습니다.")
         }
         return trashedURL
+    }
+
+    /// 다른 폴더로 이동. 충돌 시 uniquify(덮어쓰기 금지). 결과 URL 반환.
+    /// 같은 부모로의 이동은 에러 — 허용하면 uniquify가 제자리 이동을 "이름 (1)" 복제 개명으로 만든다.
+    static func move(at url: URL, to destinationDir: URL) throws -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { throw FileOperationError.sourceMissing }
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: destinationDir.path, isDirectory: &isDir), isDir.boolValue else {
+            throw FileOperationError.invalidDestination("대상 폴더가 없습니다.")
+        }
+        let srcStd = url.standardizedFileURL.path
+        let destStd = destinationDir.standardizedFileURL.path
+        guard url.standardizedFileURL.deletingLastPathComponent().path != destStd else {
+            throw FileOperationError.invalidDestination("이미 이 폴더에 있습니다.")
+        }
+        try Self.guardNotIntoSelf(sourcePath: srcStd, destinationPath: destStd, at: url)
+        let target = destinationDir.appendingPathComponent(url.lastPathComponent).uniquified()
+        do {
+            try fm.moveItem(at: url, to: target)
+        } catch {
+            throw FileOperationError.failed(error.localizedDescription)
+        }
+        return target
+    }
+
+    /// 다른(또는 같은) 폴더로 복사. 같은 폴더면 uniquify가 사본("이름 (1)")을 만든다. 원본 불변.
+    static func copy(at url: URL, to destinationDir: URL) throws -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { throw FileOperationError.sourceMissing }
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: destinationDir.path, isDirectory: &isDir), isDir.boolValue else {
+            throw FileOperationError.invalidDestination("대상 폴더가 없습니다.")
+        }
+        try Self.guardNotIntoSelf(sourcePath: url.standardizedFileURL.path,
+                                  destinationPath: destinationDir.standardizedFileURL.path, at: url)
+        let target = destinationDir.appendingPathComponent(url.lastPathComponent).uniquified()
+        do {
+            try fm.copyItem(at: url, to: target)
+        } catch {
+            throw FileOperationError.failed(error.localizedDescription)
+        }
+        return target
+    }
+
+    /// 폴더를 자기 자신/자기 하위로 넣는 요청 차단 — '/' 경계 prefix(형제 폴더 오감지 방지).
+    private static func guardNotIntoSelf(sourcePath: String, destinationPath: String, at url: URL) throws {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        guard isDirectory else { return }
+        if destinationPath == sourcePath || destinationPath.hasPrefix(sourcePath + "/") {
+            throw FileOperationError.invalidDestination("폴더를 자기 자신 안으로 넣을 수 없습니다.")
+        }
     }
 }

@@ -23,6 +23,12 @@ final class FileOperationsTests: XCTestCase {
         return url
     }
 
+    private func makeFolder(_ relative: String) throws -> URL {
+        let url = dir.appendingPathComponent(relative)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
     // MARK: rename
 
     func testRenameFileSuccess() throws {
@@ -125,5 +131,76 @@ final class FileOperationsTests: XCTestCase {
         XCTAssertThrowsError(try FileOperations.trash(at: ghost)) {
             XCTAssertEqual($0 as? FileOperationError, .sourceMissing)
         }
+    }
+
+    // MARK: move (F1b)
+
+    func testMoveIntoFolder() throws {
+        let src = try makeFile("a.md")
+        let dest = try makeFolder("대상")
+        let moved = try FileOperations.move(at: src, to: dest)
+        XCTAssertEqual(moved, dest.appendingPathComponent("a.md"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: moved.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: src.path))
+    }
+
+    func testMoveConflictUniquifies() throws {
+        let src = try makeFile("a.md")
+        let dest = try makeFolder("대상")
+        try Data("점유".utf8).write(to: dest.appendingPathComponent("a.md"))
+        let moved = try FileOperations.move(at: src, to: dest)
+        XCTAssertEqual(moved.lastPathComponent, "a (1).md")
+    }
+
+    func testMoveToSameParentThrows() throws {
+        // 제자리 이동을 허용하면 uniquify가 "a (1).md" 복제 개명으로 둔갑 — 반드시 에러.
+        let src = try makeFile("a.md")
+        XCTAssertThrowsError(try FileOperations.move(at: src, to: src.deletingLastPathComponent())) { error in
+            guard case FileOperationError.invalidDestination = error else {
+                return XCTFail("invalidDestination이어야 함: \(error)")
+            }
+        }
+    }
+
+    func testMoveFolderIntoItselfOrDescendantThrows() throws {
+        let folder = try makeFolder("상위")
+        let child = try makeFolder("상위/하위")
+        XCTAssertThrowsError(try FileOperations.move(at: folder, to: folder))
+        XCTAssertThrowsError(try FileOperations.move(at: folder, to: child))
+        // '/' 경계 — 형제 "상위2"는 하위가 아니다.
+        let sibling = try makeFolder("상위2")
+        XCTAssertNoThrow(try FileOperations.move(at: folder, to: sibling))
+    }
+
+    func testMoveMissingSourceThrows() throws {
+        let dest = try makeFolder("대상")
+        let ghost = dir.appendingPathComponent("없음.md")
+        XCTAssertThrowsError(try FileOperations.move(at: ghost, to: dest)) { error in
+            XCTAssertEqual(error as? FileOperationError, .sourceMissing)
+        }
+    }
+
+    // MARK: copy (F1b)
+
+    func testCopyIntoFolder() throws {
+        let src = try makeFile("a.md")
+        let dest = try makeFolder("대상")
+        let copied = try FileOperations.copy(at: src, to: dest)
+        XCTAssertEqual(copied, dest.appendingPathComponent("a.md"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: src.path), "원본 불변")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copied.path))
+    }
+
+    func testCopyToSameParentMakesUniquifiedDuplicate() throws {
+        // 같은 폴더 복사 = 사본 시맨틱("a (1).md") — move와 달리 허용.
+        let src = try makeFile("a.md")
+        let copied = try FileOperations.copy(at: src, to: src.deletingLastPathComponent())
+        XCTAssertEqual(copied.lastPathComponent, "a (1).md")
+    }
+
+    func testCopyFolderIntoOwnDescendantThrows() throws {
+        let folder = try makeFolder("상위")
+        let child = try makeFolder("상위/하위")
+        XCTAssertThrowsError(try FileOperations.copy(at: folder, to: child))
     }
 }
