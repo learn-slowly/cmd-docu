@@ -486,7 +486,7 @@ struct FileTreeContextMenu: View {
     
     var body: some View {
         if appState.fileSelection.count > 1 && appState.fileSelection.contains(item.url) {
-            BatchSelectionMenu()
+            BatchSelectionMenu(item: item)
         } else {
             singleItemMenu
         }

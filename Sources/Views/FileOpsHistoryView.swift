@@ -66,7 +66,7 @@ struct FileOpsHistoryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if failedIds.contains(entry.id) {
-                    Text("되돌리지 못했습니다 — 원위치가 사용 중이거나 항목이 사라졌습니다.")
+                    Text("되돌리지 못했습니다 — 항목이 사라졌거나 원위치가 사용 중입니다.")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }

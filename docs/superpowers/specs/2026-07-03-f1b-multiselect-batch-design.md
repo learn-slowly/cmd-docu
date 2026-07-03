@@ -29,7 +29,7 @@
 - **URL 키인 이유**: `FileTreeItem.id`는 트리 재빌드마다 새 UUID(`Workspace.swift:136`) — id 기반 선택은 새로고침마다 증발. LibraryView가 같은 이유로 `ForEach(id: \.url)`을 쓰는 선례.
 - **클리어 규칙**: `selectedFolder` 값이 바뀌면(드릴인·사이드바 폴더 클릭·openFolder·세션 복원) 선택+앵커 클리어 — Finder와 동일(폴더 이동=선택 해제). 트리 ⌘클릭은 폴더를 안 바꾸므로 여러 폴더에 흩어진 파일을 모아 선택 가능(의도된 기능).
 - **prune 규칙**: `completeFileOperation`(세대 토큰 증가 지점)에서 `FileManager.fileExists` 검사로 소실 URL을 선택에서 제거 — 유령 선택에 배치가 실행되는 것을 방지.
-- `mainMode` 전환은 선택을 유지(무해 — 키 가드가 오발동을 막음, §5).
+- `mainMode` 전환은 선택을 유지(무해 — 키 가드가 오발동을 막음, §5). 더블클릭 열기는 선택을 클리어하고(리더에서 잔존 선택 + ⌘C 강탈 방지), 키 가드는 NSText 외에 WKWebView(미리보기)·PDFView(PDF 리더)도 면제한다(최종 리뷰 수정 반영).
 
 ## 3. 클릭 시맨틱
 
@@ -119,7 +119,7 @@ static func copy(at url: URL, to destinationDir: URL) throws -> URL
 | ⌘C | 선택 항목을 페이스트보드에 복사 | 선택 비어있지 않음(모드 무관 — 트리 선택 지원) |
 | ⌘V | 페이스트보드 파일 → 표시 폴더에 복사 실행 | `mainMode == .library` && 페이스트보드에 fileURL 존재 |
 | ⌥⌘V | 페이스트보드 파일 → 표시 폴더로 **이동**(Finder 관례) | 위와 동일 |
-| ⌘A | 표시 폴더 전체 선택(entries 전체) | `mainMode == .library` |
+| ⌘A | 라이브러리가 표시 중인 목록 전체(libraryOrderedURLs) | `mainMode == .library` |
 | ⌘⌫ | 선택 휴지통(요약 확인 경유) | 선택 비어있지 않음 |
 | ⎋ | 선택 해제 | 선택 비어있지 않음 |
 
@@ -127,6 +127,9 @@ static func copy(at url: URL, to destinationDir: URL) throws -> URL
 - ⌘⌫는 NSTextView의 deleteToBeginningOfLine과 겹치지만 firstResponder 가드로 해소(에디터 포커스 시 통과).
 - 이 키들은 AppShortcut(리맵 체계) 밖 — Finder 패리티 고정. ShortcutDefaultsTests 대상 아님(스펙 명시).
 - ⌥⌘V는 askCorpus(⌥⌘A)·copyFilePath(⌥⌘C)와 다른 콤보로 충돌 없음(정찰 확인 — ⇧⌘V·⌥⌘V 비어 있음).
+- **firstResponder 가드 = `responderYieldsFileKeys`**(정적 함수, 테스트 가능): NSText 외 WKWebView·PDFView는 조상 체인을 걸어 자체 copy에 양보 — 미리보기·PDF에서 ⌘C가 파일 URL을 강탈하던 것을 막는다(최종 리뷰 수정).
+- **CapsLock 견고성**: 수식키 비교를 `.deviceIndependentFlagsMask` 대신 `[.command, .option, .shift, .control]` 교집합으로 — capsLock 비트가 섞이면 정확 일치가 전부 실패하는 것을 방지.
+- **⌘⌫ 이연 실행**: 이벤트 모니터 콜백 안에서 중첩 모달 루프(runModal)를 돌리지 않도록 `Task { @MainActor }`로 확인창을 이연하고 이벤트는 즉시 소비한다.
 
 ## 6. 페이스트보드 (Finder 상호운용)
 

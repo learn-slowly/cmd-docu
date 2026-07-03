@@ -68,7 +68,9 @@ struct MediaReaderView: View {
             // 이 뷰의 미디어를 rename/trash 하기 직전 신호(object = 대상 미디어 URL). 편집 중이면
             // 지금 저장해, 옛 경로로의 stale write(고아 노트)나 편집 소실을 막는다. 이 시점엔
             // 미디어가 아직 옛 자리에 있어 saveIfEditing의 존재 가드를 통과한다.
-            guard (note.object as? URL) == url else { return }
+            // 배치 경로가 페이스트보드 출처 URL을 게시할 수 있어 표현 차이(/var vs /private/var
+            // 등)로 flush가 조용히 skip되지 않도록 standardized path로 비교한다.
+            guard (note.object as? URL)?.standardizedFileURL.path == url.standardizedFileURL.path else { return }
             saveIfEditing()
         }
     }

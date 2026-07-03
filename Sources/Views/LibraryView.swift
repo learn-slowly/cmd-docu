@@ -32,8 +32,14 @@ struct LibraryView: View {
     }
 
     private func reloadEntries() {
-        guard let folder = displayFolder else { entries = []; return }
+        guard let folder = displayFolder else {
+            entries = []
+            appState.libraryOrderedURLs = []
+            return
+        }
         entries = ParaLens.sorted(LibraryListing.entries(of: folder), under: appState.currentFolder)
+        // ⌘A·⇧범위의 진실원 — 화면에 보이는 항목 순서를 AppState에 반영.
+        appState.libraryOrderedURLs = entries.map(\.url)
     }
 
     var body: some View {
@@ -159,7 +165,10 @@ struct LibraryView: View {
             // 폴더 → 드릴인(selectedFolder didSet이 선택을 클리어)
             appState.selectedFolder = item.url
         } else {
-            // 파일 → 리더 전환 (openDocument 내부에서 mainMode = .reader 설정)
+            // 파일 → 리더 전환 (openDocument 내부에서 mainMode = .reader 설정).
+            // 더블클릭의 첫 탭이 단일탭(선택)으로 먼저 발화해 선택이 남는다 — 트리 일반 클릭과
+            // 패리티를 맞춰 클리어. 잔존 선택 + 리더의 ⌘C 가드 통과 시 파일 복사 강탈을 막는다.
+            appState.clearFileSelection()
             appState.openDocument(at: item.url, inNewTab: true)
         }
     }
@@ -344,7 +353,7 @@ struct LibraryCellContextMenu: View {
 
     var body: some View {
         if appState.fileSelection.count > 1 && appState.fileSelection.contains(item.url) {
-            BatchSelectionMenu()
+            BatchSelectionMenu(item: item)
         } else {
             singleItemMenu
         }

@@ -3,6 +3,7 @@ import Observation
 import UniformTypeIdentifiers
 import PDFKit
 import AVFoundation
+import WebKit
 
 @Observable
 final class AppState {
@@ -57,6 +58,10 @@ final class AppState {
     var fileSelection: Set<URL> = []
     /// ⇧범위 선택 앵커(라이브러리 전용).
     var selectionAnchor: URL? = nil
+    /// 라이브러리 뷰가 현재 **표시 중인** 항목 순서 — ⌘A·⇧범위의 진실원.
+    /// LibraryView.reloadEntries가 갱신. 디스크 재열거 대신 화면에 보이는 목록만 선택하기 위함
+    /// (외부에서 추가된, 화면에 없는 파일이 ⌘A로 선택돼 ⌘⌫에 휩쓸리는 것을 방지).
+    var libraryOrderedURLs: [URL] = []
 
     // File System
     var vaults: [Vault] = []
@@ -2184,21 +2189,36 @@ final class AppState {
         }
     }
 
-    /// 라이브러리 표시 폴더의 전 항목 선택(⌘A) — LibraryView 열거와 같은 규칙.
+    /// 라이브러리가 표시 중인 목록 전체 선택(⌘A) — 디스크 재열거가 아니라 화면에 보이는
+    /// libraryOrderedURLs만 대상으로 한다(외부에서 추가된 미표시 파일이 선택에 새는 것 방지).
     func selectAllInLibrary() {
-        guard let folder = selectedFolder ?? currentFolder else { return }
-        let ordered = ParaLens.sorted(LibraryListing.entries(of: folder), under: currentFolder)
-        fileSelection = Set(ordered.map(\.url))
-        selectionAnchor = ordered.first?.url
+        fileSelection = Set(libraryOrderedURLs)
+        selectionAnchor = libraryOrderedURLs.first
+    }
+
+    /// 파일 키(⌘C 등)를 양보해야 하는 응답자인가 — 자체 복사/편집을 가진 뷰들.
+    /// NSText(에디터·필드 에디터) 외에 WKWebView(미리보기)·PDFView(PDF 리더)도 자체 copy 구현.
+    /// 뷰 계층 상위에 있을 수 있어(웹뷰 내부 서브뷰가 firstResponder) 조상 체인을 걷는다.
+    static func responderYieldsFileKeys(_ responder: NSResponder?) -> Bool {
+        if responder is NSText { return true }   // NSTextView 포함(필드 에디터도)
+        var view = responder as? NSView
+        while let v = view {
+            if v is WKWebView || v is PDFView { return true }
+            view = v.superview
+        }
+        return false
     }
 
     /// F1b 파일 키 라우팅 — 로컬 NSEvent 모니터에서 호출. true = 소비(모니터가 nil 반환).
-    /// 가드(스펙 §5): 메인 창(시트 아님) + firstResponder 비텍스트. 전역 메뉴 키 금지 원칙의 대체물.
+    /// 가드(스펙 §5): 메인 창(시트 아님) + firstResponder가 자체 복사/편집 뷰가 아님.
     func handleFileOpsKeyEvent(_ event: NSEvent) -> Bool {
         guard let window = NSApp.keyWindow, window.canBecomeMain else { return false }
-        if window.firstResponder is NSText { return false }   // NSTextView 포함(필드 에디터도)
+        // NSText 외에 미리보기(WKWebView)·PDF(PDFView)도 자체 copy를 양보한다.
+        if Self.responderYieldsFileKeys(window.firstResponder) { return false }
 
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // deviceIndependentFlagsMask는 capsLock 비트를 포함 — CapsLock ON이면 정확 일치가
+        // 전부 실패한다. 우리가 관심 있는 수식키만 교집합으로 추린다.
+        let flags = event.modifierFlags.intersection([.command, .option, .shift, .control])
         // String?를 switch 리터럴 패턴에 직접 매칭할 수 없다 — 빈 문자열로 언랩.
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
@@ -2207,9 +2227,11 @@ final class AppState {
             clearFileSelection()
             return true
         }
-        // ⌘⌫ 휴지통(요약 확인 경유)
+        // ⌘⌫ 휴지통(요약 확인 경유) — 이벤트 모니터 콜백 안에서 중첩 모달 루프(runModal)를
+        // 돌리지 않도록 Task로 이연한다. 이벤트는 즉시 소비.
         if event.keyCode == 51, flags == .command, !fileSelection.isEmpty {
-            batchTrashWithConfirmation(Array(fileSelection))
+            let urls = Array(fileSelection)
+            Task { @MainActor in self.batchTrashWithConfirmation(urls) }
             return true
         }
         switch (key, flags) {
