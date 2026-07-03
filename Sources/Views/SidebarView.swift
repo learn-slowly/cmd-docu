@@ -485,6 +485,15 @@ struct FileTreeContextMenu: View {
     }
     
     var body: some View {
+        if appState.fileSelection.count > 1 && appState.fileSelection.contains(item.url) {
+            BatchSelectionMenu()
+        } else {
+            singleItemMenu
+        }
+    }
+
+    @ViewBuilder
+    private var singleItemMenu: some View {
         Button {
             appState.renameRequest = RenameRequest(url: item.url)
         } label: {
@@ -508,6 +517,14 @@ struct FileTreeContextMenu: View {
                 createNewFolder(in: item.url)
             } label: {
                 Label("New Folder", systemImage: "folder.badge.plus")
+            }
+
+            if !FilePasteboard.readFileURLs().isEmpty {
+                Button {
+                    appState.pasteFromPasteboard(move: false, into: item.url)
+                } label: {
+                    Label("이 폴더에 붙여넣기", systemImage: "doc.on.clipboard")
+                }
             }
 
             Divider()

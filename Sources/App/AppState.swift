@@ -1990,6 +1990,21 @@ final class AppState {
         return (targets.count - failedTargets, failedTargets)
     }
 
+    /// "폴더로 이동…" — NSOpenPanel(디렉터리 선택)이 확인 역할. urls nil이면 현재 선택.
+    func promptBatchMove(urls: [URL]? = nil) {
+        let targets = urls ?? Array(fileSelection)
+        guard !targets.isEmpty else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "이동"
+        panel.message = "\(targets.count)개 항목을 이동할 폴더를 선택하세요"
+        panel.directoryURL = selectedFolder ?? currentFolder
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        Task { @MainActor in await self.performBatchMove(urls: targets, to: destination) }
+    }
+
     /// 배치 이동 — 건별(flush→move→탭 재조준→짝꿍 동반) 후 로그·갱신은 배치 끝 1회.
     /// 이미 목적지에 있는 항목은 skip(실패 아님 — 제자리 이동은 uniquify가 복제 개명으로 둔갑).
     @discardableResult
