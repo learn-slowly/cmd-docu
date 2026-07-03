@@ -77,6 +77,13 @@ enum FileInfoService {
     /// fileSize(논리 크기) 우선 — 파일 행 표기와 단위를 맞춘다(스펙 §7.1).
     static func computeFolderSize(url: URL) async throws -> Int64 {
         try Task.checkCancellation()
+        return try sumRegularFileSizes(under: url)
+    }
+
+    /// 동기 열거 헬퍼 — DirectoryEnumerator 순회(makeIterator)는 async 컨텍스트에서
+    /// 사용 불가(Swift 6 에러 예정)라 동기 함수로 분리한다. Task.checkCancellation은
+    /// 동기 코드에서도 현재 태스크의 취소를 읽으므로 취소 시맨틱은 유지된다.
+    private static func sumRegularFileSizes(under url: URL) throws -> Int64 {
         let keys: Set<URLResourceKey> = [.fileSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey]
         guard let enumerator = FileManager.default.enumerator(
             at: url, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]
