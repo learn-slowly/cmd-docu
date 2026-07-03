@@ -141,6 +141,18 @@ final class AppState {
     var cleanupBatches: [MoveBatch] = []
     var cleanupError: String?
 
+    // MARK: - 파일 작업(F1a) 상태
+
+    /// 파일작업 세대 토큰 — rename/새폴더/휴지통/되돌리기마다 증가.
+    /// LibraryView.folderKey가 결합해 같은 폴더 내 변경도 재열거되게 한다.
+    var fileOpsGeneration: Int = 0
+    /// 파일 작업 기록 시트.
+    var showFileOpsHistory: Bool = false
+    /// 이름 변경 시트 요청(.sheet(item:)).
+    var renameRequest: RenameRequest? = nil
+    /// 정보 보기 시트 요청(.sheet(item:)).
+    var fileInfoRequest: FileInfoRequest? = nil
+
     // Claude 인증 상태(설정 화면)
     var claudeAuthStatus: ClaudeAuthStatus?   // nil = CLI 미설치 또는 미확인
     var claudeAuthChecked: Bool = false       // 한 번이라도 status를 조회했는가
@@ -167,6 +179,8 @@ final class AppState {
     private let kordocWriteService = KordocWriteService()
     private let kordocFillService = KordocFillService()
     private let moveLogStore: MoveLogStore
+    /// 파일 작업(F1a) 로그 — Task 6·7·8(시트·정보뷰)이 직접 읽으므로 private 아님.
+    let fileOpsLogStore: FileOpsLogStore
     private let cleanupService: CleanupService
     private let moveExecutor: MoveExecutor
     private let dataURL: URL
@@ -692,6 +706,7 @@ final class AppState {
         dataURL = appDir
 
         moveLogStore = MoveLogStore(directory: appDir)
+        fileOpsLogStore = FileOpsLogStore(directory: appDir)
         cleanupService = CleanupService(claude: claudeService, kordoc: kordocService)
         moveExecutor = MoveExecutor(store: moveLogStore)
 
@@ -1402,13 +1417,16 @@ final class AppState {
         }
     }
 
+    /// parent 안에 새 폴더 생성 — FileOperations 위임(기본 이름 "새 폴더"·uniquify).
+    /// 새 폴더는 작업 로그에 기록하지 않는다(되돌리기=삭제라 정책 충돌 — 스펙 §2).
     func createNewFolder(in parent: URL) {
-        let target = parent.appendingPathComponent("New Folder").uniquified()
         do {
-            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            _ = try FileOperations.createFolder(in: parent)
+            fileOpsGeneration += 1
             loadFileTree()
         } catch {
-            errorMessage = "Failed to create folder: \(error.localizedDescription)"
+            errorMessage = (error as? FileOperationError)?.errorDescription
+                ?? error.localizedDescription
         }
     }
 
@@ -1762,6 +1780,170 @@ final class AppState {
         default:
             break
         }
+    }
+
+    // MARK: - 파일 작업 (F1a — 이름변경·휴지통·되돌리기)
+
+    /// 짝꿍 노트 동반 대상 — url이 미디어 파일이고 노트(파일명.ext.md)가 실재할 때만.
+    static func companionNoteForOperation(mediaURL: URL) -> URL? {
+        guard DocumentKind(from: mediaURL) == .media else { return nil }
+        let note = CompanionNote.noteURL(for: mediaURL)
+        guard FileManager.default.fileExists(atPath: note.path) else { return nil }
+        return note
+    }
+
+    /// 이름 변경 + 로그 + 열린 탭·짝꿍 노트 정합. 성공 시 새 URL 반환.
+    /// 검증 실패는 FileOperationError로 던진다 — 시트가 인라인 표시(전역 errorMessage 미사용).
+    @discardableResult
+    func performRename(at url: URL, to newName: String) async throws -> URL {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
+
+        let newURL = try FileOperations.rename(at: url, to: newName)
+        await fileOpsLogStore.append(FileOpEntry(kind: .rename, originalURL: url, resultURL: newURL))
+        retargetOpenTabs(from: url, to: newURL, isDirectory: isDirectory)
+
+        // 짝꿍 노트 동반 rename(파일명.ext.md 규칙 유지). 실패해도 본체 rename은 유지 — 토스트로 알림.
+        if let companion {
+            let newNoteName = CompanionNote.noteURL(for: newURL).lastPathComponent
+            do {
+                let movedNote = try FileOperations.rename(at: companion, to: newNoteName)
+                await fileOpsLogStore.append(
+                    FileOpEntry(kind: .rename, originalURL: companion, resultURL: movedNote))
+                retargetOpenTabs(from: companion, to: movedNote, isDirectory: false)
+            } catch {
+                showToast("짝꿍 노트 이름은 바꾸지 못했습니다")
+            }
+        }
+
+        completeFileOperation()
+        return newURL
+    }
+
+    /// 휴지통 확인 대화상자(제안→확인→실행) — 확인 시 performTrash. NSAlert 관례는 closeAllTabs와 동일.
+    func trashWithConfirmation(_ url: URL) {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
+
+        let alert = NSAlert()
+        alert.messageText = "'\(url.lastPathComponent)'을(를) 휴지통으로 이동할까요?"
+        var info = "휴지통에서 복구할 수 있고, '파일 작업 기록'에서 되돌릴 수 있습니다."
+        if let companion {
+            info = "짝꿍 메모('\(companion.lastPathComponent)')도 함께 이동합니다. " + info
+        }
+        if hasDirtyTab(under: url, isDirectory: isDirectory) {
+            info = "저장 안 된 변경이 있는 탭이 닫힙니다. " + info
+        }
+        alert.informativeText = info
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "휴지통으로 이동")
+        alert.addButton(withTitle: "취소")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { @MainActor in await performTrash(at: url) }
+    }
+
+    /// 휴지통 이동 + 로그 + 관련 탭 닫기(+짝꿍 노트 동반). 확인은 trashWithConfirmation 몫.
+    @discardableResult
+    func performTrash(at url: URL) async -> Bool {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
+
+        // 대상(하위 포함)·짝꿍 노트를 보는 탭 먼저 닫는다 — 워처·플레이어 정리는 closeTab이 담당.
+        closeTabs(under: url, isDirectory: isDirectory)
+        if let companion { closeTabs(under: companion, isDirectory: false) }
+
+        do {
+            let trashedURL = try FileOperations.trash(at: url)
+            await fileOpsLogStore.append(
+                FileOpEntry(kind: .trash, originalURL: url, resultURL: trashedURL))
+            if let companion {
+                do {
+                    let trashedNote = try FileOperations.trash(at: companion)
+                    await fileOpsLogStore.append(
+                        FileOpEntry(kind: .trash, originalURL: companion, resultURL: trashedNote))
+                } catch {
+                    showToast("짝꿍 노트는 휴지통으로 옮기지 못했습니다")
+                }
+            }
+            completeFileOperation()
+            return true
+        } catch {
+            errorMessage = (error as? FileOperationError)?.errorDescription
+                ?? error.localizedDescription
+            return false
+        }
+    }
+
+    /// 파일 작업 되돌리기 — 성공 시 갱신 트리거까지.
+    func undoFileOp(_ entry: FileOpEntry) async -> Bool {
+        let ok = await fileOpsLogStore.undo(entry)
+        if ok { completeFileOperation() }
+        return ok
+    }
+
+    /// 파일 작업 성공 후 공통 갱신 — 세대 토큰·트리·세션.
+    private func completeFileOperation() {
+        fileOpsGeneration += 1
+        loadFileTree()
+        saveSession()
+    }
+
+    /// rename된 경로를 보는 열린 탭들의 URL·제목·문서·파일워처를 새 경로로 옮긴다.
+    /// 폴더 rename이면 하위 경로 탭 전부 — '/' 경계 prefix 비교(형제 폴더 오매칭 방지).
+    private func retargetOpenTabs(from oldURL: URL, to newURL: URL, isDirectory: Bool) {
+        let oldPath = oldURL.standardizedFileURL.path
+        for index in tabs.indices {
+            guard let tabURL = tabs[index].fileURL else { continue }
+            let tabPath = tabURL.standardizedFileURL.path
+            let target: URL?
+            if tabPath == oldPath {
+                target = newURL
+            } else if isDirectory, tabPath.hasPrefix(oldPath + "/") {
+                target = newURL.appendingPathComponent(String(tabPath.dropFirst(oldPath.count + 1)))
+            } else {
+                target = nil
+            }
+            guard let target else { continue }
+            let tab = tabs[index]
+            tabs[index].fileURL = target
+            // title 동기화 — EditorTab.displayTitle이 fileURL을 우선해 실제 표시엔
+            // 영향이 적지만, 탭 생성부 관례(비마크다운 분기·saveDocumentAs)를 따라
+            // 확장자 없는 이름으로 맞춘다.
+            tabs[index].title = target.deletingPathExtension().lastPathComponent
+            documents[tab.documentId]?.fileURL = target
+            // 파일 워처 재장전 — 옛 경로 디스크립터를 닫고 새 경로로.
+            stopWatchingFile(for: tab.id)
+            if !isDirectoryPath(target) {
+                startWatchingFile(at: target, for: tab.id)
+            }
+        }
+    }
+
+    /// url(폴더면 하위 포함)을 보는 열린 탭들을 닫는다.
+    private func closeTabs(under url: URL, isDirectory: Bool) {
+        let basePath = url.standardizedFileURL.path
+        let affected = tabs.filter { tab in
+            guard let tabURL = tab.fileURL else { return false }
+            let tabPath = tabURL.standardizedFileURL.path
+            return tabPath == basePath || (isDirectory && tabPath.hasPrefix(basePath + "/"))
+        }
+        affected.forEach { closeTab($0) }
+    }
+
+    /// url 하위(또는 자신)에 더티 탭이 있는가 — 휴지통 확인 문구용.
+    private func hasDirtyTab(under url: URL, isDirectory: Bool) -> Bool {
+        let basePath = url.standardizedFileURL.path
+        return tabs.contains { tab in
+            guard let tabURL = tab.fileURL else { return false }
+            let tabPath = tabURL.standardizedFileURL.path
+            let affected = tabPath == basePath || (isDirectory && tabPath.hasPrefix(basePath + "/"))
+            return affected && isTabDirty(tab)
+        }
+    }
+
+    /// 경로가 디렉터리인가(워처 재장전 가드용 — 탭은 파일만 보지만 방어적으로).
+    private func isDirectoryPath(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
     }
 
     /// 특정 탭의 문서를 디스크에 저장한다(파일 URL 있는 문서만 — 없으면 false).
@@ -2547,6 +2729,18 @@ struct OfficeFillRequest: Identifiable {
     let fileURL: URL
     let detection: FillDetection
     var output: URL
+}
+
+/// 이름 변경 시트 요청 페이로드.
+struct RenameRequest: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+/// 정보 보기 시트 요청 페이로드.
+struct FileInfoRequest: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 enum SendError: LocalizedError {
