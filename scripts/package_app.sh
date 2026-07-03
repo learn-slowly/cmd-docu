@@ -92,6 +92,7 @@ cat > "$PLIST" <<'PLIST'
         <string>md</string>
         <string>markdown</string>
         <string>mdown</string>
+        <string>txt</string>
       </array>
       <key>CFBundleTypeName</key>
       <string>Markdown Document</string>
@@ -104,6 +105,88 @@ cat > "$PLIST" <<'PLIST'
         <string>net.daringfireball.markdown</string>
         <string>public.plain-text</string>
       </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>hwp</string>
+        <string>hwpx</string>
+        <string>hwpml</string>
+      </array>
+      <key>CFBundleTypeName</key>
+      <string>Hangul Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>doc</string>
+        <string>docx</string>
+        <string>xls</string>
+        <string>xlsx</string>
+      </array>
+      <key>CFBundleTypeName</key>
+      <string>Office Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>pdf</string>
+      </array>
+      <key>CFBundleTypeName</key>
+      <string>PDF Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.adobe.pdf</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>png</string>
+        <string>jpg</string>
+        <string>jpeg</string>
+        <string>heic</string>
+        <string>webp</string>
+        <string>gif</string>
+      </array>
+      <key>CFBundleTypeName</key>
+      <string>Image</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>mp3</string>
+        <string>m4a</string>
+        <string>aac</string>
+        <string>wav</string>
+        <string>aiff</string>
+        <string>flac</string>
+        <string>mp4</string>
+        <string>mov</string>
+        <string>m4v</string>
+      </array>
+      <key>CFBundleTypeName</key>
+      <string>Media</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
     </dict>
   </array>
   <key>CFBundleExecutable</key>
