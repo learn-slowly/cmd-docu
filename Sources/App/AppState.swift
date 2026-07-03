@@ -1899,13 +1899,17 @@ final class AppState {
 
     /// 파일 작업 되돌리기 — 성공 시 갱신 트리거까지.
     func undoFileOp(_ entry: FileOpEntry) async -> Bool {
+        // copy 되돌리기 = 사본이 휴지통으로 감 — 사본을 보던 탭 먼저 닫는다.
+        if entry.kind == .copy {
+            closeTabs(under: entry.resultURL, isDirectory: isDirectoryPath(entry.resultURL))
+        }
         let ok = await fileOpsLogStore.undo(entry)
         if ok {
-            // rename 되돌리기 = 파일이 resultURL → originalURL로 복귀. 그 경로를 보던 열린 탭도
-            // 따라 재조준한다 — 안 그러면 워처가 "외부에서 삭제됨"으로 오인해 fileURL을 분리하고,
+            // rename/move 되돌리기 = 파일이 resultURL → originalURL로 복귀. 그 경로를 보던
+            // 탭도 재조준 — 안 그러면 워처가 "외부에서 삭제됨"으로 오인해 fileURL을 분리하고,
             // 미디어 탭이면 뷰가 사라져도 플레이어가 레지스트리에 남아 재생이 이어진다.
             // trash 되돌리기는 대상 탭이 이미 닫혀 있어(performTrash의 closeTabs) 재조준할 탭이 없다.
-            if entry.kind == .rename {
+            if entry.kind == .rename || entry.kind == .move {
                 let isDirectory = (try? entry.originalURL
                     .resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 retargetOpenTabs(from: entry.resultURL, to: entry.originalURL, isDirectory: isDirectory)
@@ -1913,6 +1917,218 @@ final class AppState {
             completeFileOperation()
         }
         return ok
+    }
+
+    // MARK: - 배치 파일 작업 (F1b)
+
+    /// 배치 요약 확인(제안→확인→실행) — 항목별 모달 N회 금지, 요약 1회(Close All Tabs 관례).
+    /// 단건이면 기존 trashWithConfirmation 재사용(문구 동일성).
+    func batchTrashWithConfirmation(_ urls: [URL]) {
+        let targets = FileSelectionHelper.ancestorsOnly(Set(urls))
+        guard !targets.isEmpty else { return }
+        if targets.count == 1 { trashWithConfirmation(targets[0]); return }
+
+        let alert = NSAlert()
+        alert.messageText = "\(targets.count)개 항목을 휴지통으로 이동할까요?"
+        var info = "휴지통에서 복구할 수 있고, '파일 작업 기록'에서 한 번에 되돌릴 수 있습니다."
+        if targets.contains(where: { Self.companionNoteForOperation(mediaURL: $0) != nil }) {
+            info = "짝꿍 메모도 함께 이동합니다. " + info
+        }
+        if targets.contains(where: { hasDirtyTab(under: $0, isDirectory: isDirectoryPath($0)) }) {
+            info = "저장 안 된 변경이 있는 탭이 닫힙니다. " + info
+        }
+        alert.informativeText = info
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "휴지통으로 이동")
+        alert.addButton(withTitle: "취소")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { @MainActor in await self.performBatchTrash(urls: targets) }
+    }
+
+    /// 배치 휴지통 — 건별(flush→탭 선닫기→trash→엔트리 수집) 후 로그·갱신은 배치 끝 1회.
+    /// 부분 실패는 계속 진행 + 요약. 확인은 batchTrashWithConfirmation 몫.
+    @discardableResult
+    func performBatchTrash(urls: [URL]) async -> (succeeded: Int, failed: Int) {
+        let targets = FileSelectionHelper.ancestorsOnly(Set(urls))
+        let batchId = UUID()
+        var entries: [FileOpEntry] = []
+        var failures: [String] = []
+        var handled = Set<String>()   // 동반 처리된 짝꿍 노트(standardized path) — 이중 처리 방지
+
+        for url in targets {
+            if handled.contains(url.standardizedFileURL.path) { continue }
+            let isDirectory = isDirectoryPath(url)
+            let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
+            if companion != nil {
+                NotificationCenter.default.post(name: .flushMediaCompanionNote, object: url)
+            }
+            closeTabs(under: url, isDirectory: isDirectory)
+            if let companion { closeTabs(under: companion, isDirectory: false) }
+            do {
+                let trashed = try FileOperations.trash(at: url)
+                entries.append(FileOpEntry(kind: .trash, originalURL: url,
+                                           resultURL: trashed, batchId: batchId))
+                if let companion {
+                    do {
+                        let trashedNote = try FileOperations.trash(at: companion)
+                        entries.append(FileOpEntry(kind: .trash, originalURL: companion,
+                                                   resultURL: trashedNote, batchId: batchId))
+                        handled.insert(companion.standardizedFileURL.path)
+                    } catch {
+                        failures.append("짝꿍 노트: \(companion.lastPathComponent)")
+                    }
+                }
+            } catch {
+                failures.append(url.lastPathComponent)
+            }
+        }
+
+        await fileOpsLogStore.appendBatch(entries)
+        completeFileOperation()
+        reportBatchFailures(failures, action: "휴지통 이동")
+        let failedTargets = failures.filter { !$0.hasPrefix("짝꿍 노트") }.count
+        return (targets.count - failedTargets, failedTargets)
+    }
+
+    /// 배치 이동 — 건별(flush→move→탭 재조준→짝꿍 동반) 후 로그·갱신은 배치 끝 1회.
+    /// 이미 목적지에 있는 항목은 skip(실패 아님 — 제자리 이동은 uniquify가 복제 개명으로 둔갑).
+    @discardableResult
+    func performBatchMove(urls: [URL], to destinationDir: URL) async -> (succeeded: Int, failed: Int) {
+        let destStd = destinationDir.standardizedFileURL
+        let targets = FileSelectionHelper.ancestorsOnly(Set(urls)).filter {
+            $0.standardizedFileURL.deletingLastPathComponent().path != destStd.path
+        }
+        let batchId = UUID()
+        var entries: [FileOpEntry] = []
+        var failures: [String] = []
+        var handled = Set<String>()
+
+        for url in targets {
+            if handled.contains(url.standardizedFileURL.path) { continue }
+            let isDirectory = isDirectoryPath(url)
+            let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
+            if companion != nil {
+                NotificationCenter.default.post(name: .flushMediaCompanionNote, object: url)
+            }
+            do {
+                let moved = try FileOperations.move(at: url, to: destStd)
+                entries.append(FileOpEntry(kind: .move, originalURL: url,
+                                           resultURL: moved, batchId: batchId))
+                retargetOpenTabs(from: url, to: moved, isDirectory: isDirectory)
+                if let companion {
+                    do {
+                        let finalNote = try relocateCompanion(companion, mode: .move,
+                                                              to: destStd, alongside: moved,
+                                                              failures: &failures)
+                        entries.append(FileOpEntry(kind: .move, originalURL: companion,
+                                                   resultURL: finalNote, batchId: batchId))
+                        retargetOpenTabs(from: companion, to: finalNote, isDirectory: false)
+                        handled.insert(companion.standardizedFileURL.path)
+                    } catch {
+                        failures.append("짝꿍 노트: \(companion.lastPathComponent)")
+                    }
+                }
+            } catch {
+                failures.append(url.lastPathComponent)
+            }
+        }
+
+        await fileOpsLogStore.appendBatch(entries)
+        completeFileOperation()
+        reportBatchFailures(failures, action: "이동")
+        let failedTargets = failures.filter { !$0.hasPrefix("짝꿍 노트") }.count
+        return (targets.count - failedTargets, failedTargets)
+    }
+
+    /// 배치 복사 — 원본·탭 불변, 로그만(undo=사본 휴지통). 같은 폴더 복사 = 사본 시맨틱.
+    @discardableResult
+    func performBatchCopy(urls: [URL], to destinationDir: URL) async -> (succeeded: Int, failed: Int) {
+        let destStd = destinationDir.standardizedFileURL
+        let targets = FileSelectionHelper.ancestorsOnly(Set(urls))
+        let batchId = UUID()
+        var entries: [FileOpEntry] = []
+        var failures: [String] = []
+        var handled = Set<String>()
+
+        for url in targets {
+            if handled.contains(url.standardizedFileURL.path) { continue }
+            let isDirectory = isDirectoryPath(url)
+            let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
+            if companion != nil {
+                // 편집 중 버퍼를 원본 노트에 flush — 사본에 최신 내용이 담기게.
+                NotificationCenter.default.post(name: .flushMediaCompanionNote, object: url)
+            }
+            do {
+                let copied = try FileOperations.copy(at: url, to: destStd)
+                entries.append(FileOpEntry(kind: .copy, originalURL: url,
+                                           resultURL: copied, batchId: batchId))
+                if let companion {
+                    do {
+                        let finalNote = try relocateCompanion(companion, mode: .copy,
+                                                              to: destStd, alongside: copied,
+                                                              failures: &failures)
+                        entries.append(FileOpEntry(kind: .copy, originalURL: companion,
+                                                   resultURL: finalNote, batchId: batchId))
+                        handled.insert(companion.standardizedFileURL.path)
+                    } catch {
+                        failures.append("짝꿍 노트: \(companion.lastPathComponent)")
+                    }
+                }
+            } catch {
+                failures.append(url.lastPathComponent)
+            }
+        }
+
+        await fileOpsLogStore.appendBatch(entries)
+        completeFileOperation()
+        reportBatchFailures(failures, action: "복사")
+        let failedTargets = failures.filter { !$0.hasPrefix("짝꿍 노트") }.count
+        return (targets.count - failedTargets, failedTargets)
+    }
+
+    private enum CompanionRelocateMode { case move, copy }
+
+    /// 짝꿍 노트 동반 이동/복사 — 결과 이름은 본체 결과에서 파생(파일명.ext.md 규칙 유지).
+    /// 본체가 uniquify로 개명됐으면(노래.mp3→노래 (1).mp3) 노트도 "노래 (1).mp3.md"로 맞춘다.
+    /// 파생 이름이 점유돼 있으면 노트만 uniquify하고 연결 끊김을 failures에 기록(스펙 §4.3).
+    private func relocateCompanion(_ companion: URL, mode: CompanionRelocateMode,
+                                   to destinationDir: URL, alongside movedBody: URL,
+                                   failures: inout [String]) throws -> URL {
+        let relocated: URL
+        switch mode {
+        case .move: relocated = try FileOperations.move(at: companion, to: destinationDir)
+        case .copy: relocated = try FileOperations.copy(at: companion, to: destinationDir)
+        }
+        let desiredName = CompanionNote.noteURL(for: movedBody).lastPathComponent
+        guard relocated.lastPathComponent != desiredName else { return relocated }
+        if let aligned = try? FileOperations.rename(at: relocated, to: desiredName) {
+            return aligned
+        }
+        failures.append("짝꿍 노트 이름 정렬: \(relocated.lastPathComponent)")
+        return relocated
+    }
+
+    /// 부분 실패 요약 — errorMessage는 단일 문자열이라 건별 나열 대신 개수+예시.
+    private func reportBatchFailures(_ failures: [String], action: String) {
+        guard !failures.isEmpty else { return }
+        let sample = failures.prefix(3).joined(separator: ", ")
+        errorMessage = "\(action) 중 \(failures.count)건을 처리하지 못했습니다: \(sample)"
+    }
+
+    /// 배치 되돌리기 — copy 사본 탭 선닫기 → 스토어 역순 undo → move/rename 성공분 탭 재조준.
+    func undoFileOpBatch(batchId: UUID) async -> Bool {
+        let entries = await fileOpsLogStore.load().filter { $0.batchId == batchId }
+        for entry in entries where entry.kind == .copy {
+            closeTabs(under: entry.resultURL, isDirectory: isDirectoryPath(entry.resultURL))
+        }
+        let result = await fileOpsLogStore.undoBatch(batchId: batchId)
+        for entry in result.succeeded where entry.kind == .rename || entry.kind == .move {
+            // 복원 = resultURL → originalURL. 그 경로를 보던 탭 재조준(F1a undo 함정의 동형 방지).
+            retargetOpenTabs(from: entry.resultURL, to: entry.originalURL,
+                             isDirectory: isDirectoryPath(entry.originalURL))
+        }
+        completeFileOperation()
+        return result.failed.isEmpty
     }
 
     /// 현재 컨텍스트의 정보 보기 대상 — 리더=활성 탭 파일(없으면 무동작),
