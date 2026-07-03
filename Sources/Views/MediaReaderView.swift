@@ -55,7 +55,9 @@ struct MediaReaderView: View {
             consumePendingScroll()
         }
         .onDisappear {
-            player?.pause()
+            // 재생은 일부러 안 멈춘다 — 탭 전환 시 백그라운드 청취 유지가 사용자 결정
+            // (2026-07-03). 정지는 닫을 때만: 탭 닫기(AppState.closeTab)·메인 창 닫기
+            // (AppDelegate willClose). 돌아오면 공유 플레이어에 컨트롤이 재부착된다.
             saveIfEditing()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
@@ -112,8 +114,8 @@ struct MediaReaderView: View {
         let playable = (try? await asset.load(.isPlayable)) ?? false
         if playable {
             // 직접 생성하지 않고 AppState에서 탭당 단일 인스턴스를 획득 — 같은 탭을 여러 창이
-            // 보여줘도 플레이어는 하나라 레지스트리 밖 고아가 없고, 정지 책임은 AppState가
-            // 가진다(onDisappear는 창 숨김·탭 전환에서 못 미덥다, 실측).
+            // 보여줘도 플레이어는 하나라 레지스트리 밖 고아가 없고, 닫을 때(탭 닫기·메인 창
+            // 닫기) 정지 책임은 AppState가 가진다(onDisappear는 창 숨김에서 못 미덥다, 실측).
             player = appState.mediaPlayer(forTab: tabID, url: url)
         } else {
             playerFailed = true

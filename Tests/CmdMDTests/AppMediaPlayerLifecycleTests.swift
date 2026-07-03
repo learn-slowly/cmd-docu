@@ -4,11 +4,11 @@ import AVFoundation
 
 /// 미디어 플레이어 정지 소유권 — 뷰 생명주기(onDisappear)가 창 숨김·탭 전환에서
 /// 신뢰 불가함이 실측됐다(2026-07-03, 35초+ 오디오 잔존). AppState가 소유권을 가져와
-/// 탭 전환·탭 닫기·창 닫기 시점에 능동적으로 정지시키는지 검증한다.
+/// 닫기 시점에 능동적으로 정지시키는지 검증한다.
 ///
 /// v2: 창 2개가 같은 탭을 보여주면 뷰마다 AVPlayer를 따로 만들어 등록하는데,
 /// 레지스트리는 탭당 1개(마지막 등록)만 유지해 밀려난 플레이어가 재생되면
-/// pauseAll/pauseInactive가 못 잡는다(고아, 실측). 그래서 뷰는 직접 만들지 않고
+/// pauseAll이 못 잡는다(고아, 실측). 그래서 뷰는 직접 만들지 않고
 /// `mediaPlayer(forTab:url:)`로 탭당 단일 인스턴스를 획득해야 한다.
 ///
 /// v3: pause 검증은 vacuous 방지를 위해 먼저 play()로 rate != 0 전제를 만든 뒤
@@ -16,6 +16,9 @@ import AVFoundation
 /// 반드시 실패하는 형태. play()/pause()는 rate를 동기 설정하므로 headless에서도
 /// 결정적임을 프로세스 밖 프로브로 실측(존재하지 않는 URL 10/10 반복 안정:
 /// play→1.0, pause→0.0).
+///
+/// v4(사용자 결정, 2026-07-03): 탭 전환 = 재생 유지(백그라운드 청취),
+/// 탭 닫기·메인 창 닫기 = 정지. 탭 전환 pause는 역방향 검증으로 교체.
 final class AppMediaPlayerLifecycleTests: XCTestCase {
 
     private var tempDir: URL!
@@ -75,7 +78,7 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         XCTAssertTrue(app.mediaPlayers[tabID] === new, "레지스트리는 최신 플레이어를 가져야 한다")
     }
 
-    // MARK: - 정지 훅: 탭 닫기·탭 전환·창 닫기
+    // MARK: - 정지 훅: 탭 닫기·창 닫기 (탭 전환은 재생 유지)
 
     @MainActor
     func testCloseTabRemovesAndPausesPlayer() {
@@ -93,7 +96,7 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testActiveTabChangePausesInactivePlayers() {
+    func testActiveTabChangeKeepsPlaybackRunning() {
         let app = AppState(dataDirectory: tempDir)
         let tabA = EditorTab(fileURL: URL(fileURLWithPath: "/tmp/a.mp3"), title: "a", kind: .media)
         let tabB = EditorTab(fileURL: URL(fileURLWithPath: "/tmp/b.mp3"), title: "b", kind: .media)
@@ -103,10 +106,11 @@ final class AppMediaPlayerLifecycleTests: XCTestCase {
         _ = app.mediaPlayer(forTab: tabB.id, url: makeURL("b"))
         startPlaying(playerA, "활성 탭 A의 플레이어")
 
-        // 탭 A가 재생 중일 때 탭 B로 전환하면 A가 정지해야 한다(비활성이 됐으므로).
+        // 사용자 결정(2026-07-03): 탭 전환은 재생 유지(백그라운드 청취) — 정지는
+        // 닫을 때(탭 닫기·메인 창 닫기)만. 탭 B로 전환해도 A는 계속 재생돼야 한다.
         app.activeTabId = tabB.id
 
-        XCTAssertEqual(playerA.rate, 0, "비활성 탭이 된 플레이어는 정지해야 한다")
+        XCTAssertNotEqual(playerA.rate, 0, "탭 전환으로는 재생이 멈추면 안 된다(백그라운드 청취)")
     }
 
     @MainActor

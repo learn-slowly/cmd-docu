@@ -13,9 +13,7 @@ final class AppState {
 
     // Tab System
     var tabs: [EditorTab] = []
-    var activeTabId: UUID? {
-        didSet { if oldValue != activeTabId { pauseInactiveMediaPlayers() } }
-    }
+    var activeTabId: UUID?
     var documents: [UUID: MarkdownDocument] = [:]
     var originalContents: [UUID: String] = [:]
     /// kordoc 오피스 변환 상태(키 = EditorTab.id). office 탭은 MarkdownDocument가 없다.
@@ -26,6 +24,8 @@ final class AppState {
     var pendingMediaScrollLines: [UUID: Int] = [:]
     /// media 탭의 AVPlayer(키 = EditorTab.id). 정지 책임은 뷰가 아니라 AppState가 가진다 —
     /// 창 숨김·탭 전환에서 onDisappear가 신뢰 불가함이 실측됐다(2026-07-03, 오디오 35초+ 잔존).
+    /// 시맨틱(사용자 결정, 2026-07-03): 탭 전환 = 재생 유지(백그라운드 청취),
+    /// 탭 닫기·메인 창 닫기 = 정지.
     var mediaPlayers: [UUID: AVPlayer] = [:]
 
     // View State
@@ -1656,11 +1656,13 @@ final class AppState {
     }
 
     // MARK: - 미디어 플레이어 소유권
+    // 시맨틱(사용자 결정, 2026-07-03): 탭 전환 = 재생 유지(백그라운드 청취),
+    // 탭 닫기·메인 창 닫기 = 정지.
 
     /// 미디어 탭의 플레이어를 돌려준다 — 없으면 만들고, url이 바뀌었으면 이전 것을 정지 후 교체.
     /// 같은 탭을 여러 창이 보여줘도 인스턴스는 하나(컨트롤 동기화·고아 불가).
     /// 뷰가 직접 AVPlayer를 만들지 않는 것이 규칙 — 레지스트리 밖 플레이어가 없어야
-    /// 탭 전환·탭 닫기·창 닫기 정지가 전수 보장된다(실측 근거, 2026-07-03: 창 2개가
+    /// 탭 닫기·창 닫기 정지가 전수 보장된다(실측 근거, 2026-07-03: 창 2개가
     /// 같은 탭을 보여줄 때 뷰마다 따로 만들면 등록에서 밀려난 고아가 계속 울렸다).
     func mediaPlayer(forTab tabID: UUID, url: URL) -> AVPlayer {
         if let existing = mediaPlayers[tabID],
@@ -1671,13 +1673,6 @@ final class AppState {
         let player = AVPlayer(url: url)
         mediaPlayers[tabID] = player
         return player
-    }
-
-    /// 활성 탭이 아닌 미디어 플레이어를 전부 정지한다(탭 전환 시).
-    func pauseInactiveMediaPlayers() {
-        for (id, player) in mediaPlayers where id != activeTabId {
-            player.pause()
-        }
     }
 
     /// 모든 미디어 플레이어를 정지한다(창 닫기 — 메뉴바 상주 앱이라 창은 숨겨질 뿐 뷰가 살아 있다).
