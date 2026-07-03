@@ -60,6 +60,8 @@ struct TabItemView: View {
             Text(tab.displayTitle)
                 .font(.system(size: 12))
                 .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 180)
                 .foregroundColor(isActive ? .primary : .secondary)
             
             if isDirty {
