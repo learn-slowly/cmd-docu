@@ -1799,6 +1799,12 @@ final class AppState {
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
         let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
 
+        // 짝꿍 노트가 있으면 rename 전에 편집 중이던 버퍼를 노트에 flush(동기 게시). 안 그러면
+        // 옛 뷰의 stale onDisappear가 이미 옮겨진 옛 경로에 써서 고아 노트를 부활시킨다.
+        if companion != nil {
+            NotificationCenter.default.post(name: .flushMediaCompanionNote, object: url)
+        }
+
         let newURL = try FileOperations.rename(at: url, to: newName)
         await fileOpsLogStore.append(FileOpEntry(kind: .rename, originalURL: url, resultURL: newURL))
         retargetOpenTabs(from: url, to: newURL, isDirectory: isDirectory)
@@ -1848,6 +1854,13 @@ final class AppState {
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
         let companion = isDirectory ? nil : Self.companionNoteForOperation(mediaURL: url)
 
+        // 짝꿍 노트가 있으면 탭을 닫기 전에 편집 중이던 버퍼를 flush(동기 게시) — 그래야 최신
+        // 편집이 노트와 함께 휴지통으로 가고(복구 가능), 탭 닫기 onDisappear의 stale write로
+        // 고아 노트가 부활하지 않는다.
+        if companion != nil {
+            NotificationCenter.default.post(name: .flushMediaCompanionNote, object: url)
+        }
+
         // 대상(하위 포함)·짝꿍 노트를 보는 탭 먼저 닫는다 — 워처·플레이어 정리는 closeTab이 담당.
         closeTabs(under: url, isDirectory: isDirectory)
         if let companion { closeTabs(under: companion, isDirectory: false) }
@@ -1877,7 +1890,18 @@ final class AppState {
     /// 파일 작업 되돌리기 — 성공 시 갱신 트리거까지.
     func undoFileOp(_ entry: FileOpEntry) async -> Bool {
         let ok = await fileOpsLogStore.undo(entry)
-        if ok { completeFileOperation() }
+        if ok {
+            // rename 되돌리기 = 파일이 resultURL → originalURL로 복귀. 그 경로를 보던 열린 탭도
+            // 따라 재조준한다 — 안 그러면 워처가 "외부에서 삭제됨"으로 오인해 fileURL을 분리하고,
+            // 미디어 탭이면 뷰가 사라져도 플레이어가 레지스트리에 남아 재생이 이어진다.
+            // trash 되돌리기는 대상 탭이 이미 닫혀 있어(performTrash의 closeTabs) 재조준할 탭이 없다.
+            if entry.kind == .rename {
+                let isDirectory = (try? entry.originalURL
+                    .resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                retargetOpenTabs(from: entry.resultURL, to: entry.originalURL, isDirectory: isDirectory)
+            }
+            completeFileOperation()
+        }
         return ok
     }
 
@@ -1924,9 +1948,13 @@ final class AppState {
             // 확장자 없는 이름으로 맞춘다.
             tabs[index].title = target.deletingPathExtension().lastPathComponent
             documents[tab.documentId]?.fileURL = target
-            // 파일 워처 재장전 — 옛 경로 디스크립터를 닫고 새 경로로.
+            // 파일 워처 재장전 — 옛 경로 디스크립터를 닫고 새 경로로. 단, 원래 워처가 있던
+            // 탭(마크다운)만 다시 건다. 비마크다운(이미지/PDF/오피스/미디어)은 애초에 워처가
+            // 없으므로(loadAndActivateDocument), 여기서 새로 만들면 외부 도구가 그 파일을
+            // 쓸 때 바이너리를 UTF-8로 읽다 스퓨리어스 "Failed to reload file" 에러가 난다.
+            let hadWatcher = fileWatchers[tab.id] != nil
             stopWatchingFile(for: tab.id)
-            if !isDirectoryPath(target) {
+            if hadWatcher, !isDirectoryPath(target) {
                 startWatchingFile(at: target, for: tab.id)
             }
         }

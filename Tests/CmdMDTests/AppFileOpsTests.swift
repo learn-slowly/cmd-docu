@@ -167,6 +167,63 @@ final class AppFileOpsTests: XCTestCase {
         XCTAssertEqual(appState.fileOpsGeneration, before + 1)
     }
 
+    /// rename 되돌리기 시 그 경로를 보던 열린 탭도 옛 경로로 재조준되어야 한다(발견 1).
+    func testUndoRenameRetargetsOpenTab() async throws {
+        let old = try makeFile("되돌림.md")
+        let tab = openTab(at: old)
+        let newURL = try await appState.performRename(at: old, to: "새이름.md")
+        XCTAssertEqual(appState.tabs.first(where: { $0.id == tab.id })?.fileURL, newURL)
+
+        let entries = await appState.fileOpsLogStore.load()
+        let entry = try XCTUnwrap(entries.first)   // rename 1건
+        let ok = await appState.undoFileOp(entry)
+
+        XCTAssertTrue(ok)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertEqual(appState.tabs.first(where: { $0.id == tab.id })?.fileURL, old)
+    }
+
+    /// 폴더 rename 되돌리기 시 하위 경로 탭도 옛 경로로 재조준(발견 1).
+    func testUndoFolderRenameRetargetsNestedTab() async throws {
+        let inner = try makeFile("묶음/속.md")
+        let innerTab = openTab(at: inner)
+        let folder = work.appendingPathComponent("묶음")
+        let newFolder = try await appState.performRename(at: folder, to: "새묶음")
+        XCTAssertEqual(appState.tabs.first(where: { $0.id == innerTab.id })?.fileURL,
+                       newFolder.appendingPathComponent("속.md"))
+
+        let entries = await appState.fileOpsLogStore.load()
+        let entry = try XCTUnwrap(entries.first)   // 폴더 rename 1건(폴더라 짝꿍 없음)
+        let ok = await appState.undoFileOp(entry)
+
+        XCTAssertTrue(ok)
+        XCTAssertEqual(appState.tabs.first(where: { $0.id == innerTab.id })?.fileURL, inner)
+    }
+
+    // MARK: 미디어 짝꿍 노트 flush 게시 (발견 3)
+
+    /// 짝꿍 노트가 있는 미디어를 rename 하면, 이동 전에 옛 미디어 URL로 flush 알림이 게시된다.
+    func testMediaRenameWithNotePostsFlush() async throws {
+        let media = try makeFile("곡.mp3")
+        _ = try makeFile("곡.mp3.md")
+
+        let exp = expectation(forNotification: .flushMediaCompanionNote, object: nil) { note in
+            (note.object as? URL) == media
+        }
+        _ = try await appState.performRename(at: media, to: "새곡.mp3")
+        await fulfillment(of: [exp], timeout: 1.0)
+    }
+
+    /// 짝꿍 노트가 없는 미디어 rename은 flush 알림을 게시하지 않는다(불필요한 게시 방지).
+    func testMediaRenameWithoutNotePostsNoFlush() async throws {
+        let media = try makeFile("외톨이.mp3")   // 짝꿍 노트 없음
+
+        let exp = expectation(forNotification: .flushMediaCompanionNote, object: nil)
+        exp.isInverted = true
+        _ = try await appState.performRename(at: media, to: "새외톨이.mp3")
+        await fulfillment(of: [exp], timeout: 0.5)
+    }
+
     // MARK: createNewFolder 위임
 
     func testCreateNewFolderUsesKoreanDefaultAndBumpsGeneration() {

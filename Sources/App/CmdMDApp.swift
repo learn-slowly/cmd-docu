@@ -446,4 +446,8 @@ extension Notification.Name {
     static let formatLink = Notification.Name("formatLink")
     /// Claude 응답을 마크다운 에디터 커서 위치에 삽입하라는 알림. object: String(삽입할 텍스트 블록).
     static let insertClaudeResponse = Notification.Name("insertClaudeResponse")
+    /// 미디어를 rename/trash 하기 직전, 그 미디어의 짝꿍 노트를 편집 중이면 즉시 저장하라는 알림.
+    /// object: URL(대상 미디어 URL). MediaReaderView가 자기 url과 일치할 때만 편집 버퍼를 flush해,
+    /// 옛 경로로의 stale write(고아 노트 부활)·편집 소실을 막는다.
+    static let flushMediaCompanionNote = Notification.Name("flushMediaCompanionNote")
 }

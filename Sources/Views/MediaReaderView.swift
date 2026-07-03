@@ -64,6 +64,13 @@ struct MediaReaderView: View {
             // 앱 종료 시 onDisappear가 보장되지 않으므로 별도로 저장 경로를 확보한다.
             saveIfEditing()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .flushMediaCompanionNote)) { note in
+            // 이 뷰의 미디어를 rename/trash 하기 직전 신호(object = 대상 미디어 URL). 편집 중이면
+            // 지금 저장해, 옛 경로로의 stale write(고아 노트)나 편집 소실을 막는다. 이 시점엔
+            // 미디어가 아직 옛 자리에 있어 saveIfEditing의 존재 가드를 통과한다.
+            guard (note.object as? URL) == url else { return }
+            saveIfEditing()
+        }
     }
 
     /// 검색·옴니서치·RAG에서 짝꿍 노트를 줄 번호와 함께 열어 이 탭으로 리다이렉트된
@@ -273,6 +280,10 @@ struct MediaReaderView: View {
     /// 탭 전환·닫기·앱 종료 시 편집 중이던 내용을 잃지 않도록 저장.
     private func saveIfEditing() {
         guard isEditing, case .loaded(let content) = noteState, editBuffer != content else { return }
+        // rename/trash로 미디어가 그 자리에서 사라졌으면(이 뷰의 옛 url) 조용히 skip 한다 —
+        // 이미 없는 옛 경로에 버퍼를 쓰면 고아 노트가 부활한다(stale onDisappear write 방지).
+        // 최신 편집은 rename/trash 직전의 flushMediaCompanionNote 선제 저장으로 이미 보존된다.
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
             try editBuffer.write(to: noteURL, atomically: true, encoding: .utf8)
         } catch {
