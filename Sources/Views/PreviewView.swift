@@ -1,6 +1,28 @@
 import SwiftUI
 import WebKit
 
+/// 파일 드래그를 삼키지 않고 상위(SwiftUI 호스팅 뷰)로 흘려보내는 WKWebView.
+/// 프리뷰가 리더를 채울 때, 기본 WKWebView는 자기 자신을 파일 드래그 목적지로 등록해
+/// 창 레벨 .onDrop(외부 파일=열기)이 아예 발화하지 않는다. 드래그 목적지 등록을 영구 해제한다.
+/// ⚠️ WebKit은 navigation/load 시점마다 드래그 타입을 재등록하므로, 단순히 init에서 한 번
+/// unregister만 하면 이후 다시 등록된다 → registerForDraggedTypes를 no-op으로 덮어 opt-out을 영속화.
+/// 위키링크·스크롤 싱크 등 드래그와 무관한 기능은 전혀 건드리지 않는다.
+final class DropThroughWebView: WKWebView {
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        super.init(frame: frame, configuration: configuration)
+        unregisterDraggedTypes()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {
+        // no-op — WebKit의 재등록을 차단해 파일 드래그가 창 레벨로 통과하도록 둔다.
+    }
+}
+
 struct MarkdownPreviewView: NSViewRepresentable {
     /// Identity of the previewed document; a change means a tab switch, which
     /// renders immediately and resets scroll (vs. debounced live typing updates).
@@ -16,7 +38,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
         // Bridge for preview→app messages (interactive task checkboxes).
         config.userContentController.add(context.coordinator, name: "cmdmd")
 
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = DropThroughWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.scrollSyncEnabled = scrollSyncEnabled

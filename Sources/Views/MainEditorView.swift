@@ -273,6 +273,13 @@ struct EditorPane: View {
                 return true
             }
         }
+        // 이미지가 아닌 외부 문서 드롭 = 열기. SwiftUI는 거부(false)된 드롭을 상위 창 타깃으로
+        // 재라우팅하지 않으므로, 여기서 창 레벨과 같은 진입점을 호출해 "리더 위 문서 드롭=열기"
+        // 패리티를 회복한다(F2 후속).
+        if providers.contains(where: { $0.hasItemConformingToTypeIdentifier("public.file-url") }) {
+            appState.openExternalFileDrops(providers)
+            return true
+        }
         return false
     }
 

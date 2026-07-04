@@ -136,6 +136,46 @@ final class AppFileDropTests: XCTestCase {
         wait(for: [exp], timeout: 2)
     }
 
+    // MARK: - openExternalFileDrops (리더 영역 외부 파일 드롭=열기)
+
+    /// 리더 위 외부 파일 드롭 = 열기. provider 여러 개 → 각각 탭으로 열린다(inNewTab).
+    @MainActor
+    func testOpenExternalFileDropsOpensAllProvidersAsTabs() {
+        let app = AppState(dataDirectory: tempDir)
+        let a = makeFile("open1.md"), b = makeFile("open2.md"), c = makeFile("open3.md")
+        let providers = [
+            NSItemProvider(object: a as NSURL),
+            NSItemProvider(object: b as NSURL),
+            NSItemProvider(object: c as NSURL),
+        ]
+        app.openExternalFileDrops(providers)
+        waitUntil {
+            let names = Set(app.tabs.compactMap { $0.fileURL?.lastPathComponent })
+            return names.isSuperset(of: ["open1.md", "open2.md", "open3.md"])
+        }
+    }
+
+    /// 단일 드롭 — inNewTab 강제 없이 연다(창 레벨 브랜치와 동일 시맨틱). 파일이 탭으로 열린다.
+    @MainActor
+    func testOpenExternalFileDropsSingleProviderOpens() {
+        let app = AppState(dataDirectory: tempDir)
+        let a = makeFile("single.md")
+        app.openExternalFileDrops([NSItemProvider(object: a as NSURL)])
+        waitUntil {
+            app.tabs.contains { $0.fileURL?.lastPathComponent == "single.md" }
+        }
+    }
+
+    /// 파일 URL이 아닌 provider만 있으면 무동작(탭 생성 없음).
+    @MainActor
+    func testOpenExternalFileDropsIgnoresNonFileProviders() {
+        let app = AppState(dataDirectory: tempDir)
+        let before = app.tabs.count
+        app.openExternalFileDrops([NSItemProvider(object: "hello" as NSString)])
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        XCTAssertEqual(app.tabs.count, before, "파일 URL provider가 없으면 탭이 생기지 않아야 함")
+    }
+
     // MARK: - expandFolder 멱등(스프링로딩용)
 
     @MainActor

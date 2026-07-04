@@ -2424,6 +2424,27 @@ final class AppState {
         group.notify(queue: .main) { completion(urls) }
     }
 
+    /// 리더 영역 위 외부(Finder) 파일 드롭 = 열기. 창 레벨 드롭과 동일 시맨틱을 재사용해,
+    /// 에디터·프리뷰 등 리더 표면에서도 "리더 위 문서 드롭=열기" 패리티를 회복한다(F2 후속).
+    /// public.file-url provider만 걸러 여러 개면 새 탭으로, 단일이면 기존 동작(inNewTab 강제 없음).
+    func openExternalFileDrops(_ providers: [NSItemProvider]) {
+        let fileProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier("public.file-url")
+        }
+        guard !fileProviders.isEmpty else { return }
+        let openInNewTab = fileProviders.count > 1   // 단일 드롭은 기존 동작 유지
+        for provider in fileProviders {
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { [weak self] item, _ in
+                if let data = item as? Data,
+                   let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    DispatchQueue.main.async {
+                        self?.openDocument(at: url, inNewTab: openInNewTab)
+                    }
+                }
+            }
+        }
+    }
+
     /// 라이브러리가 표시 중인 목록 전체 선택(⌘A) — 디스크 재열거가 아니라 화면에 보이는
     /// libraryOrderedURLs만 대상으로 한다(외부에서 추가된 미표시 파일이 선택에 새는 것 방지).
     func selectAllInLibrary() {
