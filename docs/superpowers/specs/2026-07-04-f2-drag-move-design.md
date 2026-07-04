@@ -44,9 +44,9 @@
   - `.fileURL` — Finder 호환(아웃바운드 복사·다른 앱 수신). ⚠️ SwiftUI `.onDrag`는 provider
     1개 한계로 **아웃바운드 다중 드래그는 드래그한 항목 1개만 전달**된다(구현 확정 — 다중
     내보내기는 기존 ⌘C→Finder ⌘V, 완전한 다중 아웃바운드는 후속 B안/NSFilePromiseProvider).
-  - 앱 전용 식별 타입 `work.cmdspace.cmddocu.drag`(exported UTType) — **URL 목록 전체를 한 provider에 직렬화**(plist/JSON 배열). 내부 타깃은 이걸 우선 읽어 배치 전체를 원자적으로 수신, 창 레벨 핸들러는 이 타입의 존재로 내부 드래그를 판별해 무시.
-- `DragPayload` 책임: 페이로드 결정 규칙(§2.1)·직렬화/역직렬화·`isInternalDrag(pasteboard:)`/`payload(pasteboard:)` 판별 — 전부 순수, 단위테스트 대상.
-- **실측 정정(구현 후 확정)**: SwiftUI 드롭 쪽 provider 재구성은 **미등록 커스텀 UTType 표현을 누락**한다 — `.onDrag`가 커스텀 타입을 드래그 파스테보드에 온전히 실어도(`NSPasteboard(name: .drag).types`에 존재, .ownProcess 포함), 드롭 콜백이 받는 provider의 `registeredTypeIdentifiers`엔 `public.file-url`만 남는다. 결과: provider 기반 `isInternalDrag`가 실드래그에서 늘 false → 다중 페이로드 소실·폴스루 가드 무력화·델리게이트 내부판별 실패(전부 실측 재현). **대응: 수신부(수집·창/에디터 폴스루 가드·델리게이트 내부판별)는 provider가 아니라 `NSPasteboard(name: .drag)`를 직접 읽는다**(드래그/드롭 콜백 안에서만 호출 — 활성 세션 파스테보드 보장). Finder발 외부 드래그는 그 파스테보드가 Finder 것이라 커스텀 타입이 없어 외부 판별 정확성 유지.
+  - 앱 전용 식별 타입 `work.cmdspace.cmddocu.drag`(exported UTType) — **파스테보드에 타입 '선언'을 얹어 내부 드래그를 판별**하는 신호 용도(데이터는 실전에서 전달 안 됨, 아래 실측). 내부 타깃/창 레벨 핸들러는 이 타입의 '존재'로 내부 드래그를 판별하고, **실제 URL 목록 전체는 `AppState.draggingURLs` 스냅샷**으로 나른다.
+- `DragPayload` 책임: 페이로드 결정 규칙(§2.1)·직렬화(provider 등록용)·`isInternalDrag(pasteboard:)` 판별 — 전부 순수, 단위테스트 대상. **페이로드 채널은 `draggingURLs` 스냅샷**(파스테보드/​provider 아님 — 아래 2층 실측).
+- **실측 정정(구현 후 확정, 2층)**: ①SwiftUI 드롭 쪽 provider 재구성은 **미등록 커스텀 UTType 표현을 누락**한다 — 드롭 콜백이 받는 provider의 `registeredTypeIdentifiers`엔 `public.file-url`만 남는다. ②게다가 `.onDrag` 전사는 커스텀 타입을 드래그 파스테보드에 **'선언'만 싣고 데이터 promise는 이행하지 않는다**(`NSPasteboard(name: .drag)`에 타입은 존재하나 `data(forType:)`는 **0바이트** — 실측). 즉 provider도 파스테보드도 커스텀 페이로드 '데이터'를 나르지 못한다. **대응 2가지로 분리**: (a) **판별**은 파스테보드의 커스텀 타입 '선언' 유무로(`isInternalDrag` — 창/에디터 폴스루 가드·델리게이트가 드래그/드롭 콜백 안에서 호출, 활성 세션 파스테보드 보장), (b) **페이로드**는 `.onDrag`가 세션 시작 시 채운 `AppState.draggingURLs` 스냅샷으로 수신부가 읽는다. Finder발 외부 드래그는 커스텀 타입 선언이 없어 판별 false → `draggingURLs`도 참조하지 않아 stale 오염(C1) 원천 차단(외부는 provider fileURL만 수집).
 - 아웃바운드(앱→Finder): fileURL 표현을 Finder가 받아 **복사** 실행(앱은 로그하지 않음 — ⌘C 선례와 동형, 결정 1). 이동 시맨틱(NSFilePromiseProvider 등)은 범위 밖.
 
 ## 3. 드롭 타깃 4곳
@@ -58,10 +58,10 @@
 | 트리 폴더 행 | 그 폴더 | FileTreeItemRow의 행 HStack 레벨(자식은 List 행 밖 VStack이라 행별 부착) |
 | 트리 빈 영역 | 작업 폴더 루트(`currentFolder`) | 트리 List 레벨 |
 
-- 수신 타입: `[커스텀 타입, .fileURL]` — 내부 드래그는 커스텀 우선, Finder발은 fileURL 수집.
+- 수신 타입: `[커스텀 타입, .fileURL]` — 커스텀 타입은 내부 드래그 판별 신호(선언), 페이로드는 `draggingURLs` 스냅샷. Finder발은 fileURL 수집.
 - **하이라이트**: `.onDrop(of:isTargeted:)` 바인딩 → 셀은 액센트 테두리(에디터 이미지 드롭 오버레이 선례·선택 하이라이트와 시각 구분), 트리 행은 행 폭 전체 배경(labelRow 밖 HStack 레벨 — 콘텐츠 폭만 덮는 함정 회피).
 - **사전 차단(하이라이트만)**: 대상 폴더가 드래그 집합에 포함되거나 그 하위면 **하이라이트·스프링로딩만 비활성**하고 드롭 자체는 **소비**한다(최종 리뷰 fix wave — validateDrop=false로 타깃을 비활성하면 무효 내부 드롭이 상위 타깃(트리 루트 등)으로 폴스루해 조용히 루트로 이동하는 I2 결함). 무효 내부 드롭은 handleFileDrop의 2차 필터(standardizedFileURL + '/' 경계)가 조용한 무동작으로 만든다. 판정은 순수 함수 `DropGuard.dropDecision(isInternal:sources:destination:)`(진리표: 외부=수락·하이라이트 / 내부·유효=수락·하이라이트 / 내부·무효=수락·하이라이트 없음)로 추출해 단위테스트. 내부/외부 판별은 **드래그 파스테보드**(`NSPasteboard(name: .drag)`)의 `.cmdDocuDrag` 유무로 — SwiftUI가 드롭 provider에서 커스텀 타입을 누락(위 §2 실측)해 `info.hasItemsConforming`은 신뢰 불가이므로 파스테보드를 직판한다. 외부 세션은 커스텀 타입 부재로 false이고 `draggingURLs` 스냅샷도 참조하지 않아 stale 오염(C1)을 원천 차단.
-- **실행**: provider들에서 URL 전부 수집(loadItem 콜백은 비메인 — 수집 완료 후 `Task { @MainActor in ... }`) → ⌥ 판독(`NSEvent.modifierFlags` 교집합) → `performBatchCopy`(⌥) 또는 `performBatchMove`(기본) **1회 호출**(건별 호출 금지 — batchId 분해로 "모두 되돌리기"가 쪼개짐). 무확인, 결과 토스트(기존 부분 실패 요약 재사용). **이동에서 전량 same-parent skip으로 (0,0)이면 "이동할 항목 없음" 토스트**(무동작 오인 방지 — 복사는 같은 폴더여도 uniquify 사본 생성이 정상 동작이라 해당 없음).
+- **실행**: 페이로드 확보 — **내부 드래그는 `draggingURLs` 스냅샷(동기)**, 외부(Finder)는 provider들에서 fileURL 수집(loadItem 콜백은 비메인 — 수집 완료 후 `Task { @MainActor in ... }`). 두 경로가 공통 다운스트림(`completeFileDrop`)으로 합류 → ⌥ 판독(`NSEvent.modifierFlags` 교집합, 드롭 진입 직후) → 2차 필터(자기/하위) → `performBatchCopy`(⌥) 또는 `performBatchMove`(기본) **1회 호출**(건별 호출 금지 — batchId 분해로 "모두 되돌리기"가 쪼개짐). 무확인, 결과 토스트(기존 부분 실패 요약 재사용). **이동에서 전량 same-parent skip으로 (0,0)이면 "이동할 항목 없음" 토스트**(무동작 오인 방지 — 복사는 같은 폴더여도 uniquify 사본 생성이 정상 동작이라 해당 없음).
 - Finder→앱 인바운드도 같은 경로(이동 기본·⌥ 복사). 외부 원본의 undo 역이동 노출은 기존 ⌘V와 동일(신규 위험 없음).
 
 ## 4. 폴스루·기존 드롭과의 공존

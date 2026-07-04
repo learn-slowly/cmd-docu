@@ -36,29 +36,26 @@ enum DragPayload {
         return paths.map { URL(fileURLWithPath: $0) }
     }
 
-    /// 드래그 파스테보드용 타입 상수 — provider 재구성 우회(아래 실측 참조).
+    /// 드래그 파스테보드용 타입 상수 — 내부 드래그 판별 신호(타입 '선언') 용도.
     static let pasteboardType = NSPasteboard.PasteboardType(UTType.cmdDocuDrag.identifier)
 
-    /// 내부 드래그 판별 — 드래그 파스테보드를 직접 읽는다.
-    /// 실측: SwiftUI가 드롭 쪽 provider를 재구성할 때 미등록 커스텀 UTType 표현을 누락해
-    /// (드래그 파스테보드에는 온전히 실림) provider 기반 판별이 실드래그에서 늘 false가 된다.
-    /// 그래서 수신부(창/에디터 폴스루 가드·델리게이트 내부판별)는 provider 대신 파스테보드를
-    /// 읽는다 — 드래그/드롭 콜백 안에서만 호출해야 활성 세션 파스테보드가 보장된다. Finder발
-    /// 외부 드래그는 이 커스텀 타입이 없어 false(외부 판별 정확성 유지).
+    /// 내부 드래그 판별 — 드래그 파스테보드에 커스텀 타입이 '선언'돼 있는지만 본다.
+    /// 실측(2층): ①SwiftUI가 드롭 쪽 provider를 재구성할 때 커스텀 UTType 표현을 누락하고,
+    /// ②드래그 파스테보드에 실려도 커스텀 타입의 데이터 promise는 이행되지 않는다(0바이트).
+    /// 즉 어느 채널도 페이로드 '데이터'를 나르지 못한다 — 단, 타입 '선언' 자체는 내부 세션
+    /// 동안 파스테보드에 존재한다(실측, Finder발 세션엔 없음). 그래서 판별은 이 선언만 쓰고,
+    /// 실제 페이로드(전체 목록)는 AppState.draggingURLs 스냅샷으로 나른다. 드래그/드롭 콜백
+    /// 안에서만 호출해야 활성 세션 파스테보드가 보장된다. Finder발 외부 드래그는 이 커스텀
+    /// 타입 선언이 없어 false(외부 판별 정확성 유지 — 외부는 draggingURLs를 참조하지 않음).
     static func isInternalDrag(pasteboard: NSPasteboard = NSPasteboard(name: .drag)) -> Bool {
         pasteboard.types?.contains(pasteboardType) ?? false
     }
 
-    /// 내부 드래그 페이로드(전체 목록) — 드래그 파스테보드 직판. 없거나 손상이면 nil.
-    static func payload(pasteboard: NSPasteboard = NSPasteboard(name: .drag)) -> [URL]? {
-        guard let data = pasteboard.data(forType: pasteboardType) else { return nil }
-        let urls = decode(data)
-        return urls.isEmpty ? nil : urls
-    }
-
-    /// 드래그 소스용 provider — 내부 페이로드(전체 목록, .ownProcess) + Finder 호환
-    /// fileURL(드래그 항목 자신). ⚠️ SwiftUI .onDrag는 provider 1개 한계 —
-    /// 아웃바운드 다중은 드래그 항목 1개만 전달된다(다중 내보내기는 ⌘C, 스펙 정정).
+    /// 드래그 소스용 provider — 커스텀 표현(.ownProcess) + Finder 호환 fileURL(드래그 항목 자신).
+    /// ⚠️ 커스텀 표현의 '데이터'는 실전에서 전달되지 않는다(실측 0바이트) — 등록 목적은 파스테보드에
+    /// 타입 '선언'을 얹어 내부 드래그 판별 신호를 만드는 것뿐(페이로드는 AppState.draggingURLs).
+    /// SwiftUI .onDrag는 provider 1개 한계 — 아웃바운드 다중은 드래그 항목 1개만 전달된다
+    /// (다중 내보내기는 ⌘C, 스펙 정정). fileURL만 .all로 두어 Finder(외부 프로세스)가 읽게 한다.
     static func makeProvider(for urls: [URL], primary: URL) -> NSItemProvider {
         let provider = NSItemProvider()
         let payload = encode(urls)

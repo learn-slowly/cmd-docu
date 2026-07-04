@@ -29,12 +29,12 @@ final class AppFileDropTests: XCTestCase {
         super.tearDown()
     }
 
-    /// 드래그 파스테보드에 내부 페이로드 시드 — 실드래그의 파스테보드 직판을 재현.
-    private func seedDragPasteboard(_ urls: [URL]) {
-        let pb = NSPasteboard(name: .drag)
-        pb.clearContents()
+    /// 내부 드래그 세션 재현 — 유니크 파스테보드에 커스텀 타입 '선언'만 얹는다(데이터 없음:
+    /// 실전 0바이트 반영). 페이로드는 draggingURLs로 나르므로 여기엔 데이터를 싣지 않는다.
+    private func internalDragPasteboard() -> NSPasteboard {
+        let pb = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
         pb.declareTypes([DragPayload.pasteboardType], owner: nil)
-        pb.setData(DragPayload.encode(urls), forType: DragPayload.pasteboardType)
+        return pb
     }
 
     private func makeFile(_ name: String) -> URL {
@@ -56,11 +56,11 @@ final class AppFileDropTests: XCTestCase {
     func testInternalDropMovesAllPayloadURLs() {
         let app = AppState(dataDirectory: tempDir)
         let a = makeFile("a.md"), b = makeFile("b.md")
-        // 내부 드래그 — 전체 목록은 드래그 파스테보드로 전달(SwiftUI가 드롭 provider에서
-        // 커스텀 타입을 누락하므로 provider가 아니라 파스테보드를 시드).
-        seedDragPasteboard([a, b])
-        let provider = DragPayload.makeProvider(for: [a, b], primary: a)
-        let accepted = app.handleFileDrop([provider], into: destDir)
+        // 내부 드래그 — 페이로드 채널은 draggingURLs 스냅샷(.onDrag가 시작 시 채운 것).
+        // 파스테보드는 커스텀 타입 '선언'만(데이터 없음 — 실전 0바이트) → 판별 신호로만 쓰인다.
+        let pb = internalDragPasteboard()
+        app.draggingURLs = [a, b]
+        let accepted = app.handleFileDrop([], into: destDir, pasteboard: pb)
         XCTAssertTrue(accepted)
         waitUntil {
             FileManager.default.fileExists(atPath: self.destDir.appendingPathComponent("a.md").path)
@@ -73,7 +73,8 @@ final class AppFileDropTests: XCTestCase {
     func testExternalFileURLProvidersMove() {
         let app = AppState(dataDirectory: tempDir)
         let a = makeFile("ext1.md"), b = makeFile("ext2.md")
-        // Finder발 재현 — 커스텀 타입 없는 순수 fileURL provider 2개.
+        // Finder발 재현 — 커스텀 타입 없는 순수 fileURL provider 2개. setUp이 공유 .drag를 비워
+        // isInternalDrag=false → 외부 수집 경로.
         let providers = [NSItemProvider(object: a as NSURL), NSItemProvider(object: b as NSURL)]
         XCTAssertTrue(app.handleFileDrop(providers, into: destDir))
         waitUntil {
@@ -82,15 +83,37 @@ final class AppFileDropTests: XCTestCase {
         }
     }
 
+    /// 외부 드롭은 draggingURLs 스냅샷을 참조하지 않는다(C1 불변식) — stale이 남아도 무해.
+    @MainActor
+    func testExternalDropIgnoresStaleDraggingURLs() {
+        let app = AppState(dataDirectory: tempDir)
+        let ext = makeFile("ext.md")
+        let stale = makeFile("stale.md")
+        app.draggingURLs = [stale]   // 이전 내부 세션 잔존 가정 — 외부 드롭은 읽지 않아야 함
+        // 외부 세션 파스테보드(커스텀 타입 없음) → isInternalDrag=false.
+        let pb = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
+        pb.declareTypes([.fileURL], owner: nil)
+        let providers = [NSItemProvider(object: ext as NSURL)]
+        XCTAssertTrue(app.handleFileDrop(providers, into: destDir, pasteboard: pb))
+        waitUntil {
+            FileManager.default.fileExists(atPath: self.destDir.appendingPathComponent("ext.md").path)
+        }
+        // stale은 provider에 없으므로 이동되지 않아야 한다.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path),
+                      "stale draggingURLs 미참조 — 외부 드롭에서 이동 안 됨")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: self.destDir.appendingPathComponent("stale.md").path))
+    }
+
     @MainActor
     func testDropGuardFiltersSelfDescendant() {
         let app = AppState(dataDirectory: tempDir)
-        // dest 자신을 dest 하위로 이동 시도 — 2차 방어 필터로 무동작이어야 함.
-        seedDragPasteboard([destDir])
-        let provider = DragPayload.makeProvider(for: [destDir], primary: destDir)
+        // dest 자신을 dest 하위로 이동 시도(내부 드래그) — 2차 방어 필터로 무동작이어야 함.
+        let pb = internalDragPasteboard()
+        app.draggingURLs = [destDir]
         let sub = destDir.appendingPathComponent("sub")
         try? FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
-        XCTAssertTrue(app.handleFileDrop([provider], into: sub))
+        XCTAssertTrue(app.handleFileDrop([], into: sub, pasteboard: pb))
         // 폴링으로 "이동이 일어나지 않음"을 확인(잠깐 대기 후 원위치 확인).
         RunLoop.main.run(until: Date().addingTimeInterval(1.0))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir.path), "자기 하위 드롭은 무동작")
@@ -100,16 +123,14 @@ final class AppFileDropTests: XCTestCase {
         XCTAssertNil(app.errorMessage, "2차 필터가 조용히 걸러 실패 보고가 없어야 함")
     }
 
-    /// collectDropURLs 파스테보드 시임 — 유니크 파스테보드의 내부 페이로드를 전체 회수(직판 경로).
-    func testCollectDropURLsReadsPayloadFromPasteboard() {
+    /// collectDropURLs는 외부(Finder) provider의 fileURL만 수집(내부 드래그는 handleFileDrop이
+    /// draggingURLs로 직접 처리해 이 경로에 오지 않음).
+    func testCollectDropURLsCollectsFromFileURLProviders() {
         let a = makeFile("c1.md"), b = makeFile("c2.md")
-        let pb = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
-        pb.declareTypes([DragPayload.pasteboardType], owner: nil)
-        pb.setData(DragPayload.encode([a, b]), forType: DragPayload.pasteboardType)
+        let providers = [NSItemProvider(object: a as NSURL), NSItemProvider(object: b as NSURL)]
         let exp = expectation(description: "collect")
-        // provider는 비어 있어도 파스테보드에서 전체 목록을 읽어야 한다(SwiftUI 누락 대응).
-        AppState.collectDropURLs([], pasteboard: pb) { urls in
-            XCTAssertEqual(urls, [a, b], "파스테보드 직판으로 전체 페이로드 회수")
+        AppState.collectDropURLs(providers) { urls in
+            XCTAssertEqual(Set(urls), Set([a, b]), "provider fileURL 수집(순서 무관)")
             exp.fulfill()
         }
         wait(for: [exp], timeout: 2)

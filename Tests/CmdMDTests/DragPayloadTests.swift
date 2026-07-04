@@ -41,44 +41,34 @@ final class DragPayloadTests: XCTestCase {
                        "손상 데이터는 빈 배열(크래시 없음)")
     }
 
-    // MARK: - 내부 드래그 판별 (드래그 파스테보드 직판)
-    // 실측: SwiftUI가 드롭 쪽 provider 재구성에서 커스텀 UTType을 누락 → 수신부는 파스테보드를 읽는다.
+    // MARK: - 내부 드래그 판별 (파스테보드 타입 '선언'만 신호로 사용)
+    // 실측(2층): ①SwiftUI가 드롭 쪽 provider 재구성에서 커스텀 UTType을 누락하고, ②드래그
+    // 파스테보드에 실려도 커스텀 타입 데이터 promise는 이행되지 않는다(0바이트). 그래서 판별은
+    // '타입 선언 존재'만 쓰고, 실제 페이로드는 AppState.draggingURLs 스냅샷으로 나른다.
 
     /// 격리용 유니크 파스테보드 — 실드래그 파스테보드를 오염시키지 않고 시드.
-    private func seededPasteboard(customPayload: [URL]? = nil,
-                                  fileURL: URL? = nil,
-                                  garbage: Bool = false) -> NSPasteboard {
+    /// 내부 드래그 재현 = 커스텀 타입 '선언'만(데이터 없음 — 실전 0바이트 반영).
+    private func seededPasteboard(declareCustom: Bool = false,
+                                  fileURL: URL? = nil) -> NSPasteboard {
         let pb = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
         var types: [NSPasteboard.PasteboardType] = []
-        if customPayload != nil || garbage { types.append(DragPayload.pasteboardType) }
+        if declareCustom { types.append(DragPayload.pasteboardType) }
         if fileURL != nil { types.append(.fileURL) }
         pb.declareTypes(types, owner: nil)
-        if garbage {
-            pb.setData(Data([0x00, 0x01]), forType: DragPayload.pasteboardType)
-        } else if let urls = customPayload {
-            pb.setData(DragPayload.encode(urls), forType: DragPayload.pasteboardType)
-        }
         if let u = fileURL { pb.setData(u.dataRepresentation, forType: .fileURL) }
         return pb
     }
 
-    func testIsInternalDragTrueWithCustomTypeOnPasteboard() {
-        let urls = [url("/v/한글 폴더/노트.md"), url("/v/b.pdf")]
-        let pb = seededPasteboard(customPayload: urls)
-        XCTAssertTrue(DragPayload.isInternalDrag(pasteboard: pb), "커스텀 타입 실림 → 내부 드래그")
-        XCTAssertEqual(DragPayload.payload(pasteboard: pb), urls, "전체 페이로드 라운드트립(한글 경로)")
+    func testIsInternalDragTrueWithCustomTypeDeclared() {
+        // 데이터를 얹지 않아도(실전 0바이트) 타입 선언만으로 내부 드래그.
+        let pb = seededPasteboard(declareCustom: true)
+        XCTAssertTrue(DragPayload.isInternalDrag(pasteboard: pb), "커스텀 타입 선언 → 내부 드래그")
     }
 
     func testIsInternalDragFalseWithOnlyFileURL() {
         let pb = seededPasteboard(fileURL: url("/v/a.md"))
         XCTAssertFalse(DragPayload.isInternalDrag(pasteboard: pb),
                        "Finder발(fileURL만) 파스테보드는 내부 드래그 아님")
-        XCTAssertNil(DragPayload.payload(pasteboard: pb), "커스텀 타입 없으면 페이로드 nil")
-    }
-
-    func testPayloadNilOnGarbageData() {
-        let pb = seededPasteboard(garbage: true)
-        XCTAssertNil(DragPayload.payload(pasteboard: pb), "손상 데이터는 nil(크래시 없음)")
     }
 
     func testMakeProviderCarriesFileURLForFinder() {
@@ -88,13 +78,18 @@ final class DragPayloadTests: XCTestCase {
                       "아웃바운드(Finder) 복사용 fileURL 표현 병행 탑재")
     }
 
-    func testProviderPayloadRoundTrip() {
+    /// makeProvider가 커스텀 표현을 여전히 등록함을 확인(로컬 provider 직접 로드 — 데이터 도착).
+    /// ⚠️ 이 데이터는 판별 신호(타입 선언)의 부산물일 뿐, 실전 SwiftUI .onDrag 전사는 이 promise를
+    /// 이행하지 않는다(0바이트) → 페이로드는 draggingURLs로 나른다(AppFileDropTests 참조).
+    func testProviderRegistersCustomRepresentation() {
         let urls = [url("/v/a.md"), url("/v/b.md")]
         let provider = DragPayload.makeProvider(for: urls, primary: urls[0])
+        XCTAssertTrue(provider.hasItemConformingToTypeIdentifier(UTType.cmdDocuDrag.identifier),
+                      "커스텀 타입 표현 등록 — 파스테보드 타입 선언(내부 판별 신호)의 근거")
         let exp = expectation(description: "load custom payload")
         provider.loadDataRepresentation(forTypeIdentifier: UTType.cmdDocuDrag.identifier) { data, error in
             XCTAssertNil(error)
-            XCTAssertEqual(DragPayload.decode(data ?? Data()), urls)
+            XCTAssertEqual(DragPayload.decode(data ?? Data()), urls, "로컬 provider는 데이터 도착")
             exp.fulfill()
         }
         wait(for: [exp], timeout: 2)

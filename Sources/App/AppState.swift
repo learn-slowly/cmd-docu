@@ -2362,43 +2362,51 @@ final class AppState {
     /// 무확인 실행(⌘V 선례 — 드롭 제스처가 곧 확인, 배치 undo 있음). 반환 = 수락 여부.
     /// ⚠️ F1b 붙여넣기(⌘V=복사·⌥⌘V=이동)와 ⌥ 의미가 역방향 — 둘 다 Finder 관례 준수(스펙 §0).
     @discardableResult
-    func handleFileDrop(_ providers: [NSItemProvider], into destination: URL) -> Bool {
+    func handleFileDrop(_ providers: [NSItemProvider], into destination: URL,
+                        pasteboard: NSPasteboard = NSPasteboard(name: .drag)) -> Bool {
         // ⌥는 드롭 콜백 진입 직후 동기로 판독(비동기 수집 후엔 이미 떼었을 수 있음).
         let isCopy = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
+        if DragPayload.isInternalDrag(pasteboard: pasteboard) {
+            // 내부 드래그 — 페이로드는 드래그 시작 스냅샷(draggingURLs)이 유일한 채널.
+            // 실측(2층): ①SwiftUI .onDrag 전사가 드롭 쪽 provider 재구성에서 커스텀 UTType을
+            // 누락하고, ②드래그 파스테보드에 실려도 커스텀 타입 데이터 promise는 이행되지 않는다
+            // (0바이트). 판별은 파스테보드의 타입 '선언'으로 하되, 전체 목록은 앱 내부 상태로 나른다.
+            // 외부 세션은 선언이 없어 이 분기에 못 들어옴 → stale 스냅샷 미참조(C1 불변식 유지).
+            completeFileDrop(draggingURLs, into: destination, isCopy: isCopy)
+            return true
+        }
         Self.collectDropURLs(providers) { [weak self] urls in
-            guard let self else { return }
-            Task { @MainActor in
-                self.draggingURLs = []
-                // 2차 방어 — 뷰 사전 차단(1차)이 못 거른 경로(배경 타깃 등) 대비.
-                let targets = urls.filter { DropGuard.canAccept(source: $0, destination: destination) }
-                guard !targets.isEmpty else { return }
-                if isCopy {
-                    await self.performBatchCopy(urls: targets, to: destination)
-                } else {
-                    let result = await self.performBatchMove(urls: targets, to: destination)
-                    // 전량 same-parent skip → (0,0): 무동작 오인 방지 토스트(이동만 — 복사는
-                    // 같은 폴더도 uniquify 사본 생성이 정상, 스펙 §3).
-                    if result.succeeded == 0 && result.failed == 0 {
-                        self.showToast("이동할 항목 없음 — 이미 이 폴더에 있습니다")
-                    }
-                }
-            }
+            self?.completeFileDrop(urls, into: destination, isCopy: isCopy)
         }
         return true
     }
 
-    /// providers → URL 수집. 내부 드래그는 드래그 파스테보드에서 전체 목록을 직판(SwiftUI가
-    /// 드롭 쪽 provider 재구성에서 커스텀 UTType을 누락하는 실측 한계 대응 — provider에는 전체
-    /// 목록이 오지 않는다), 외부(Finder)는 provider별 fileURL을 전부 모은 뒤 1회 완료(메인 큐).
-    /// pasteboard 인자는 테스트 시임 — 기본은 활성 드래그 세션 파스테보드(드롭 콜백 안이라 보장).
-    static func collectDropURLs(_ providers: [NSItemProvider],
-                                pasteboard: NSPasteboard = NSPasteboard(name: .drag),
-                                completion: @escaping ([URL]) -> Void) {
-        // 내부 드래그 — 파스테보드 직판으로 전체 목록 회수.
-        if let internalURLs = DragPayload.payload(pasteboard: pasteboard) {
-            DispatchQueue.main.async { completion(internalURLs) }
-            return
+    /// 드롭 다운스트림 공유 — 내부(동기 스냅샷)·외부(비동기 수집) 공통: draggingURLs 비우기 →
+    /// 2차 필터(자기/하위 제거) → 배치 1회(이동/⌥복사) → 전량 same-parent skip 시 토스트.
+    private func completeFileDrop(_ urls: [URL], into destination: URL, isCopy: Bool) {
+        Task { @MainActor in
+            self.draggingURLs = []
+            // 2차 방어 — 뷰 사전 차단(1차)이 못 거른 경로(배경 타깃 등) 대비.
+            let targets = urls.filter { DropGuard.canAccept(source: $0, destination: destination) }
+            guard !targets.isEmpty else { return }
+            if isCopy {
+                await self.performBatchCopy(urls: targets, to: destination)
+            } else {
+                let result = await self.performBatchMove(urls: targets, to: destination)
+                // 전량 same-parent skip → (0,0): 무동작 오인 방지 토스트(이동만 — 복사는
+                // 같은 폴더도 uniquify 사본 생성이 정상, 스펙 §3).
+                if result.succeeded == 0 && result.failed == 0 {
+                    self.showToast("이동할 항목 없음 — 이미 이 폴더에 있습니다")
+                }
+            }
         }
+    }
+
+    /// providers → fileURL 수집(외부 Finder 드래그 전용). 내부 드래그는 handleFileDrop이
+    /// draggingURLs 스냅샷으로 직접 처리해 이 경로에 오지 않는다(파스테보드/​provider 어느 쪽도
+    /// 커스텀 페이로드 데이터를 나르지 못하는 실측 — DragPayload.isInternalDrag 주석 참조).
+    static func collectDropURLs(_ providers: [NSItemProvider],
+                                completion: @escaping ([URL]) -> Void) {
         var urls: [URL] = []
         let lock = NSLock()   // loadItem 콜백은 임의 스레드 — append 직렬화
         let group = DispatchGroup()
