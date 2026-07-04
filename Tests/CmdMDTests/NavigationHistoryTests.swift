@@ -80,15 +80,21 @@ final class NavigationHistoryTests: XCTestCase {
 
     // MARK: - prune
 
-    func testPruneRemovesInvalidFromBothStacks() {
+    func testPruneRemovesInvalidFromBothStacksAndKeepsCurrent() {
         var h = NavigationHistory()
         h.record(loc("/root"))
-        h.record(loc("/root/dead"))
+        h.record(loc("/root/deadA"))
+        h.record(loc("/root/mid"))
+        h.record(loc("/root/deadB"))
         h.record(loc("/root/b"))
-        _ = h.goBack(isValid: alwaysValid)   // dead가 forward로
+        // back=[root, deadA, mid, deadB], current=b
+        _ = h.goBack(isValid: alwaysValid)   // deadB→current, forward=[b]
+        _ = h.goBack(isValid: alwaysValid)   // mid→current, forward=[b, deadB]
+        // 이제 back=[root, deadA], forward=[b, deadB] — 양쪽 스택에 dead가 실존
         h.prune { !$0.display.path.contains("dead") }
-        XCTAssertFalse(h.backStack.contains(loc("/root/dead")))
-        XCTAssertFalse(h.forwardStack.contains(loc("/root/dead")))
+        XCTAssertEqual(h.backStack, [loc("/root")], "backStack의 dead 항목이 제거돼야 한다")
+        XCTAssertEqual(h.forwardStack, [loc("/root/b")], "forwardStack의 dead 항목이 제거돼야 한다")
+        XCTAssertEqual(h.current, loc("/root/mid"), "prune은 current를 건드리지 않는다")
     }
 
     // MARK: - cap: backStack 상한 100
