@@ -20,9 +20,7 @@ struct MainEditorView: View {
             TabBarView()
         }
 
-        if let fileURL = appState.currentTabFileURL {
-            SimpleBreadcrumbView(fileURL: fileURL, folderURL: appState.currentFolder)
-        }
+        PathBarView(target: appState.currentTabFileURL, targetIsFile: true)
 
         Group {
             if appState.currentTabKind == .image, let url = appState.currentTabFileURL {
@@ -50,78 +48,6 @@ struct MainEditorView: View {
         if appState.settings.showStatusBar, appState.currentDocument != nil {
             StatusBarView()
         }
-    }
-}
-
-// MARK: - Breadcrumb
-
-struct SimpleBreadcrumbView: View {
-    @Environment(AppState.self) private var appState
-    let fileURL: URL
-    let folderURL: URL?
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                let parts = computePathParts()
-                ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
-                    if index > 0 {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    HStack(spacing: 3) {
-                        Image(systemName: index == parts.count - 1 ? "doc.text" : "folder")
-                            .font(.system(size: 10))
-                        Text(part)
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(index == parts.count - 1 ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-        }
-        .frame(height: 24)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
-        .contextMenu {
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-            }
-            Button("Copy Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(fileURL.path, forType: .string)
-                appState.showToast("Path copied")
-            }
-        }
-    }
-
-    private func computePathParts() -> [String] {
-        var parts: [String] = []
-        var currentURL = fileURL.deletingLastPathComponent()
-
-        if let folderURL = folderURL {
-            while currentURL.path != "/" && currentURL.path.hasPrefix(folderURL.path) {
-                parts.insert(currentURL.lastPathComponent, at: 0)
-                currentURL = currentURL.deletingLastPathComponent()
-            }
-        } else {
-            for _ in 0..<2 {
-                if currentURL.path == "/" { break }
-                parts.insert(currentURL.lastPathComponent, at: 0)
-                currentURL = currentURL.deletingLastPathComponent()
-            }
-        }
-
-        parts.append(fileURL.lastPathComponent)
-        return parts
     }
 }
 

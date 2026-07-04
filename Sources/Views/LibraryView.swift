@@ -39,7 +39,9 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            libraryHeader
+            PathBarView(target: displayFolder, targetIsFile: false,
+                        trailingText: appState.fileSelection.isEmpty
+                            ? nil : "\(appState.fileSelection.count)개 선택됨")
             Divider()
             libraryBody
         }
@@ -48,39 +50,6 @@ struct LibraryView: View {
         // 정렬 변경은 캐시 재정렬만(재열거 없음). 폴더 전환 직후엔 옛 entries에 한 번 적용된 뒤
         // .task(id: folderKey)가 새 폴더를 다시 열거한다(일시적 중복 — 무해).
         .onChange(of: appState.librarySort) { _, _ in applySort() }
-    }
-
-    // MARK: - 헤더
-
-    private var libraryHeader: some View {
-        HStack(spacing: 6) {
-            if appState.canGoUpInLibrary {
-                Button {
-                    appState.goUpInLibrary()
-                } label: {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.borderless)
-                .help("상위 폴더로")
-            }
-
-            Text(displayFolder?.lastPathComponent ?? "라이브러리")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            if !appState.fileSelection.isEmpty {
-                Text("\(appState.fileSelection.count)개 선택됨")
-                    .font(.caption)
-                    .foregroundStyle(Color.cmdsAccent)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     // MARK: - 본문
