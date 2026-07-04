@@ -37,8 +37,14 @@ struct LibraryView: View {
             appState.libraryOrderedURLs = []
             return
         }
-        entries = ParaLens.sorted(LibraryListing.entries(of: folder), under: appState.currentFolder)
-        // ⌘A·⇧범위의 진실원 — 화면에 보이는 항목 순서를 AppState에 반영.
+        entries = LibraryListing.entries(of: folder)
+        applySort()
+    }
+
+    /// 현재 정렬로 entries를 재정렬하고 표시 순서 진실원을 **원자적으로** 동기 갱신한다.
+    /// entries와 libraryOrderedURLs가 어긋나면 ⌘A·⇧범위 선택이 화면과 불일치(스펙 함정 #2).
+    private func applySort() {
+        entries = LibrarySorting.sorted(entries, by: appState.librarySort, under: appState.currentFolder)
         appState.libraryOrderedURLs = entries.map(\.url)
     }
 
@@ -50,6 +56,9 @@ struct LibraryView: View {
         }
         // 폴더가 바뀔 때만 1회 열거 — 매 렌더 동기 FS 호출 제거.
         .task(id: folderKey) { reloadEntries() }
+        // 정렬 변경은 캐시 재정렬만(재열거 없음). 폴더 전환 직후엔 옛 entries에 한 번 적용된 뒤
+        // .task(id: folderKey)가 새 폴더를 다시 열거한다(일시적 중복 — 무해).
+        .onChange(of: appState.librarySort) { _, _ in applySort() }
     }
 
     // MARK: - 헤더

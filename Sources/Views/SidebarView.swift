@@ -165,7 +165,9 @@ struct FileTreeView: View {
                     }
 
                     List {
-                        ForEach(ParaLens.sorted(appState.fileTree, under: appState.currentFolder)) { item in
+                        ForEach(LibrarySorting.sorted(appState.fileTree,
+                                                      by: appState.sortForFolder(appState.currentFolder),
+                                                      under: appState.currentFolder)) { item in
                             FileTreeItemRow(item: item)
                         }
                     }
@@ -407,7 +409,9 @@ struct FileTreeItemRow: View {
                 // 세로 여백 — 자식들은 List 행 밖(부모 행 안 VStack)이라 List의 기본 행 간격을
                 // 못 받는다. 최상위 행과 밀도를 맞추기 위해 행마다 여백을 준다(스모크 피드백).
                 if appState.expandedFolders.contains(item.url) {
-                    ForEach(ParaLens.sorted(item.children, under: appState.currentFolder)) { child in
+                    ForEach(LibrarySorting.sorted(item.children,
+                                                  by: appState.sortForFolder(item.url),
+                                                  under: appState.currentFolder)) { child in
                         FileTreeItemRow(item: child)
                             .padding(.leading, 12)
                             .padding(.vertical, 3)

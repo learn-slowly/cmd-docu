@@ -125,8 +125,8 @@ struct FileTreeItem: Identifiable, Hashable {
     var children: [FileTreeItem]
     /// 이 미디어 파일에 짝꿍 노트(파일명.ext.md)가 있는가 — 목록 배지용(빌드 시 채움).
     var hasCompanionNote: Bool
-    /// 라이브러리 리스트 열용 메타 — 라이브러리 열거(LibraryListing)만 채운다.
-    /// 사이드바 트리 스캔(buildFileTree)은 nil 유지 → 트리 비용 불변.
+    /// 리스트 열·정렬용 메타 — 라이브러리 열거(LibraryListing)와 트리 스캔(buildFileTree) 모두 채운다(F3).
+    /// 폴더의 fileSize는 항상 nil(크기 미계산 — 리스트 표기 "--").
     var fileSize: Int64?
     var modifiedAt: Date?
 

@@ -1418,9 +1418,10 @@ final class AppState {
     static func buildFileTree(at url: URL, expanded: Set<URL>, depth: Int = 0) -> [FileTreeItem] {
         guard depth < 10 else { return [] }
 
+        // F3 정렬용 메타(사용자 결정: 트리도 정렬 적용, 스캔 비용 감수) — 파일 크기·수정일.
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
@@ -1429,19 +1430,24 @@ final class AppState {
         let siblingKeys = CompanionNote.siblingKeys(contents.map { $0.lastPathComponent })
 
         for itemURL in contents.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
-            guard let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]) else { continue }
+            guard let resourceValues = try? itemURL.resourceValues(
+                forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]) else { continue }
             let isDirectory = resourceValues.isDirectory ?? false
+            let modifiedAt = resourceValues.contentModificationDate
 
             if isDirectory {
                 let isExpanded = expanded.contains(itemURL)
                 let children = isExpanded ? buildFileTree(at: itemURL, expanded: expanded, depth: depth + 1) : []
-                items.append(FileTreeItem(url: itemURL, isDirectory: true, isExpanded: isExpanded, children: children))
+                items.append(FileTreeItem(url: itemURL, isDirectory: true, isExpanded: isExpanded,
+                                          children: children, modifiedAt: modifiedAt))
             } else {
                 if isListableInFileTree(itemURL) {
                     // 짝꿍 노트는 목록에서 숨긴다 — 미디어 행이 대표(배지로 존재 표시).
                     if CompanionNote.isCompanionNote(itemURL, siblingKeys: siblingKeys) { continue }
                     let hasNote = CompanionNote.hasCompanionNote(for: itemURL, siblingKeys: siblingKeys)
-                    items.append(FileTreeItem(url: itemURL, isDirectory: false, hasCompanionNote: hasNote))
+                    items.append(FileTreeItem(url: itemURL, isDirectory: false, hasCompanionNote: hasNote,
+                                              fileSize: resourceValues.fileSize.map(Int64.init),
+                                              modifiedAt: modifiedAt))
                 }
             }
         }

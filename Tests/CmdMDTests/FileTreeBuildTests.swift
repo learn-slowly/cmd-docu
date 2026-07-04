@@ -146,4 +146,26 @@ final class FileTreeBuildTests: XCTestCase {
         let items = AppState.buildFileTree(at: ghost, expanded: [])
         XCTAssertTrue(items.isEmpty, "존재하지 않는 폴더는 빈 배열을 반환해야 한다")
     }
+
+    // MARK: - F3: 정렬용 메타 채움 (파일 크기·수정일, 폴더는 수정일만)
+
+    func testBuildFillsFileMetadata() throws {
+        let url = makeFile("meta.md")
+        try Data("hello".utf8).write(to: url)
+
+        let items = AppState.buildFileTree(at: tempDir, expanded: [])
+        let file = items.first { $0.name == "meta.md" }
+        XCTAssertNotNil(file)
+        XCTAssertEqual(file?.fileSize, 5, "파일 크기가 채워져야 한다(F3 정렬용)")
+        XCTAssertNotNil(file?.modifiedAt, "파일 수정일이 채워져야 한다")
+    }
+
+    func testBuildFillsDirectoryModifiedAtOnly() {
+        makeDir("SubFolder")
+
+        let items = AppState.buildFileTree(at: tempDir, expanded: [])
+        let dir = items.first { $0.isDirectory }
+        XCTAssertNotNil(dir?.modifiedAt, "폴더 수정일이 채워져야 한다")
+        XCTAssertNil(dir?.fileSize, "폴더 크기는 미계산(nil) 유지 — 리스트 표기 '--'")
+    }
 }
