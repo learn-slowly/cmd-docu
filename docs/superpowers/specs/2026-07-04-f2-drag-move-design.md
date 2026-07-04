@@ -59,7 +59,7 @@
 
 - 수신 타입: `[커스텀 타입, .fileURL]` — 내부 드래그는 커스텀 우선, Finder발은 fileURL 수집.
 - **하이라이트**: `.onDrop(of:isTargeted:)` 바인딩 → 셀은 액센트 테두리(에디터 이미지 드롭 오버레이 선례·선택 하이라이트와 시각 구분), 트리 행은 행 폭 전체 배경(labelRow 밖 HStack 레벨 — 콘텐츠 폭만 덮는 함정 회피).
-- **사전 차단(수락 거부)**: 대상 폴더가 드래그 집합에 포함되거나 그 하위면 타깃 비활성(standardizedFileURL + '/' 경계 비교 — FileOperations 가드는 2차 방어로 잔존). 판정은 순수 함수 `DropGuard.canAccept(targets:destination:)`(신규, DragPayload와 같은 파일 허용)로 추출해 단위테스트.
+- **사전 차단(하이라이트만)**: 대상 폴더가 드래그 집합에 포함되거나 그 하위면 **하이라이트·스프링로딩만 비활성**하고 드롭 자체는 **소비**한다(최종 리뷰 fix wave — validateDrop=false로 타깃을 비활성하면 무효 내부 드롭이 상위 타깃(트리 루트 등)으로 폴스루해 조용히 루트로 이동하는 I2 결함). 무효 내부 드롭은 handleFileDrop의 2차 필터(standardizedFileURL + '/' 경계)가 조용한 무동작으로 만든다. 판정은 순수 함수 `DropGuard.dropDecision(isInternal:sources:destination:)`(진리표: 외부=수락·하이라이트 / 내부·유효=수락·하이라이트 / 내부·무효=수락·하이라이트 없음)로 추출해 단위테스트. 내부/외부 판별은 세션 아이템 타입(`.cmdDocuDrag` 유무)으로 — 외부 세션은 `draggingURLs` 스냅샷을 참조하지 않아 stale 오염(C1)을 원천 차단.
 - **실행**: provider들에서 URL 전부 수집(loadItem 콜백은 비메인 — 수집 완료 후 `Task { @MainActor in ... }`) → ⌥ 판독(`NSEvent.modifierFlags` 교집합) → `performBatchCopy`(⌥) 또는 `performBatchMove`(기본) **1회 호출**(건별 호출 금지 — batchId 분해로 "모두 되돌리기"가 쪼개짐). 무확인, 결과 토스트(기존 부분 실패 요약 재사용). **이동에서 전량 same-parent skip으로 (0,0)이면 "이동할 항목 없음" 토스트**(무동작 오인 방지 — 복사는 같은 폴더여도 uniquify 사본 생성이 정상 동작이라 해당 없음).
 - Finder→앱 인바운드도 같은 경로(이동 기본·⌥ 복사). 외부 원본의 undo 역이동 노출은 기존 ⌘V와 동일(신규 위험 없음).
 

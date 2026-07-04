@@ -81,4 +81,17 @@ enum DropGuard {
         if sources.isEmpty { return true }
         return sources.contains { canAccept(source: $0, destination: destination) }
     }
+
+    /// 드롭 델리게이트 결정 — 타입 게이트 통과 후 (수락·하이라이트) 진리표(최종 리뷰 fix wave).
+    /// 수락은 언제나 true다: 유효 드롭은 수행하고, **무효 내부 드롭도 소비**해 상위 타깃(트리
+    /// 루트 등)으로 폴스루하지 않게 한다(폴스루 시 항목이 조용히 루트로 이동 — I2). 소비된
+    /// 무효 드롭은 handleFileDrop의 2차 필터가 조용한 무동작으로 만든다.
+    /// - external(isInternal=false): 소스 미상 → 수락·하이라이트(draggingURLs 미참조 — C1 차단).
+    /// - internal + 유효: 수락·하이라이트.
+    /// - internal + 무효(자기/하위): 수락(소비)·하이라이트 없음(스프링로딩도 없음).
+    static func dropDecision(isInternal: Bool, sources: [URL],
+                             destination: URL) -> (accept: Bool, highlight: Bool) {
+        guard isInternal else { return (accept: true, highlight: true) }
+        return (accept: true, highlight: canAcceptAny(sources: sources, destination: destination))
+    }
 }

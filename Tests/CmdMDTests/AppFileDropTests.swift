@@ -78,6 +78,10 @@ final class AppFileDropTests: XCTestCase {
         // 폴링으로 "이동이 일어나지 않음"을 확인(잠깐 대기 후 원위치 확인).
         RunLoop.main.run(until: Date().addingTimeInterval(1.0))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir.path), "자기 하위 드롭은 무동작")
+        // 2차 필터의 진짜 가치 = 실패 보고 없는 "조용한" 무동작. 필터를 지우면 performBatchMove가
+        // FileOperations.move(자기 하위)로 throw → reportBatchFailures가 errorMessage를 채운다.
+        // errorMessage가 nil로 남아야 필터가 살아있음을 증명한다(FileOperations 독립 거부와 구분).
+        XCTAssertNil(app.errorMessage, "2차 필터가 조용히 걸러 실패 보고가 없어야 함")
     }
 
     // MARK: - expandFolder 멱등(스프링로딩용)

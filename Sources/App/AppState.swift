@@ -185,9 +185,11 @@ final class AppState {
     var renameRequest: RenameRequest? = nil
     /// 정보 보기 시트 요청(.sheet(item:)).
     var fileInfoRequest: FileInfoRequest? = nil
-    /// F2: 진행 중인 내부 드래그의 페이로드(드래그 시작 시 스냅샷) — 드롭 타깃의
-    /// hover 사전 차단(DropGuard.canAcceptAny)이 읽는다. 드래그 취소 시 잔존값은
-    /// 무해(활성 드래그 세션 밖에선 아무도 읽지 않음) — 다음 드래그가 덮어쓴다.
+    /// F2: 진행 중인 내부 드래그의 페이로드(드래그 시작 시 스냅샷) — 드롭 타깃의 hover
+    /// 하이라이트 게이팅(DropGuard.dropDecision)이 **내부 세션에서만** 읽는다. 불변식:
+    /// 외부(Finder) 세션은 세션 타입으로 판별해 이 스냅샷을 절대 참조하지 않고(stale이어도
+    /// 무해 — C1 수정), 내부 세션은 .onDrag가 매번 새로 채운다. 소비 경로(handleFileDrop·창
+    /// 레벨·에디터 가드)가 각기 비우므로 잔존값은 사실상 무해(inert).
     var draggingURLs: [URL] = []
 
     // Claude 인증 상태(설정 화면)

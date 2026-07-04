@@ -355,7 +355,12 @@ struct CmdMDApp: App {
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         // F2: 내부 이동 드래그는 소비만 하고 열지 않는다(빗나간 드롭=조용한 무동작 — 스펙 §4).
         // false로 폴스루시키지 않고 true로 소비해 "열기" 오동작을 차단한다.
-        if DragPayload.isInternalDrag(providers) { return true }
+        // 창 레벨에서 소비된 내부 드래그는 handleFileDrop을 안 타므로 여기서 스냅샷을 비운다
+        // (stale 잔존이 이후 외부 드롭 검증을 오염시키지 않게 — C1 방어).
+        if DragPayload.isInternalDrag(providers) {
+            appState.draggingURLs = []
+            return true
+        }
 
         // 외부(Finder) 드롭 = 열기. 기존 "첫 provider만" 결함을 전부 열기로 정정(스펙 §4 동반 수정).
         let fileProviders = providers.filter {

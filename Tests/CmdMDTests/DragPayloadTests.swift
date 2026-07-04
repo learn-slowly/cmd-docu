@@ -105,4 +105,31 @@ final class DropGuardTests: XCTestCase {
         XCTAssertFalse(DropGuard.canAcceptAny(sources: [url("/v/dir")], destination: url("/v/dir/sub")),
                        "전부 거부 대상이면 타깃 비활성(사전 차단)")
     }
+
+    // MARK: - dropDecision 진리표 (최종 리뷰 fix wave — C1·I2)
+
+    /// 외부(Finder) 세션 — 소스를 모름 → 항상 수락·하이라이트(draggingURLs 미참조로 C1 차단).
+    func testDropDecisionExternalAlwaysAcceptsAndHighlights() {
+        // draggingURLs가 stale로 남아있어도(외부 세션은 이를 읽지 않음) 결과 불변.
+        let d = DropGuard.dropDecision(isInternal: false,
+                                       sources: [url("/stale/X")], destination: url("/stale/X"))
+        XCTAssertTrue(d.accept, "외부 세션은 항상 수락(2차 필터에 위임)")
+        XCTAssertTrue(d.highlight, "외부 세션은 소스 미상 → 하이라이트")
+    }
+
+    /// 내부 세션 + 유효 대상 — 수락·하이라이트.
+    func testDropDecisionInternalValidAcceptsAndHighlights() {
+        let d = DropGuard.dropDecision(isInternal: true,
+                                       sources: [url("/v/a.md")], destination: url("/v/dir"))
+        XCTAssertTrue(d.accept)
+        XCTAssertTrue(d.highlight, "내부·유효 대상은 하이라이트")
+    }
+
+    /// 내부 세션 + 무효 대상(자기/하위) — 수락(소비→2차 no-op)하되 하이라이트·스프링로딩 없음(I2).
+    func testDropDecisionInternalInvalidConsumesWithoutHighlight() {
+        let d = DropGuard.dropDecision(isInternal: true,
+                                       sources: [url("/v/dir")], destination: url("/v/dir/sub"))
+        XCTAssertTrue(d.accept, "무효 내부 드롭도 소비 — 상위 타깃(루트)으로 폴스루 금지")
+        XCTAssertFalse(d.highlight, "무효 내부 대상은 하이라이트·스프링로딩 안 됨")
+    }
 }
