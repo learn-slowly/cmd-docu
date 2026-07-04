@@ -300,6 +300,36 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "뒤로 (폴더 히스토리)",
+                subtitle: "이전에 보던 폴더로",
+                icon: "chevron.left",
+                shortcut: appState.keyBinding(for: .navigateBack).displayString,
+                keywords: ["뒤로", "back", "history", "히스토리", "폴더", "이전"]
+            ) {
+                appState.goBackInHistory()
+            },
+
+            Command(
+                title: "앞으로 (폴더 히스토리)",
+                subtitle: "다음 폴더로",
+                icon: "chevron.right",
+                shortcut: appState.keyBinding(for: .navigateForward).displayString,
+                keywords: ["앞으로", "forward", "history", "히스토리", "폴더", "다음"]
+            ) {
+                appState.goForwardInHistory()
+            },
+
+            Command(
+                title: "상위 폴더",
+                subtitle: "라이브러리 표시 폴더의 상위로",
+                icon: "chevron.up",
+                shortcut: appState.keyBinding(for: .navigateUp).displayString,
+                keywords: ["상위", "up", "enclosing", "parent", "폴더"]
+            ) {
+                appState.goUpInLibrary()
+            },
+
+            Command(
                 title: "파일 작업 기록",
                 subtitle: "휴지통·이름 변경 기록을 보고 되돌리기",
                 icon: "clock.arrow.circlepath",

@@ -91,6 +91,9 @@ enum AppShortcut: String, CaseIterable, Identifiable {
     case toggleLibraryMode
     case folderCleanup
     case fileInfo
+    case navigateBack
+    case navigateForward
+    case navigateUp
 
     var id: String { rawValue }
 
@@ -119,6 +122,9 @@ enum AppShortcut: String, CaseIterable, Identifiable {
         case .toggleLibraryMode: return "Toggle Reader/Library"
         case .folderCleanup:     return "Folder Cleanup (폴더 정리)"
         case .fileInfo:          return "File Info (정보 보기)"
+        case .navigateBack:    return "Back (폴더 뒤로)"
+        case .navigateForward: return "Forward (폴더 앞으로)"
+        case .navigateUp:      return "Enclosing Folder (상위 폴더)"
         }
     }
 
@@ -147,6 +153,9 @@ enum AppShortcut: String, CaseIterable, Identifiable {
         case .toggleLibraryMode: return KeyBinding(key: "l", command: true, shift: true)
         case .folderCleanup:     return KeyBinding(key: "k", command: true, option: true)
         case .fileInfo:          return KeyBinding(key: "i", command: true, option: true)  // ⌥⌘I
+        case .navigateBack:    return KeyBinding(key: "[", command: true)
+        case .navigateForward: return KeyBinding(key: "]", command: true)
+        case .navigateUp:      return KeyBinding(key: "ArrowUp", command: true)
         }
     }
 }

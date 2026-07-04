@@ -26,4 +26,14 @@ final class ShortcutDefaultsTests: XCTestCase {
         XCTAssertEqual(Set(bindings).count, bindings.count,
                        "AppShortcut 기본 바인딩이 서로 겹칩니다")
     }
+
+    func testF3NavigationShortcutDefaults() {
+        // ⌘[/⌘]는 미점유 확인(⇧⌘[/]=탭 전환과 Shift로 구분), ⌘↑는 라이브러리 모드 한정.
+        XCTAssertEqual(AppShortcut.navigateBack.defaultBinding,
+                       KeyBinding(key: "[", command: true))
+        XCTAssertEqual(AppShortcut.navigateForward.defaultBinding,
+                       KeyBinding(key: "]", command: true))
+        XCTAssertEqual(AppShortcut.navigateUp.defaultBinding,
+                       KeyBinding(key: "ArrowUp", command: true))
+    }
 }

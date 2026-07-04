@@ -133,6 +133,28 @@ struct CmdMDApp: App {
 
                 Divider()
 
+                Button("뒤로") {
+                    appState.goBackInHistory()
+                }
+                .appShortcut(appState.keyBinding(for: .navigateBack))
+                .disabled(!appState.navHistory.canGoBack)
+
+                Button("앞으로") {
+                    appState.goForwardInHistory()
+                }
+                .appShortcut(appState.keyBinding(for: .navigateForward))
+                .disabled(!appState.navHistory.canGoForward)
+
+                Button("상위 폴더") {
+                    appState.goUpInLibrary()
+                }
+                .appShortcut(appState.keyBinding(for: .navigateUp))
+                // 라이브러리 모드 한정 — 리더에선 비활성이라 ⌘↑가 NSTextView(문서 처음 이동)로
+                // 정상 전달된다(스펙 §6). 액션 내 가드와 이중 방어.
+                .disabled(appState.mainMode != .library || !appState.canGoUpInLibrary)
+
+                Divider()
+
                 Button("Toggle Sidebar") {
                     withAnimation {
                         appState.sidebarVisible.toggle()
