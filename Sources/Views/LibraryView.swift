@@ -94,15 +94,25 @@ struct LibraryView: View {
             LazyVGrid(columns: columns, spacing: 16) {
                 // url 기준 동일성으로 안정화 — 재열거 시 UUID가 새로 생겨도 셀 재생성·애니메이션 파괴 방지.
                 ForEach(entries, id: \.url) { item in
-                    LibraryGridCell(item: item, isSelected: appState.fileSelection.contains(item.url))
-                        .onTapGesture(count: 2) { handleDoubleClick(item: item) }
-                        .onTapGesture { handleClick(item: item) }
-                        .contextMenu { LibraryCellContextMenu(item: item) }
+                    LibraryDraggableCell(item: item, isGrid: true) {
+                        LibraryGridCell(item: item,
+                                        isSelected: appState.fileSelection.contains(item.url))
+                    }
+                    .onTapGesture(count: 2) { handleDoubleClick(item: item) }
+                    .onTapGesture { handleClick(item: item) }
+                    .contextMenu { LibraryCellContextMenu(item: item) }
                 }
             }
             .padding(16)
         }
         .onTapGesture { appState.clearFileSelection() }
+        // 배경 드롭 = 표시 중 폴더로(스펙 §3). 셀 타깃이 안쪽이라 우선하고, 빗나간 드롭을 받는다.
+        // 배경은 하이라이트 없음(표면이 넓어 시각 소음 — 셀·행만 하이라이트).
+        // "/" 폴백은 도달 불가 — displayFolder nil이면 libraryBody가 placeholder를 렌더해
+        // gridView/listView 자체가 계층에 없다(:59-78). 컴파일용 방어값.
+        .onDrop(of: FileDropDelegate.acceptedTypes,
+                delegate: FileDropDelegate(destination: displayFolder ?? URL(fileURLWithPath: "/"),
+                                           appState: appState))
     }
 
     // MARK: - 리스트 열 헤더 (F3 — 클릭 정렬)
@@ -147,15 +157,25 @@ struct LibraryView: View {
         List {
             // url 기준 동일성으로 안정화 — 재열거 시 UUID가 새로 생겨도 행 재생성·애니메이션 파괴 방지.
             ForEach(entries, id: \.url) { item in
-                LibraryListCell(item: item, isSelected: appState.fileSelection.contains(item.url))
-                    .onTapGesture(count: 2) { handleDoubleClick(item: item) }
-                    .onTapGesture { handleClick(item: item) }
-                    .contextMenu { LibraryCellContextMenu(item: item) }
-                    .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                LibraryDraggableCell(item: item, isGrid: false) {
+                    LibraryListCell(item: item,
+                                    isSelected: appState.fileSelection.contains(item.url))
+                }
+                .onTapGesture(count: 2) { handleDoubleClick(item: item) }
+                .onTapGesture { handleClick(item: item) }
+                .contextMenu { LibraryCellContextMenu(item: item) }
+                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
             }
         }
         .listStyle(.plain)
         .onTapGesture { appState.clearFileSelection() }
+        // 배경 드롭 = 표시 중 폴더로(스펙 §3). 셀 타깃이 안쪽이라 우선하고, 빗나간 드롭을 받는다.
+        // 배경은 하이라이트 없음(표면이 넓어 시각 소음 — 셀·행만 하이라이트).
+        // "/" 폴백은 도달 불가 — displayFolder nil이면 libraryBody가 placeholder를 렌더해
+        // gridView/listView 자체가 계층에 없다(:59-78). 컴파일용 방어값.
+        .onDrop(of: FileDropDelegate.acceptedTypes,
+                delegate: FileDropDelegate(destination: displayFolder ?? URL(fileURLWithPath: "/"),
+                                           appState: appState))
     }
 
     // MARK: - 클릭 처리 (F1b — Finder식: 클릭=선택, 더블클릭=열기/드릴인)
@@ -334,6 +354,42 @@ struct LibraryListCell: View {
             return .cmdsAccent
         }
         return .secondary
+    }
+}
+
+// MARK: - 드래그 소스+폴더 드롭 타깃 래퍼 (F2)
+
+/// 셀에 드래그 소스(.onDrag)와, 폴더 셀이면 드롭 타깃을 얹는 래퍼.
+/// 탭 제스처는 호출부(ForEach 체인)에 그대로 남아 F1b 클릭 시맨틱 불변(스펙 §2.1).
+struct LibraryDraggableCell<Content: View>: View {
+    @Environment(AppState.self) private var appState
+    let item: FileTreeItem
+    let isGrid: Bool
+    @ViewBuilder let content: Content
+
+    @State private var isDropTargeted = false
+
+    var body: some View {
+        let base = content
+            .onDrag {
+                // 드래그 시작 — 선택 불변, 페이로드는 규칙(선택 포함=전체/미포함=단일)으로.
+                let urls = DragPayload.urls(for: item.url, selection: appState.fileSelection)
+                appState.draggingURLs = urls
+                return DragPayload.makeProvider(for: urls, primary: item.url)
+            }
+        if item.isDirectory {
+            base
+                .overlay(
+                    RoundedRectangle(cornerRadius: isGrid ? 6 : 4)
+                        .strokeBorder(isDropTargeted ? Color.cmdsAccent : Color.clear,
+                                      lineWidth: 2)
+                )
+                .onDrop(of: FileDropDelegate.acceptedTypes,
+                        delegate: FileDropDelegate(destination: item.url, appState: appState,
+                                                   onHoverChange: { isDropTargeted = $0 }))
+        } else {
+            base
+        }
     }
 }
 
