@@ -167,11 +167,16 @@ struct FileTreeView: View {
                     List {
                         ForEach(LibrarySorting.sorted(appState.fileTree,
                                                       by: appState.sortForFolder(appState.currentFolder),
-                                                      under: appState.currentFolder)) { item in
+                                                      under: appState.currentFolder), id: \.url) { item in
                             FileTreeItemRow(item: item)
                         }
                     }
                     .listStyle(.sidebar)
+                    .onDrop(of: FileDropDelegate.acceptedTypes,
+                            delegate: FileDropDelegate(
+                                destination: appState.currentFolder ?? URL(fileURLWithPath: "/"),
+                                appState: appState))
+                    // currentFolder nil이면 트리 자체가 비어 이 경로는 도달 불가("/" 폴백은 방어용).
                 }
             }
         }
@@ -362,6 +367,10 @@ struct FileTreeItemRow: View {
         ParaLens.classify(item.url, under: appState.currentFolder)
     }
 
+    /// F2: 드롭 오버 하이라이트(폴더 행 전용) + 스프링로딩 타이머.
+    @State private var isDropTargeted = false
+    @State private var springLoadTask: Task<Void, Never>?
+
     var body: some View {
         rowContent
     }
@@ -404,6 +413,16 @@ struct FileTreeItemRow: View {
                 .contextMenu {
                     FileTreeContextMenu(item: item)
                 }
+                .background(isDropTargeted ? Color.cmdsAccent.opacity(0.18) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 4))   // 행 폭 전체 하이라이트(스펙 §3)
+                .onDrag {
+                    let urls = DragPayload.urls(for: item.url, selection: appState.fileSelection)
+                    appState.draggingURLs = urls
+                    return DragPayload.makeProvider(for: urls, primary: item.url)
+                }
+                .onDrop(of: FileDropDelegate.acceptedTypes,
+                        delegate: FileDropDelegate(destination: item.url, appState: appState,
+                                                   onHoverChange: handleDropHover))
 
                 // 자식: 펼쳐진 경우만 표시, 들여쓰기 12pt.
                 // 세로 여백 — 자식들은 List 행 밖(부모 행 안 VStack)이라 List의 기본 행 간격을
@@ -411,7 +430,7 @@ struct FileTreeItemRow: View {
                 if appState.expandedFolders.contains(item.url) {
                     ForEach(LibrarySorting.sorted(item.children,
                                                   by: appState.sortForFolder(item.url),
-                                                  under: appState.currentFolder)) { child in
+                                                  under: appState.currentFolder), id: \.url) { child in
                         FileTreeItemRow(item: child)
                             .padding(.leading, 12)
                             .padding(.vertical, 3)
@@ -433,6 +452,11 @@ struct FileTreeItemRow: View {
                 }
                 .contextMenu {
                     FileTreeContextMenu(item: item)
+                }
+                .onDrag {
+                    let urls = DragPayload.urls(for: item.url, selection: appState.fileSelection)
+                    appState.draggingURLs = urls
+                    return DragPayload.makeProvider(for: urls, primary: item.url)
                 }
         }
     }
@@ -459,6 +483,21 @@ struct FileTreeItemRow: View {
         .background(appState.fileSelection.contains(item.url)
                     ? Color.cmdsAccent.opacity(0.18) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    /// 드롭 오버 진입/이탈 — 하이라이트 + 스프링로딩(~0.8초 유지 시 1회 펼침, 스펙 §5).
+    /// 이탈·드롭 시 타이머 취소. 이미 펼쳐진 폴더는 무동작(expandFolder 멱등이 2차 방어).
+    private func handleDropHover(_ hovering: Bool) {
+        isDropTargeted = hovering
+        springLoadTask?.cancel()
+        springLoadTask = nil
+        guard hovering, item.isDirectory,
+              !appState.expandedFolders.contains(item.url) else { return }
+        springLoadTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            appState.expandFolder(item.url)
+        }
     }
 
     /// PARA 분류에 따라 스타일을 적용한 Label을 반환한다.
