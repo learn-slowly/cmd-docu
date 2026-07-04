@@ -253,6 +253,8 @@ struct EditorPane: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        // F2: 내부 이동 드래그가 에디터 위에 떨어지면 이미지 삽입으로 새지 않게 소비만(스펙 §4).
+        if DragPayload.isInternalDrag(providers) { return true }
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier("public.image") {
                 provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in

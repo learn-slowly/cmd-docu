@@ -353,20 +353,27 @@ struct CmdMDApp: App {
     }
     
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier("public.file-url") {
-                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
-                    if let data = item as? Data,
-                       let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        DispatchQueue.main.async {
-                            appState.openDocument(at: url)
-                        }
+        // F2: 내부 이동 드래그는 소비만 하고 열지 않는다(빗나간 드롭=조용한 무동작 — 스펙 §4).
+        // false로 폴스루시키지 않고 true로 소비해 "열기" 오동작을 차단한다.
+        if DragPayload.isInternalDrag(providers) { return true }
+
+        // 외부(Finder) 드롭 = 열기. 기존 "첫 provider만" 결함을 전부 열기로 정정(스펙 §4 동반 수정).
+        let fileProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier("public.file-url")
+        }
+        guard !fileProviders.isEmpty else { return false }
+        let openInNewTab = fileProviders.count > 1   // 단일 드롭은 기존 동작 유지
+        for provider in fileProviders {
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+                if let data = item as? Data,
+                   let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    DispatchQueue.main.async {
+                        appState.openDocument(at: url, inNewTab: openInNewTab)
                     }
                 }
-                return true
             }
         }
-        return false
+        return true
     }
 }
 
