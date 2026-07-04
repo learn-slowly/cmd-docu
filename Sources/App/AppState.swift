@@ -2387,17 +2387,16 @@ final class AppState {
         return true
     }
 
-    /// providers → URL 수집. 내부 드래그는 커스텀 타입 1개에 전체 목록,
-    /// 외부(Finder)는 provider별 fileURL을 전부 모은 뒤 1회 완료(메인 큐).
+    /// providers → URL 수집. 내부 드래그는 드래그 파스테보드에서 전체 목록을 직판(SwiftUI가
+    /// 드롭 쪽 provider 재구성에서 커스텀 UTType을 누락하는 실측 한계 대응 — provider에는 전체
+    /// 목록이 오지 않는다), 외부(Finder)는 provider별 fileURL을 전부 모은 뒤 1회 완료(메인 큐).
+    /// pasteboard 인자는 테스트 시임 — 기본은 활성 드래그 세션 파스테보드(드롭 콜백 안이라 보장).
     static func collectDropURLs(_ providers: [NSItemProvider],
+                                pasteboard: NSPasteboard = NSPasteboard(name: .drag),
                                 completion: @escaping ([URL]) -> Void) {
-        if let internalProvider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.cmdDocuDrag.identifier) }) {
-            internalProvider.loadDataRepresentation(
-                forTypeIdentifier: UTType.cmdDocuDrag.identifier) { data, _ in
-                let urls = data.map(DragPayload.decode) ?? []
-                DispatchQueue.main.async { completion(urls) }
-            }
+        // 내부 드래그 — 파스테보드 직판으로 전체 목록 회수.
+        if let internalURLs = DragPayload.payload(pasteboard: pasteboard) {
+            DispatchQueue.main.async { completion(internalURLs) }
             return
         }
         var urls: [URL] = []

@@ -16,13 +16,25 @@ final class AppFileDropTests: XCTestCase {
         root = TempDataDirectory.make()
         destDir = root.appendingPathComponent("dest")
         try? FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        // 공유 드래그 파스테보드 초기화 — 이전 테스트의 내부 페이로드 잔존이 외부 드롭 테스트를
+        // 오염시키지 않게(collectDropURLs가 이 파스테보드를 직판).
+        NSPasteboard(name: .drag).clearContents()
     }
 
     override func tearDown() {
+        NSPasteboard(name: .drag).clearContents()
         TempDataDirectory.cleanup(tempDir)
         TempDataDirectory.cleanup(root)
         tempDir = nil; root = nil; destDir = nil
         super.tearDown()
+    }
+
+    /// 드래그 파스테보드에 내부 페이로드 시드 — 실드래그의 파스테보드 직판을 재현.
+    private func seedDragPasteboard(_ urls: [URL]) {
+        let pb = NSPasteboard(name: .drag)
+        pb.clearContents()
+        pb.declareTypes([DragPayload.pasteboardType], owner: nil)
+        pb.setData(DragPayload.encode(urls), forType: DragPayload.pasteboardType)
     }
 
     private func makeFile(_ name: String) -> URL {
@@ -44,6 +56,9 @@ final class AppFileDropTests: XCTestCase {
     func testInternalDropMovesAllPayloadURLs() {
         let app = AppState(dataDirectory: tempDir)
         let a = makeFile("a.md"), b = makeFile("b.md")
+        // 내부 드래그 — 전체 목록은 드래그 파스테보드로 전달(SwiftUI가 드롭 provider에서
+        // 커스텀 타입을 누락하므로 provider가 아니라 파스테보드를 시드).
+        seedDragPasteboard([a, b])
         let provider = DragPayload.makeProvider(for: [a, b], primary: a)
         let accepted = app.handleFileDrop([provider], into: destDir)
         XCTAssertTrue(accepted)
@@ -71,6 +86,7 @@ final class AppFileDropTests: XCTestCase {
     func testDropGuardFiltersSelfDescendant() {
         let app = AppState(dataDirectory: tempDir)
         // dest 자신을 dest 하위로 이동 시도 — 2차 방어 필터로 무동작이어야 함.
+        seedDragPasteboard([destDir])
         let provider = DragPayload.makeProvider(for: [destDir], primary: destDir)
         let sub = destDir.appendingPathComponent("sub")
         try? FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
@@ -82,6 +98,21 @@ final class AppFileDropTests: XCTestCase {
         // FileOperations.move(자기 하위)로 throw → reportBatchFailures가 errorMessage를 채운다.
         // errorMessage가 nil로 남아야 필터가 살아있음을 증명한다(FileOperations 독립 거부와 구분).
         XCTAssertNil(app.errorMessage, "2차 필터가 조용히 걸러 실패 보고가 없어야 함")
+    }
+
+    /// collectDropURLs 파스테보드 시임 — 유니크 파스테보드의 내부 페이로드를 전체 회수(직판 경로).
+    func testCollectDropURLsReadsPayloadFromPasteboard() {
+        let a = makeFile("c1.md"), b = makeFile("c2.md")
+        let pb = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
+        pb.declareTypes([DragPayload.pasteboardType], owner: nil)
+        pb.setData(DragPayload.encode([a, b]), forType: DragPayload.pasteboardType)
+        let exp = expectation(description: "collect")
+        // provider는 비어 있어도 파스테보드에서 전체 목록을 읽어야 한다(SwiftUI 누락 대응).
+        AppState.collectDropURLs([], pasteboard: pb) { urls in
+            XCTAssertEqual(urls, [a, b], "파스테보드 직판으로 전체 페이로드 회수")
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 2)
     }
 
     // MARK: - expandFolder 멱등(스프링로딩용)

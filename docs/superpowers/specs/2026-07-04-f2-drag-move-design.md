@@ -45,7 +45,8 @@
     1개 한계로 **아웃바운드 다중 드래그는 드래그한 항목 1개만 전달**된다(구현 확정 — 다중
     내보내기는 기존 ⌘C→Finder ⌘V, 완전한 다중 아웃바운드는 후속 B안/NSFilePromiseProvider).
   - 앱 전용 식별 타입 `work.cmdspace.cmddocu.drag`(exported UTType) — **URL 목록 전체를 한 provider에 직렬화**(plist/JSON 배열). 내부 타깃은 이걸 우선 읽어 배치 전체를 원자적으로 수신, 창 레벨 핸들러는 이 타입의 존재로 내부 드래그를 판별해 무시.
-- `DragPayload` 책임: 페이로드 결정 규칙(§2.1)·직렬화/역직렬화·`isInternalDrag(providers:)` 판별 — 전부 순수, 단위테스트 대상.
+- `DragPayload` 책임: 페이로드 결정 규칙(§2.1)·직렬화/역직렬화·`isInternalDrag(pasteboard:)`/`payload(pasteboard:)` 판별 — 전부 순수, 단위테스트 대상.
+- **실측 정정(구현 후 확정)**: SwiftUI 드롭 쪽 provider 재구성은 **미등록 커스텀 UTType 표현을 누락**한다 — `.onDrag`가 커스텀 타입을 드래그 파스테보드에 온전히 실어도(`NSPasteboard(name: .drag).types`에 존재, .ownProcess 포함), 드롭 콜백이 받는 provider의 `registeredTypeIdentifiers`엔 `public.file-url`만 남는다. 결과: provider 기반 `isInternalDrag`가 실드래그에서 늘 false → 다중 페이로드 소실·폴스루 가드 무력화·델리게이트 내부판별 실패(전부 실측 재현). **대응: 수신부(수집·창/에디터 폴스루 가드·델리게이트 내부판별)는 provider가 아니라 `NSPasteboard(name: .drag)`를 직접 읽는다**(드래그/드롭 콜백 안에서만 호출 — 활성 세션 파스테보드 보장). Finder발 외부 드래그는 그 파스테보드가 Finder 것이라 커스텀 타입이 없어 외부 판별 정확성 유지.
 - 아웃바운드(앱→Finder): fileURL 표현을 Finder가 받아 **복사** 실행(앱은 로그하지 않음 — ⌘C 선례와 동형, 결정 1). 이동 시맨틱(NSFilePromiseProvider 등)은 범위 밖.
 
 ## 3. 드롭 타깃 4곳
@@ -59,13 +60,13 @@
 
 - 수신 타입: `[커스텀 타입, .fileURL]` — 내부 드래그는 커스텀 우선, Finder발은 fileURL 수집.
 - **하이라이트**: `.onDrop(of:isTargeted:)` 바인딩 → 셀은 액센트 테두리(에디터 이미지 드롭 오버레이 선례·선택 하이라이트와 시각 구분), 트리 행은 행 폭 전체 배경(labelRow 밖 HStack 레벨 — 콘텐츠 폭만 덮는 함정 회피).
-- **사전 차단(하이라이트만)**: 대상 폴더가 드래그 집합에 포함되거나 그 하위면 **하이라이트·스프링로딩만 비활성**하고 드롭 자체는 **소비**한다(최종 리뷰 fix wave — validateDrop=false로 타깃을 비활성하면 무효 내부 드롭이 상위 타깃(트리 루트 등)으로 폴스루해 조용히 루트로 이동하는 I2 결함). 무효 내부 드롭은 handleFileDrop의 2차 필터(standardizedFileURL + '/' 경계)가 조용한 무동작으로 만든다. 판정은 순수 함수 `DropGuard.dropDecision(isInternal:sources:destination:)`(진리표: 외부=수락·하이라이트 / 내부·유효=수락·하이라이트 / 내부·무효=수락·하이라이트 없음)로 추출해 단위테스트. 내부/외부 판별은 세션 아이템 타입(`.cmdDocuDrag` 유무)으로 — 외부 세션은 `draggingURLs` 스냅샷을 참조하지 않아 stale 오염(C1)을 원천 차단.
+- **사전 차단(하이라이트만)**: 대상 폴더가 드래그 집합에 포함되거나 그 하위면 **하이라이트·스프링로딩만 비활성**하고 드롭 자체는 **소비**한다(최종 리뷰 fix wave — validateDrop=false로 타깃을 비활성하면 무효 내부 드롭이 상위 타깃(트리 루트 등)으로 폴스루해 조용히 루트로 이동하는 I2 결함). 무효 내부 드롭은 handleFileDrop의 2차 필터(standardizedFileURL + '/' 경계)가 조용한 무동작으로 만든다. 판정은 순수 함수 `DropGuard.dropDecision(isInternal:sources:destination:)`(진리표: 외부=수락·하이라이트 / 내부·유효=수락·하이라이트 / 내부·무효=수락·하이라이트 없음)로 추출해 단위테스트. 내부/외부 판별은 **드래그 파스테보드**(`NSPasteboard(name: .drag)`)의 `.cmdDocuDrag` 유무로 — SwiftUI가 드롭 provider에서 커스텀 타입을 누락(위 §2 실측)해 `info.hasItemsConforming`은 신뢰 불가이므로 파스테보드를 직판한다. 외부 세션은 커스텀 타입 부재로 false이고 `draggingURLs` 스냅샷도 참조하지 않아 stale 오염(C1)을 원천 차단.
 - **실행**: provider들에서 URL 전부 수집(loadItem 콜백은 비메인 — 수집 완료 후 `Task { @MainActor in ... }`) → ⌥ 판독(`NSEvent.modifierFlags` 교집합) → `performBatchCopy`(⌥) 또는 `performBatchMove`(기본) **1회 호출**(건별 호출 금지 — batchId 분해로 "모두 되돌리기"가 쪼개짐). 무확인, 결과 토스트(기존 부분 실패 요약 재사용). **이동에서 전량 same-parent skip으로 (0,0)이면 "이동할 항목 없음" 토스트**(무동작 오인 방지 — 복사는 같은 폴더여도 uniquify 사본 생성이 정상 동작이라 해당 없음).
 - Finder→앱 인바운드도 같은 경로(이동 기본·⌥ 복사). 외부 원본의 undo 역이동 노출은 기존 ⌘V와 동일(신규 위험 없음).
 
 ## 4. 폴스루·기존 드롭과의 공존
 
-- **창 레벨 핸들러 가드**: `DragPayload.isInternalDrag(providers:)`면 **true 반환 후 no-op**(false로 폴스루시키지 않고 소비해 "열기" 차단 — 결정 2). Finder발은 기존 열기 유지.
+- **창 레벨 핸들러 가드**: `DragPayload.isInternalDrag()`(드래그 파스테보드 직판 — provider는 커스텀 타입 누락, §2 실측)면 **true 반환 후 no-op**(false로 폴스루시키지 않고 소비해 "열기" 차단 — 결정 2). 에디터 폴스루 가드(`MainEditorView.handleDrop`)도 같은 파스테보드 판별. Finder발은 기존 열기 유지.
 - **동반 수정: 창 레벨 다중 열기.** 현재 첫 provider만 여는 것(CmdMDApp.swift:356-367)을 **전부 열기**로 정정 — F1b 다중 선택 시대와 어긋나는 기존 결함. URL 전부 수집 후 메인에서 순차 `openDocument(at:, inNewTab: true)`.
 - 에디터 이미지 드롭·NSTextView 등록·탭바 String dropDestination은 **불변**. 내부 드래그가 에디터 위에서 이미지 삽입으로 새는지 스파이크 실측 — 새면 에디터 핸들러(MainEditorView handleDrop)에도 내부 드래그 가드 1줄.
 - 탭바 `.dropDestination(for: String.self)`이 fileURL 드래그를 String으로 오수신하는지 스파이크에서 확인(오발화 시 가드).

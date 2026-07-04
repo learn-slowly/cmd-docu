@@ -41,17 +41,44 @@ final class DragPayloadTests: XCTestCase {
                        "손상 데이터는 빈 배열(크래시 없음)")
     }
 
-    // MARK: - 내부 드래그 판별
+    // MARK: - 내부 드래그 판별 (드래그 파스테보드 직판)
+    // 실측: SwiftUI가 드롭 쪽 provider 재구성에서 커스텀 UTType을 누락 → 수신부는 파스테보드를 읽는다.
 
-    func testIsInternalDragDetectsCustomType() {
-        let provider = DragPayload.makeProvider(for: [url("/v/a.md")], primary: url("/v/a.md"))
-        XCTAssertTrue(DragPayload.isInternalDrag([provider]))
+    /// 격리용 유니크 파스테보드 — 실드래그 파스테보드를 오염시키지 않고 시드.
+    private func seededPasteboard(customPayload: [URL]? = nil,
+                                  fileURL: URL? = nil,
+                                  garbage: Bool = false) -> NSPasteboard {
+        let pb = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
+        var types: [NSPasteboard.PasteboardType] = []
+        if customPayload != nil || garbage { types.append(DragPayload.pasteboardType) }
+        if fileURL != nil { types.append(.fileURL) }
+        pb.declareTypes(types, owner: nil)
+        if garbage {
+            pb.setData(Data([0x00, 0x01]), forType: DragPayload.pasteboardType)
+        } else if let urls = customPayload {
+            pb.setData(DragPayload.encode(urls), forType: DragPayload.pasteboardType)
+        }
+        if let u = fileURL { pb.setData(u.dataRepresentation, forType: .fileURL) }
+        return pb
     }
 
-    func testIsInternalDragFalseForPlainFileURL() {
-        let provider = NSItemProvider(object: url("/v/a.md") as NSURL)
-        XCTAssertFalse(DragPayload.isInternalDrag([provider]),
-                       "Finder발 fileURL provider는 내부 드래그가 아니다")
+    func testIsInternalDragTrueWithCustomTypeOnPasteboard() {
+        let urls = [url("/v/한글 폴더/노트.md"), url("/v/b.pdf")]
+        let pb = seededPasteboard(customPayload: urls)
+        XCTAssertTrue(DragPayload.isInternalDrag(pasteboard: pb), "커스텀 타입 실림 → 내부 드래그")
+        XCTAssertEqual(DragPayload.payload(pasteboard: pb), urls, "전체 페이로드 라운드트립(한글 경로)")
+    }
+
+    func testIsInternalDragFalseWithOnlyFileURL() {
+        let pb = seededPasteboard(fileURL: url("/v/a.md"))
+        XCTAssertFalse(DragPayload.isInternalDrag(pasteboard: pb),
+                       "Finder발(fileURL만) 파스테보드는 내부 드래그 아님")
+        XCTAssertNil(DragPayload.payload(pasteboard: pb), "커스텀 타입 없으면 페이로드 nil")
+    }
+
+    func testPayloadNilOnGarbageData() {
+        let pb = seededPasteboard(garbage: true)
+        XCTAssertNil(DragPayload.payload(pasteboard: pb), "손상 데이터는 nil(크래시 없음)")
     }
 
     func testMakeProviderCarriesFileURLForFinder() {

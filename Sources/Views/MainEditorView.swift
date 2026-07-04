@@ -255,7 +255,8 @@ struct EditorPane: View {
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         // F2: 내부 이동 드래그가 에디터 위에 떨어지면 이미지 삽입으로 새지 않게 소비만(스펙 §4).
         // 에디터에서 소비된 내부 드래그도 handleFileDrop을 안 타므로 스냅샷을 비운다(C1 방어).
-        if DragPayload.isInternalDrag(providers) {
+        // provider가 아니라 드래그 파스테보드를 읽는다(SwiftUI가 provider에서 커스텀 타입 누락 — 실측).
+        if DragPayload.isInternalDrag() {
             appState.draggingURLs = []
             return true
         }

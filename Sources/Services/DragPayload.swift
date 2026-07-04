@@ -36,10 +36,24 @@ enum DragPayload {
         return paths.map { URL(fileURLWithPath: $0) }
     }
 
-    /// providers에 앱 전용 타입이 있으면 내부 드래그 — 창 레벨 "열기"·에디터 이미지 삽입이
-    /// 이 판별로 내부 드래그를 무시한다(빗나간 드롭=조용한 무동작, 스펙 §4).
-    static func isInternalDrag(_ providers: [NSItemProvider]) -> Bool {
-        providers.contains { $0.hasItemConformingToTypeIdentifier(UTType.cmdDocuDrag.identifier) }
+    /// 드래그 파스테보드용 타입 상수 — provider 재구성 우회(아래 실측 참조).
+    static let pasteboardType = NSPasteboard.PasteboardType(UTType.cmdDocuDrag.identifier)
+
+    /// 내부 드래그 판별 — 드래그 파스테보드를 직접 읽는다.
+    /// 실측: SwiftUI가 드롭 쪽 provider를 재구성할 때 미등록 커스텀 UTType 표현을 누락해
+    /// (드래그 파스테보드에는 온전히 실림) provider 기반 판별이 실드래그에서 늘 false가 된다.
+    /// 그래서 수신부(창/에디터 폴스루 가드·델리게이트 내부판별)는 provider 대신 파스테보드를
+    /// 읽는다 — 드래그/드롭 콜백 안에서만 호출해야 활성 세션 파스테보드가 보장된다. Finder발
+    /// 외부 드래그는 이 커스텀 타입이 없어 false(외부 판별 정확성 유지).
+    static func isInternalDrag(pasteboard: NSPasteboard = NSPasteboard(name: .drag)) -> Bool {
+        pasteboard.types?.contains(pasteboardType) ?? false
+    }
+
+    /// 내부 드래그 페이로드(전체 목록) — 드래그 파스테보드 직판. 없거나 손상이면 nil.
+    static func payload(pasteboard: NSPasteboard = NSPasteboard(name: .drag)) -> [URL]? {
+        guard let data = pasteboard.data(forType: pasteboardType) else { return nil }
+        let urls = decode(data)
+        return urls.isEmpty ? nil : urls
     }
 
     /// 드래그 소스용 provider — 내부 페이로드(전체 목록, .ownProcess) + Finder 호환

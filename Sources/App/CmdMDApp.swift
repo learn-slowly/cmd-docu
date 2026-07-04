@@ -357,7 +357,8 @@ struct CmdMDApp: App {
         // false로 폴스루시키지 않고 true로 소비해 "열기" 오동작을 차단한다.
         // 창 레벨에서 소비된 내부 드래그는 handleFileDrop을 안 타므로 여기서 스냅샷을 비운다
         // (stale 잔존이 이후 외부 드롭 검증을 오염시키지 않게 — C1 방어).
-        if DragPayload.isInternalDrag(providers) {
+        // provider가 아니라 드래그 파스테보드를 읽는다(SwiftUI가 provider에서 커스텀 타입 누락 — 실측).
+        if DragPayload.isInternalDrag() {
             appState.draggingURLs = []
             return true
         }

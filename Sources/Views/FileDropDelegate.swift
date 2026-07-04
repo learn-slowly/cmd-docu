@@ -14,25 +14,26 @@ struct FileDropDelegate: DropDelegate {
     /// F2가 받는 타입 — 내부(커스텀) 우선, 외부(Finder) fileURL 겸용.
     static let acceptedTypes: [UTType] = [.cmdDocuDrag, .fileURL]
 
-    /// 이 드롭 세션이 앱 내부 드래그인지 — 세션의 아이템 타입으로 판별(draggingURLs 스냅샷
-    /// 미참조). 외부(Finder) 세션이 stale 스냅샷을 읽어 오판하던 C1을 원천 차단한다.
-    private func isInternal(_ info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.cmdDocuDrag])
-    }
+    /// 이 드롭 세션이 앱 내부 드래그인지 — 드래그 파스테보드를 직접 읽는다(draggingURLs 스냅샷
+    /// 미참조). 실측: SwiftUI가 DropInfo의 provider 재구성에서 커스텀 UTType을 누락해
+    /// `info.hasItemsConforming(to: [.cmdDocuDrag])`가 실드래그에서 늘 false가 되므로,
+    /// 활성 세션 파스테보드(드롭 콜백 안이라 보장)를 읽는다. 외부(Finder) 세션이 stale
+    /// 스냅샷을 읽어 오판하던 C1도 그대로 차단된다(외부는 커스텀 타입 부재 → false).
+    private var isInternalDrag: Bool { DragPayload.isInternalDrag() }
 
     func validateDrop(info: DropInfo) -> Bool {
         // 타입 게이트만 — 통과하면 언제나 수락(소비). 무효 내부 드롭도 소비해 상위 타깃으로
         // 폴스루하지 않게 하고(I2), 실제 유효성은 handleFileDrop의 2차 필터가 가린다.
         // 외부 세션은 draggingURLs를 읽지 않는다(C1 차단) — dropDecision 진리표 참조.
         guard info.hasItemsConforming(to: Self.acceptedTypes) else { return false }
-        return DropGuard.dropDecision(isInternal: isInternal(info),
+        return DropGuard.dropDecision(isInternal: isInternalDrag,
                                       sources: appState.draggingURLs,
                                       destination: destination).accept
     }
 
     func dropEntered(info: DropInfo) {
         // 하이라이트·스프링로딩은 hover 경로에서 게이팅 — 무효 내부 대상은 켜지지 않는다.
-        let highlight = DropGuard.dropDecision(isInternal: isInternal(info),
+        let highlight = DropGuard.dropDecision(isInternal: isInternalDrag,
                                                sources: appState.draggingURLs,
                                                destination: destination).highlight
         if highlight { onHoverChange?(true) }
