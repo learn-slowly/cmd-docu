@@ -49,6 +49,7 @@ struct ContentView: View {
                     ViewModePicker()
                 } else {
                     LibraryLayoutPicker()
+                    LibrarySortMenu()
                 }
             }
 
@@ -231,6 +232,53 @@ struct LibraryLayoutPicker: View {
         .controlSize(.regular)
         .fixedSize()
         .help("리스트 · 격자")
+    }
+}
+
+/// 라이브러리 정렬 메뉴(라이브러리 모드 전용) — 키 선택·방향 토글(스펙 §2.6).
+/// 상태는 appState.librarySort 하나 — 리스트 열 헤더와 공유(영속은 didSet 전담).
+struct LibrarySortMenu: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        Menu {
+            ForEach(LibrarySortKey.allCases, id: \.self) { key in
+                Button {
+                    appState.librarySort = appState.librarySort.selecting(key)
+                } label: {
+                    if appState.librarySort.key == key {
+                        Label(key.title, systemImage: "checkmark")
+                    } else {
+                        Text(key.title)
+                    }
+                }
+            }
+            Divider()
+            Button {
+                appState.librarySort.ascending = true
+            } label: {
+                if appState.librarySort.key != .para && appState.librarySort.ascending {
+                    Label("오름차순", systemImage: "checkmark")
+                } else {
+                    Text("오름차순")
+                }
+            }
+            .disabled(appState.librarySort.key == .para)
+            Button {
+                appState.librarySort.ascending = false
+            } label: {
+                if appState.librarySort.key != .para && !appState.librarySort.ascending {
+                    Label("내림차순", systemImage: "checkmark")
+                } else {
+                    Text("내림차순")
+                }
+            }
+            .disabled(appState.librarySort.key == .para)
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .fixedSize()
+        .help("정렬")
     }
 }
 

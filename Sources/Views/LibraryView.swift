@@ -111,7 +111,11 @@ struct LibraryView: View {
                 case .grid:
                     gridView(entries: entries)
                 case .list:
-                    listView(entries: entries)
+                    VStack(spacing: 0) {
+                        listHeader
+                        Divider()
+                        listView(entries: entries)
+                    }
                 }
             }
         } else {
@@ -141,6 +145,42 @@ struct LibraryView: View {
             .padding(16)
         }
         .onTapGesture { appState.clearFileSelection() }
+    }
+
+    // MARK: - 리스트 열 헤더 (F3 — 클릭 정렬)
+
+    /// 열 헤더 행 — 스크롤 영역 **밖**(배경 탭 선택 해제 제스처와 히트 경합 없음, 스펙 §2.6).
+    /// 폭·간격은 셀(HStack spacing 8, 수정일 92pt·크기 68pt, listRowInsets 좌우 8)과 수동 동기.
+    /// 종류 정렬은 열이 없으므로 툴바 메뉴로만.
+    private var listHeader: some View {
+        HStack(spacing: 8) {
+            sortHeaderButton(title: "이름", key: .name)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            sortHeaderButton(title: "수정일", key: .date)
+                .frame(width: 92, alignment: .trailing)
+            sortHeaderButton(title: "크기", key: .size)
+                .frame(width: 68, alignment: .trailing)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    /// 헤더 버튼 — 클릭=키 선택, 같은 키 재클릭=방향 토글(LibrarySort.selecting 공용 전이).
+    private func sortHeaderButton(title: String, key: LibrarySortKey) -> some View {
+        Button {
+            appState.librarySort = appState.librarySort.selecting(key)
+        } label: {
+            HStack(spacing: 2) {
+                Text(title)
+                if appState.librarySort.key == key {
+                    Image(systemName: appState.librarySort.ascending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(appState.librarySort.key == key ? Color.cmdsAccent : Color.secondary)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 리스트 뷰
