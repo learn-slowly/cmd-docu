@@ -41,7 +41,9 @@
 ### 2.2 페이로드 구성 — `DragPayload` (신규 순수 헬퍼, 별도 파일)
 
 - NSItemProvider에 **두 표현 병행 탑재**:
-  - `.fileURL` — Finder 호환(아웃바운드 복사·다른 앱 수신). 다중 항목은 항목당 provider 1개(관례).
+  - `.fileURL` — Finder 호환(아웃바운드 복사·다른 앱 수신). ⚠️ SwiftUI `.onDrag`는 provider
+    1개 한계로 **아웃바운드 다중 드래그는 드래그한 항목 1개만 전달**된다(구현 확정 — 다중
+    내보내기는 기존 ⌘C→Finder ⌘V, 완전한 다중 아웃바운드는 후속 B안/NSFilePromiseProvider).
   - 앱 전용 식별 타입 `work.cmdspace.cmddocu.drag`(exported UTType) — **URL 목록 전체를 한 provider에 직렬화**(plist/JSON 배열). 내부 타깃은 이걸 우선 읽어 배치 전체를 원자적으로 수신, 창 레벨 핸들러는 이 타입의 존재로 내부 드래그를 판별해 무시.
 - `DragPayload` 책임: 페이로드 결정 규칙(§2.1)·직렬화/역직렬화·`isInternalDrag(providers:)` 판별 — 전부 순수, 단위테스트 대상.
 - 아웃바운드(앱→Finder): fileURL 표현을 Finder가 받아 **복사** 실행(앱은 로그하지 않음 — ⌘C 선례와 동형, 결정 1). 이동 시맨틱(NSFilePromiseProvider 등)은 범위 밖.
