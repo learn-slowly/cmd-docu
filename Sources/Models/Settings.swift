@@ -108,6 +108,10 @@ struct AppSettings: Codable, Equatable {
     /// 키 = 폴더 표준화 경로(`standardizedFileURL.path`), 값 = 기억된 레이아웃.
     var libraryLayouts: [String: LibraryLayout] = [:]
 
+    // MARK: 폴더별 정렬
+    /// 키 = 폴더 표준화 경로(`standardizedFileURL.path`), 값 = 기억된 정렬(F3).
+    var librarySorts: [String: LibrarySort] = [:]
+
     // UI
     var showStatusBar: Bool = true
     var showTabBar: Bool = true
@@ -162,6 +166,7 @@ struct AppSettings: Codable, Equatable {
         indexedFolders = try c.decodeIfPresent([String].self, forKey: .indexedFolders) ?? d.indexedFolders
         ragExpandQuery = try c.decodeIfPresent(Bool.self, forKey: .ragExpandQuery) ?? d.ragExpandQuery
         libraryLayouts = try c.decodeIfPresent([String: LibraryLayout].self, forKey: .libraryLayouts) ?? d.libraryLayouts
+        librarySorts = try c.decodeIfPresent([String: LibrarySort].self, forKey: .librarySorts) ?? d.librarySorts
         showStatusBar = try c.decodeIfPresent(Bool.self, forKey: .showStatusBar) ?? d.showStatusBar
         showTabBar = try c.decodeIfPresent(Bool.self, forKey: .showTabBar) ?? d.showTabBar
         sidebarWidth = try c.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? d.sidebarWidth

@@ -53,6 +53,19 @@ extension DocumentKind {
         videoExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// 종류 정렬 순위(F3) — 문서(markdown) → office → pdf → image → media.
+    /// 비문서 확장자는 init(from:)이 .markdown으로 폴백하므로 같은 종류 안에서는
+    /// pathExtension 사전순이 2차 키(LibrarySorting 몫).
+    var sortRank: Int {
+        switch self {
+        case .markdown: return 0
+        case .office:   return 1
+        case .pdf:      return 2
+        case .image:    return 3
+        case .media:    return 4
+        }
+    }
+
     /// 확장자(대소문자 무시): 이미지 → PDF → 오피스 → 미디어 → 마크다운(기본).
     init(from url: URL) {
         let ext = url.pathExtension.lowercased()
