@@ -20,17 +20,6 @@ struct LibraryView: View {
     /// 캐시된 항목 목록. .task(id: folderKey)로 폴더 변경 시에만 갱신.
     @State private var entries: [FileTreeItem] = []
 
-    /// 상위 폴더로 이동 가능한가(currentFolder보다 위로는 안 감).
-    private var canGoUp: Bool {
-        guard let display = displayFolder,
-              let root = appState.currentFolder else { return false }
-        // standardizedFileURL로 비교해 /var → /private/var 차이를 없앤다.
-        let displayStd = display.standardizedFileURL.path
-        let rootStd    = root.standardizedFileURL.path
-        // '/' 경계를 포함해 형제 폴더 오감지를 방지한다.
-        return displayStd != rootStd && displayStd.hasPrefix(rootStd + "/")
-    }
-
     private func reloadEntries() {
         guard let folder = displayFolder else {
             entries = []
@@ -65,9 +54,9 @@ struct LibraryView: View {
 
     private var libraryHeader: some View {
         HStack(spacing: 6) {
-            if canGoUp {
+            if appState.canGoUpInLibrary {
                 Button {
-                    goUp()
+                    appState.goUpInLibrary()
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 12, weight: .medium))
@@ -219,20 +208,6 @@ struct LibraryView: View {
             // 패리티를 맞춰 클리어. 잔존 선택 + 리더의 ⌘C 가드 통과 시 파일 복사 강탈을 막는다.
             appState.clearFileSelection()
             appState.openDocument(at: item.url, inNewTab: true)
-        }
-    }
-
-    // MARK: - 상위 이동
-
-    private func goUp() {
-        guard let current = displayFolder,
-              let root = appState.currentFolder else { return }
-        let parent = current.deletingLastPathComponent()
-        // root보다 위로는 올라가지 않는다. '/' 경계로 형제 폴더 오감지 방지.
-        let parentStd = parent.standardizedFileURL.path
-        let rootStd   = root.standardizedFileURL.path
-        if parentStd == rootStd || parentStd.hasPrefix(rootStd + "/") {
-            appState.selectedFolder = parent
         }
     }
 }

@@ -43,6 +43,9 @@ final class AppState {
         didSet {
             restoreLibraryLayoutForSelectedFolder()
             restoreLibrarySortForSelectedFolder()
+            // 히스토리 기록 — 전 진입로(드릴인·상위·사이드바 탭·openFolder·즐겨찾기)의
+            // 단일 초크포인트. 새 호출부가 push를 빠뜨리는 태스크 경계 결함을 구조로 방지(스펙 §3.2).
+            recordNavigationIfNeeded()
             // 폴더 이동 = 선택 해제(Finder 동일, F1b 스펙 §2). 같은 값 재대입은 무시.
             if oldValue != selectedFolder { clearFileSelection() }
         }
@@ -60,6 +63,13 @@ final class AppState {
     }
     /// 복원 중 librarySort didSet이 재저장하지 않도록 막는 플래그.
     private var isRestoringSort = false
+
+    // MARK: - 폴더 네비게이션 히스토리 (F3)
+
+    /// 뒤로/앞으로 폴더 히스토리(세션 내 휘발 — SessionState 무변경, 스펙 §3).
+    var navHistory = NavigationHistory()
+    /// 히스토리 이동·세션 복원·강제 재조준 중 didSet 기록을 막는 플래그(isRestoringLayout 동형).
+    private var suppressHistoryRecording = false
 
     // MARK: - 다중 선택 (F1b)
     /// 라이브러리·트리 공유 선택 집합. URL 키 — FileTreeItem.id는 재빌드마다 새 UUID라 못 쓴다.
@@ -822,6 +832,88 @@ final class AppState {
     func selectFolderForLibrary(_ url: URL) {
         selectedFolder = url
         mainMode = .library
+    }
+
+    // MARK: - 뒤로/앞으로/상위 (F3)
+
+    private func recordNavigationIfNeeded() {
+        guard !suppressHistoryRecording, let root = currentFolder else { return }
+        navHistory.record(FolderLocation(root: root, display: selectedFolder ?? root))
+    }
+
+    /// 히스토리 항목의 두 폴더가 모두 디렉터리로 실존하는가.
+    private static func folderExists(_ loc: FolderLocation) -> Bool {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: loc.root.path, isDirectory: &isDir),
+              isDir.boolValue else { return false }
+        guard FileManager.default.fileExists(atPath: loc.display.path, isDirectory: &isDir),
+              isDir.boolValue else { return false }
+        return true
+    }
+
+    func goBackInHistory() {
+        guard let loc = navHistory.goBack(isValid: Self.folderExists) else { return }
+        applyHistoryLocation(loc)
+    }
+
+    func goForwardInHistory() {
+        guard let loc = navHistory.goForward(isValid: Self.folderExists) else { return }
+        applyHistoryLocation(loc)
+    }
+
+    /// 히스토리 항목 적용 — 루트가 다르면 openFolder 경로 재사용(트리·인덱스·세션까지 복원).
+    /// 항상 라이브러리 모드로 전환 — 리더에 남아 화면이 안 바뀌는 함정 방지(스펙 §3.2).
+    private func applyHistoryLocation(_ loc: FolderLocation) {
+        suppressHistoryRecording = true
+        defer { suppressHistoryRecording = false }
+        if currentFolder?.standardizedFileURL.path != loc.root.standardizedFileURL.path {
+            openFolder(at: loc.root)
+        }
+        selectedFolder = loc.display
+        mainMode = .library
+    }
+
+    /// 라이브러리 표시 폴더 기준 상위 이동 가능 여부 — currentFolder(루트) 하한.
+    /// (LibraryView에서 이전 — 메뉴·⌘↑가 호출할 수 있게 AppState 소유, 스펙 §6)
+    var canGoUpInLibrary: Bool {
+        guard let display = selectedFolder ?? currentFolder,
+              let root = currentFolder else { return false }
+        let displayStd = display.standardizedFileURL.path
+        let rootStd = root.standardizedFileURL.path
+        // '/' 경계를 포함해 형제 폴더 오감지를 방지한다.
+        return displayStd != rootStd && displayStd.hasPrefix(rootStd + "/")
+    }
+
+    /// 상위 폴더로(⌘↑·메뉴·경로 바) — 라이브러리 모드에서만(리더의 NSTextView ⌘↑ 표준
+    /// 동작 강탈 방지, 스펙 §6), root 하한 클램프.
+    func goUpInLibrary() {
+        guard mainMode == .library else { return }
+        guard let current = selectedFolder ?? currentFolder,
+              let root = currentFolder else { return }
+        let parent = current.deletingLastPathComponent()
+        let parentStd = parent.standardizedFileURL.path
+        let rootStd = root.standardizedFileURL.path
+        if parentStd == rootStd || parentStd.hasPrefix(rootStd + "/") {
+            selectedFolder = parent
+        }
+    }
+
+    /// 표시 중 폴더가 rename/trash로 사라졌으면 가장 가까운 존재 조상으로 재조준
+    /// (F1a 트리아지 잔여 — 빈 라이브러리·죽은 경로 바 방지, 스펙 §5).
+    /// 사용자 내비게이션이 아니므로 히스토리에 기록하지 않는다. internal = 테스트 접근용.
+    func retargetStaleSelectedFolder() {
+        guard let sel = selectedFolder else { return }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: sel.path, isDirectory: &isDir), isDir.boolValue { return }
+        var candidate = sel.deletingLastPathComponent()
+        while candidate.path != "/" {
+            if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir),
+               isDir.boolValue { break }
+            candidate = candidate.deletingLastPathComponent()
+        }
+        suppressHistoryRecording = true
+        selectedFolder = candidate
+        suppressHistoryRecording = false
     }
 
     // MARK: - 폴더별 기억 (레이아웃 Phase 8.5-③ · 정렬 F3)
@@ -2334,10 +2426,12 @@ final class AppState {
         }
     }
 
-    /// 파일 작업 성공 후 공통 갱신 — 세대 토큰·트리·세션·선택 prune.
+    /// 파일 작업 성공 후 공통 갱신 — 세대 토큰·트리·세션·선택 prune·표시 폴더/히스토리 정합(F3).
     private func completeFileOperation() {
         fileOpsGeneration += 1
         pruneFileSelection()
+        retargetStaleSelectedFolder()
+        navHistory.prune(isValid: Self.folderExists)
         loadFileTree()
         saveSession()
     }
@@ -3087,9 +3181,13 @@ final class AppState {
 
         if let folder = session.currentFolder,
            FileManager.default.fileExists(atPath: folder.path) {
+            suppressHistoryRecording = true
             currentFolder = folder
             // 세션 복원 시 currentFolder가 바뀌므로 selectedFolder도 리셋한다.
             selectedFolder = folder
+            suppressHistoryRecording = false
+            // 복원 위치를 히스토리 시작점으로 seed(가짜 뒤로 항목 없이).
+            navHistory.record(FolderLocation(root: folder, display: folder))
             loadFileTree()
         }
 
