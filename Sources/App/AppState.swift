@@ -898,6 +898,15 @@ final class AppState {
         }
     }
 
+    /// View 메뉴 ⌘↑ 전용 진입점 — 텍스트 입력 포커스(시트 필드·사이드바 검색 등)의 캐럿 이동
+    /// (macOS 표준 ⌘↑)을 강탈하지 않도록 responder를 확인한다(F1b ⌘C 가드 동형).
+    /// 커맨드 팔레트는 goUpInLibrary()를 직접 호출한다 — dismiss 직후 동기 실행이라
+    /// firstResponder가 아직 팔레트 필드일 수 있어 이 가드를 태우면 팔레트 진입점이 죽는다.
+    func goUpInLibraryFromMenu(firstResponder: NSResponder? = NSApp.keyWindow?.firstResponder) {
+        if Self.responderYieldsFileKeys(firstResponder) { return }
+        goUpInLibrary()
+    }
+
     /// 표시 중 폴더가 rename/trash로 사라졌으면 가장 가까운 존재 조상으로 재조준
     /// (F1a 트리아지 잔여 — 빈 라이브러리·죽은 경로 바 방지, 스펙 §5).
     /// 사용자 내비게이션이 아니므로 히스토리에 기록하지 않는다. internal = 테스트 접근용.

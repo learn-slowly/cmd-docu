@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import CmdMD
 
 /// F3: AppState 히스토리 배선 테스트 — 실제 임시 폴더로 존재 검사까지 검증.
@@ -143,5 +144,23 @@ final class AppNavigationHistoryTests: XCTestCase {
                        root.standardizedFileURL.path)
         XCTAssertFalse(app.navHistory.canGoBack, "세션 복원은 seed만 — 가짜 뒤로 항목 금지")
         XCTAssertNotNil(app.navHistory.current)
+    }
+
+    // MARK: - ⌘↑ 메뉴 진입점: 텍스트 포커스에 양보(강탈 방지 — 최종 리뷰 Important)
+
+    @MainActor
+    func testGoUpFromMenuYieldsToTextResponder() {
+        let app = makeApp()
+        app.mainMode = .library
+        app.selectedFolder = sub
+        // 텍스트 입력 포커스 재현 — 헤드리스 NSTextView(F1b responderYieldsFileKeys 테스트 패턴)
+        app.goUpInLibraryFromMenu(firstResponder: NSTextView())
+        XCTAssertEqual(app.selectedFolder?.standardizedFileURL.path,
+                       sub.standardizedFileURL.path,
+                       "텍스트 포커스 중 ⌘↑ 메뉴는 폴더를 이동시키면 안 된다(캐럿 이동 양보)")
+        app.goUpInLibraryFromMenu(firstResponder: nil)
+        XCTAssertEqual(app.selectedFolder?.standardizedFileURL.path,
+                       root.standardizedFileURL.path,
+                       "텍스트 포커스가 없으면 정상 상위 이동")
     }
 }

@@ -146,7 +146,7 @@ struct CmdMDApp: App {
                 .disabled(!appState.navHistory.canGoForward)
 
                 Button("상위 폴더") {
-                    appState.goUpInLibrary()
+                    appState.goUpInLibraryFromMenu()
                 }
                 .appShortcut(appState.keyBinding(for: .navigateUp))
                 // 라이브러리 모드 한정 — 리더에선 비활성이라 ⌘↑가 NSTextView(문서 처음 이동)로
