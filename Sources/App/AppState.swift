@@ -42,6 +42,7 @@ final class AppState {
     var selectedFolder: URL? = nil {
         didSet {
             restoreLibraryLayoutForSelectedFolder()
+            restoreLibrarySortForSelectedFolder()
             // 폴더 이동 = 선택 해제(Finder 동일, F1b 스펙 §2). 같은 값 재대입은 무시.
             if oldValue != selectedFolder { clearFileSelection() }
         }
@@ -52,6 +53,13 @@ final class AppState {
     }
     /// 복원 중 libraryLayout didSet이 재저장하지 않도록 막는 플래그.
     private var isRestoringLayout = false
+
+    /// 라이브러리·트리 정렬(F3). 폴더별 기억 포함 — 기억 없으면 PARA 기본.
+    var librarySort: LibrarySort = .default {
+        didSet { persistLibrarySortForCurrentFolder(oldValue: oldValue) }
+    }
+    /// 복원 중 librarySort didSet이 재저장하지 않도록 막는 플래그.
+    private var isRestoringSort = false
 
     // MARK: - 다중 선택 (F1b)
     /// 라이브러리·트리 공유 선택 집합. URL 키 — FileTreeItem.id는 재빌드마다 새 UUID라 못 쓴다.
@@ -816,14 +824,23 @@ final class AppState {
         mainMode = .library
     }
 
-    // MARK: - 폴더별 레이아웃 기억 (Phase 8.5-③)
+    // MARK: - 폴더별 기억 (레이아웃 Phase 8.5-③ · 정렬 F3)
+
+    /// 폴더별 기억(레이아웃·정렬) 딕셔너리 키 — 두 기능이 같은 규약을 쓴다.
+    /// 심링크(/var↔/private/var)까지는 해소하지 않는다(libraryLayouts·F1b 관례, 스펙 §2.3).
+    static func folderMemoryKey(for url: URL) -> String {
+        url.standardizedFileURL.path
+    }
+
+    /// 폴더별 기억의 기준 폴더 — 복원·저장이 같은 폴백을 쓴다(기존 restore가
+    /// selectedFolder만 보던 비대칭 해소, 스펙 §2.3).
+    private var folderMemoryTarget: URL? { selectedFolder ?? currentFolder }
 
     /// selectedFolder가 바뀔 때 해당 폴더의 기억된 레이아웃을 복원한다.
     /// 기억이 없으면 현재 레이아웃을 그대로 유지한다.
     private func restoreLibraryLayoutForSelectedFolder() {
-        guard let url = selectedFolder else { return }
-        let key = url.standardizedFileURL.path
-        guard let remembered = settings.libraryLayouts[key] else { return }
+        guard let url = folderMemoryTarget else { return }
+        guard let remembered = settings.libraryLayouts[Self.folderMemoryKey(for: url)] else { return }
         guard remembered != libraryLayout else { return }
         isRestoringLayout = true
         libraryLayout = remembered
@@ -831,14 +848,38 @@ final class AppState {
     }
 
     /// libraryLayout이 바뀔 때 현재 폴더에 레이아웃을 기억하고 즉시 영속한다.
-    /// 복원 중이거나 값이 변하지 않으면 건너뛴다.
     private func persistLibraryLayoutForCurrentFolder(oldValue: LibraryLayout) {
         guard !isRestoringLayout else { return }
         guard oldValue != libraryLayout else { return }
-        guard let url = selectedFolder ?? currentFolder else { return }
-        let key = url.standardizedFileURL.path
-        settings.libraryLayouts[key] = libraryLayout
+        guard let url = folderMemoryTarget else { return }
+        settings.libraryLayouts[Self.folderMemoryKey(for: url)] = libraryLayout
         saveUserData()
+    }
+
+    /// selectedFolder가 바뀔 때 해당 폴더의 기억된 정렬을 복원한다.
+    /// 레이아웃과 달리 기억이 없으면 **기본(PARA)으로 복귀**한다 — 정렬은 폴더 속성(스펙 §2.3).
+    private func restoreLibrarySortForSelectedFolder() {
+        guard let url = folderMemoryTarget else { return }
+        let remembered = settings.librarySorts[Self.folderMemoryKey(for: url)] ?? .default
+        guard remembered != librarySort else { return }
+        isRestoringSort = true
+        librarySort = remembered
+        isRestoringSort = false
+    }
+
+    /// librarySort가 바뀔 때 현재 폴더에 정렬을 기억하고 즉시 영속한다.
+    private func persistLibrarySortForCurrentFolder(oldValue: LibrarySort) {
+        guard !isRestoringSort else { return }
+        guard oldValue != librarySort else { return }
+        guard let url = folderMemoryTarget else { return }
+        settings.librarySorts[Self.folderMemoryKey(for: url)] = librarySort
+        saveUserData()
+    }
+
+    /// 임의 폴더의 기억된 정렬(없으면 PARA 기본) — 사이드바 트리가 폴더별 렌더 정렬에 사용(스펙 §2.5).
+    func sortForFolder(_ url: URL?) -> LibrarySort {
+        guard let url else { return .default }
+        return settings.librarySorts[Self.folderMemoryKey(for: url)] ?? .default
     }
 
     func openInternalURL(_ url: URL) {
