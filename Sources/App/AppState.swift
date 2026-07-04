@@ -185,6 +185,10 @@ final class AppState {
     var renameRequest: RenameRequest? = nil
     /// 정보 보기 시트 요청(.sheet(item:)).
     var fileInfoRequest: FileInfoRequest? = nil
+    /// F2: 진행 중인 내부 드래그의 페이로드(드래그 시작 시 스냅샷) — 드롭 타깃의
+    /// hover 사전 차단(DropGuard.canAcceptAny)이 읽는다. 드래그 취소 시 잔존값은
+    /// 무해(활성 드래그 세션 밖에선 아무도 읽지 않음) — 다음 드래그가 덮어쓴다.
+    var draggingURLs: [URL] = []
 
     // Claude 인증 상태(설정 화면)
     var claudeAuthStatus: ClaudeAuthStatus?   // nil = CLI 미설치 또는 미확인
@@ -1570,6 +1574,14 @@ final class AppState {
         loadFileTree()
     }
 
+    /// 스프링로딩용 펼침 — insert 전용 멱등(스펙 §5). 기존 toggle은 드래그 오버
+    /// 재발화 시 도로 접히는 비멱등이라 드래그 경로에 부적합.
+    func expandFolder(_ url: URL) {
+        guard !expandedFolders.contains(url) else { return }
+        expandedFolders.insert(url)
+        loadFileTree()
+    }
+
     /// Creates a new, uniquely-named Markdown file in `folder` and opens it.
     /// (The old implementation blindly wrote an empty "Untitled.md", silently
     /// truncating an existing file of that name.)
@@ -2340,6 +2352,67 @@ final class AppState {
                 await self.performBatchCopy(urls: urls, to: destination)
             }
         }
+    }
+
+    // MARK: - 드래그&드롭 (F2)
+
+    /// 드롭 수행 — providers에서 URL 수집 후 배치 1회 호출(이동 기본·⌥=복사).
+    /// 무확인 실행(⌘V 선례 — 드롭 제스처가 곧 확인, 배치 undo 있음). 반환 = 수락 여부.
+    /// ⚠️ F1b 붙여넣기(⌘V=복사·⌥⌘V=이동)와 ⌥ 의미가 역방향 — 둘 다 Finder 관례 준수(스펙 §0).
+    @discardableResult
+    func handleFileDrop(_ providers: [NSItemProvider], into destination: URL) -> Bool {
+        // ⌥는 드롭 콜백 진입 직후 동기로 판독(비동기 수집 후엔 이미 떼었을 수 있음).
+        let isCopy = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
+        Self.collectDropURLs(providers) { [weak self] urls in
+            guard let self else { return }
+            Task { @MainActor in
+                self.draggingURLs = []
+                // 2차 방어 — 뷰 사전 차단(1차)이 못 거른 경로(배경 타깃 등) 대비.
+                let targets = urls.filter { DropGuard.canAccept(source: $0, destination: destination) }
+                guard !targets.isEmpty else { return }
+                if isCopy {
+                    await self.performBatchCopy(urls: targets, to: destination)
+                } else {
+                    let result = await self.performBatchMove(urls: targets, to: destination)
+                    // 전량 same-parent skip → (0,0): 무동작 오인 방지 토스트(이동만 — 복사는
+                    // 같은 폴더도 uniquify 사본 생성이 정상, 스펙 §3).
+                    if result.succeeded == 0 && result.failed == 0 {
+                        self.showToast("이동할 항목 없음 — 이미 이 폴더에 있습니다")
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    /// providers → URL 수집. 내부 드래그는 커스텀 타입 1개에 전체 목록,
+    /// 외부(Finder)는 provider별 fileURL을 전부 모은 뒤 1회 완료(메인 큐).
+    static func collectDropURLs(_ providers: [NSItemProvider],
+                                completion: @escaping ([URL]) -> Void) {
+        if let internalProvider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.cmdDocuDrag.identifier) }) {
+            internalProvider.loadDataRepresentation(
+                forTypeIdentifier: UTType.cmdDocuDrag.identifier) { data, _ in
+                let urls = data.map(DragPayload.decode) ?? []
+                DispatchQueue.main.async { completion(urls) }
+            }
+            return
+        }
+        var urls: [URL] = []
+        let lock = NSLock()   // loadItem 콜백은 임의 스레드 — append 직렬화
+        let group = DispatchGroup()
+        for provider in providers
+        where provider.hasItemConformingToTypeIdentifier("public.file-url") {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+                if let data = item as? Data,
+                   let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    lock.lock(); urls.append(url); lock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { completion(urls) }
     }
 
     /// 라이브러리가 표시 중인 목록 전체 선택(⌘A) — 디스크 재열거가 아니라 화면에 보이는
