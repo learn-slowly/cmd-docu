@@ -54,4 +54,13 @@ final class DataviewBlockExtractorTests: XCTestCase {
         XCTAssertTrue(r.blocks.isEmpty)
         XCTAssertEqual(r.markdown, md)
     }
+
+    func testCRLFNewlinesExtracted() {
+        // 회귀(리뷰 확증): CRLF 문서에서 \r 잔존으로 펜스 매치가 전량 실패하고
+        // insideOtherFence가 파일 끝까지 안 풀려 뒤 블록까지 연쇄 무동작하던 결함.
+        let md = "```dataviewjs\r\na\r\n```\r\n본문\r\n```dataviewjs\r\nb\r\n```"
+        let r = DataviewBlockExtractor.extract(md, placeholderHTML: placeholder)
+        XCTAssertEqual(r.blocks.map(\.code), ["a", "b"])
+        XCTAssertTrue(r.markdown.contains("PH0") && r.markdown.contains("PH1"))
+    }
 }

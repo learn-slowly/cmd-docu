@@ -13,7 +13,9 @@ enum DataviewBlockExtractor {
 
     static func extract(_ markdown: String,
                         placeholderHTML: (Int) -> String) -> (markdown: String, blocks: [DataviewBlock]) {
-        let lines = markdown.components(separatedBy: "\n")
+        // CRLF 개행 문서를 LF로 정규화 — \r 잔존이 whitespaces trim 실패로 펜스 매치 차단함.
+        let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
         var out: [String] = []
         var blocks: [DataviewBlock] = []
         var i = 0
