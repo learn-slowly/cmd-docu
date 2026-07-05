@@ -222,7 +222,8 @@ final class AppState {
     private let moveLogStore: MoveLogStore
     /// 파일 작업(F1a) 로그 — Task 6·7·8(시트·정보뷰)이 직접 읽으므로 private 아님.
     let fileOpsLogStore: FileOpsLogStore
-    private let cleanupService: CleanupService
+    /// 테스트가 FakeClaude 주입 CleanupService로 교체할 수 있게 internal var(실사용 재대입 없음).
+    var cleanupService: CleanupService
     private let moveExecutor: MoveExecutor
     private let dataURL: URL
 
@@ -3121,8 +3122,14 @@ final class AppState {
 
     // MARK: - 폴더 정리 (Phase 8)
 
-    /// subfolder 모드 진입: 시트를 열고 이전 상태를 초기화한다.
+    // busy(배정 등 진행) 중엔 아래 진입점들이 상태를 초기화하지 않는다 — 진행 중 세션
+    // 위로 리셋하면 완료 시점 plan 대입이 새 세션을 덮어쓰고, plan.scheme이 시작 시점
+    // 스냅샷이라 옛 폴더의 파일이 실제로 이동 가능해진다(적대적 리뷰 확증, 2026-07-05).
+    // 시트가 닫혀 있어도 배정 태스크는 계속 돌므로(비구조적 Task) 시트만 다시 보여준다.
+
+    /// subfolder 모드 진입: 시트를 열고 이전 상태를 초기화한다. busy 중엔 시트만 표시.
     func startCleanup(folder: URL) {
+        guard !cleanupBusy else { showFolderCleanup = true; return }
         cleanupMode = .subfolder(root: folder)
         cleanupScheme = []
         cleanupPlan = nil
@@ -3130,8 +3137,9 @@ final class AppState {
         showFolderCleanup = true
     }
 
-    /// PARA 모드 진입: 설정된 PARA 폴더를 스킴으로 쓴다.
+    /// PARA 모드 진입: 설정된 PARA 폴더를 스킴으로 쓴다. busy 중엔 시트만 표시.
     func startCleanupToPara(vault: Vault) {
+        guard !cleanupBusy else { showFolderCleanup = true; return }
         cleanupMode = .para(vault: vault)
         cleanupScheme = settings.paraFolders.map { CleanupBucket.from(para: $0) }
         cleanupPlan = nil
@@ -3139,8 +3147,9 @@ final class AppState {
         showFolderCleanup = true
     }
 
-    /// 정리 UI 상태를 완전히 초기화한다(커맨드팔레트 재진입 시 사용).
+    /// 정리 UI 상태를 완전히 초기화한다(커맨드팔레트 재진입 시 사용). busy 중엔 무시.
     func resetCleanup() {
+        guard !cleanupBusy else { return }
         cleanupMode = nil
         cleanupScheme = []
         cleanupPlan = nil
@@ -3159,7 +3168,10 @@ final class AppState {
         do {
             if cleanupScheme.isEmpty {
                 if case .subfolder = mode {
-                    cleanupScheme = try await cleanupService.proposeScheme(metas: metas)
+                    let proposed = try await cleanupService.proposeScheme(metas: metas)
+                    // 방어선: 배정과 동일 — 세션이 그대로일 때만 반영(스테일 완료 폐기).
+                    guard cleanupMode == mode else { return }
+                    cleanupScheme = proposed
                 } else {
                     showToast("PARA 폴더가 설정돼 있지 않습니다"); return
                 }
@@ -3180,14 +3192,21 @@ final class AppState {
         cleanupBusy = true
         cleanupError = nil
         defer { cleanupBusy = false; cleanupProgress = nil }
+        // 배정 시작 시점 스킴 스냅샷 — 배정(대형 폴더는 수십 분) 도중 스킴이 편집돼도
+        // 배정 결과와 plan이 같은 스킴을 본다. 완료 시점에 live cleanupScheme을 다시 읽으면
+        // 도중 삭제된 버킷의 move가 적용 시 MoveExecutor 가드에서 조용히 실패로 떨어진다.
+        let scheme = cleanupScheme
         let metas = FileScanner.scan(mode.root)
         guard !metas.isEmpty else { showToast("정리할 파일이 없습니다"); return }
         do {
-            let assignments = try await cleanupService.assign(scheme: cleanupScheme, metas: metas) { [weak self] done, total in
+            let assignments = try await cleanupService.assign(scheme: scheme, metas: metas) { [weak self] done, total in
                 guard total > 1 else { return }  // 단일 청크면 기본 문구 유지
                 Task { @MainActor in self?.cleanupProgress = "배정 중… (\(done)/\(total))" }
             }
-            cleanupPlan = CleanupPlan(mode: mode, scheme: cleanupScheme,
+            // 방어선: 진입점 busy 가드로 도중 리셋은 차단되지만, 세션(cleanupMode)이
+            // 그대로일 때만 결과를 반영한다 — 스테일 완료가 새 세션을 덮어쓰는 것 방지.
+            guard cleanupMode == mode else { return }
+            cleanupPlan = CleanupPlan(mode: mode, scheme: scheme,
                                       moves: CleanupPlanner.buildMoves(from: assignments))
         } catch let error as ClaudeError {
             cleanupError = Self.claudeErrorMessage(error)

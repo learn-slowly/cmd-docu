@@ -66,9 +66,27 @@ struct FolderCleanupView: View {
     private var schemeEditorView: some View {
         @Bindable var state = appState
 
+        // 배정하기 이후엔 편집을 잠근다. plan은 배정 시작 시점 스킴 스냅샷으로 적용되므로
+        // 미리보기가 있는 동안의 편집은 반영되지 않고(반영되는 것처럼 보이는 함정),
+        // busy(배정 진행) 중 편집도 결과와 어긋난다.
+        let locked = appState.cleanupBusy || appState.cleanupPlan != nil
+
         return VStack(alignment: .leading, spacing: 6) {
-            Text("정리 스킴 (편집 가능)")
+            Text(locked ? "정리 스킴" : "정리 스킴 (편집 가능)")
                 .font(.subheadline).bold()
+
+            // busy(배정·적용 진행)와 미리보기 존재는 안내가 달라야 한다 — busy 구간은
+            // 대형 폴더에서 수십 분이라 무설명 잠금이 되고, '취소' 안내는 취소 버튼이
+            // 없는(또는 눌러도 진행을 못 멈추는) busy 중엔 틀린 안내가 된다.
+            if appState.cleanupBusy {
+                Text("작업이 진행되는 동안에는 스킴을 수정할 수 없습니다.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if appState.cleanupPlan != nil {
+                Text("미리보기가 있는 동안 스킴은 잠깁니다 — 수정하려면 미리보기를 '취소'하세요.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
 
             // 안정 id(요소 바인딩) 기준 ForEach — 인덱스 기준이면 삭제 시 뒤 항목들의
             // 배열 위치가 한 칸씩 당겨지며 id도 함께 바뀌어 삭제 애니메이션이 깨진다.
@@ -127,6 +145,7 @@ struct FolderCleanupView: View {
             }
             .padding(.top, 2)
         }
+        .disabled(locked)
         .padding(.vertical, 4)
     }
 
@@ -143,6 +162,10 @@ struct FolderCleanupView: View {
             } else if !appState.cleanupScheme.isEmpty {
                 // 2단계: 스킴 편집 후 배정
                 Button("배정하기") {
+                    // 한글 조합(marked text)이 미완인 채 클릭하면 마지막 글자가 바인딩에
+                    // 반영되지 않아 잘린 폴더명으로 배정된다(NSTextInputClient 프로브 실측)
+                    // — 편집 종료를 강제해 조합을 커밋한 뒤 스냅샷을 뜬다.
+                    NSApp.keyWindow?.makeFirstResponder(nil)
                     Task { await appState.assignCleanupPlan() }
                 }
                 .disabled(appState.cleanupBusy)
@@ -208,10 +231,13 @@ struct FolderCleanupView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(appState.cleanupBusy)
 
+                // 적용 진행 중(busy) '취소'는 이동을 멈추지 못하고 미리보기만 사라져
+                // "취소됐다"는 오인을 만든다 — '적용'과 동일하게 busy 비활성.
                 Button("취소") {
                     appState.cleanupPlan = nil
                 }
                 .buttonStyle(.borderless)
+                .disabled(appState.cleanupBusy)
             }
             .padding(.top, 4)
         }
