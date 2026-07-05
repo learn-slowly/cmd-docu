@@ -8,9 +8,15 @@ enum ClaudeError: Error {
     case failed(String)
 }
 
+/// Claude 질의 최소 인터페이스 — 소비자(CleanupService 등)가 가짜를 주입해
+/// 호출 횟수·분할을 테스트할 수 있게 좁힌다(2026-07-05 배정 청크 회귀 테스트용).
+protocol ClaudeAsking: Sendable {
+    func ask(prompt: String, context: String) async throws -> String
+}
+
 /// claude CLI를 Process로 호출해 열린 문서를 질의한다.
 /// claude 자체는 구현하지 않는다(외부 도구). 실패는 throw로만 — 크래시 금지.
-actor ClaudeService {
+actor ClaudeService: ClaudeAsking {
     // Task 2의 ask() Process 타임아웃으로 사용한다.
     private let timeout: TimeInterval = 120
 

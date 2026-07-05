@@ -171,6 +171,8 @@ final class AppState {
     var cleanupScheme: CleanupScheme = []
     var cleanupPlan: CleanupPlan?
     var cleanupBusy: Bool = false
+    /// 배정 청크 진행 문구("배정 중… (3/10)") — busy 스피너 라벨로 표시. nil이면 기본 문구.
+    var cleanupProgress: String? = nil
     var cleanupBatches: [MoveBatch] = []
     var cleanupError: String?
 
@@ -3177,11 +3179,14 @@ final class AppState {
         guard let mode = cleanupMode, !cleanupScheme.isEmpty else { return }
         cleanupBusy = true
         cleanupError = nil
-        defer { cleanupBusy = false }
+        defer { cleanupBusy = false; cleanupProgress = nil }
         let metas = FileScanner.scan(mode.root)
         guard !metas.isEmpty else { showToast("정리할 파일이 없습니다"); return }
         do {
-            let assignments = try await cleanupService.assign(scheme: cleanupScheme, metas: metas)
+            let assignments = try await cleanupService.assign(scheme: cleanupScheme, metas: metas) { [weak self] done, total in
+                guard total > 1 else { return }  // 단일 청크면 기본 문구 유지
+                Task { @MainActor in self?.cleanupProgress = "배정 중… (\(done)/\(total))" }
+            }
             cleanupPlan = CleanupPlan(mode: mode, scheme: cleanupScheme,
                                       moves: CleanupPlanner.buildMoves(from: assignments))
         } catch let error as ClaudeError {

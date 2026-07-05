@@ -7,11 +7,17 @@ enum CleanupError: Error {
 /// 스캔 → (subfolder)스킴 제안 → 배정 → 모호 파일 본문 재배정을 오케스트레이션한다.
 /// Claude·kordoc 호출만 담당하고, 프롬프트·파싱·병합은 CleanupPlanner(순수)에 위임한다.
 actor CleanupService {
-    private let claude: ClaudeService
+    private let claude: any ClaudeAsking
     private let kordoc: KordocService
     private let confidenceThreshold: Double
 
-    init(claude: ClaudeService, kordoc: KordocService, confidenceThreshold: Double = 0.6) {
+    /// 배정 응답은 파일당 JSON 1엔트리 — 출력이 파일 수에 비례해 대형 폴더에서
+    /// claude CLI 120s 타임아웃을 넘는다(2026-07-05 Downloads 789개 실증). 청크로 상한.
+    static let assignChunkSize = 80
+    /// 2차 재배정은 파일당 본문 발췌(~1500자)가 입력에 실리므로 더 작게.
+    static let reassignChunkSize = 20
+
+    init(claude: any ClaudeAsking, kordoc: KordocService, confidenceThreshold: Double = 0.6) {
         self.claude = claude
         self.kordoc = kordoc
         self.confidenceThreshold = confidenceThreshold
@@ -25,33 +31,48 @@ actor CleanupService {
         return scheme
     }
 
-    /// 1차 메타데이터 배정 → confidence 낮은 파일만 본문 발췌로 2차 재배정 후 병합.
-    func assign(scheme: CleanupScheme, metas: [FileMeta]) async throws -> [CleanupAssignment] {
-        let prompt = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: metas)
-        let out = try await claude.ask(prompt: prompt, context: CleanupPlanner.metadataList(metas))
-        guard let base = CleanupPlanner.parseAssignments(out, scheme: scheme, metadata: metas) else {
-            throw CleanupError.parseFailed
+    /// 1차 메타데이터 배정(청크 분할·onProgress는 1차 청크 단위) → confidence 낮은
+    /// 파일만 본문 발췌로 2차 재배정(역시 청크) 후 병합.
+    func assign(scheme: CleanupScheme, metas: [FileMeta],
+                onProgress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil)
+    async throws -> [CleanupAssignment] {
+        // 1차: 메타데이터만으로 청크별 배정 — 청크당 출력(파일 수)이 상한된다.
+        let chunks = CleanupPlanner.chunked(metas, size: Self.assignChunkSize)
+        var base: [CleanupAssignment] = []
+        for (index, chunk) in chunks.enumerated() {
+            onProgress?(index + 1, chunks.count)
+            let prompt = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: chunk)
+            let out = try await claude.ask(prompt: prompt, context: CleanupPlanner.metadataList(chunk))
+            guard let part = CleanupPlanner.parseAssignments(out, scheme: scheme, metadata: chunk) else {
+                throw CleanupError.parseFailed
+            }
+            base.append(contentsOf: part)
         }
 
         // 모호 파일만 본문 발췌해 재배정.
         let ambiguousURLs = Set(base.filter { $0.confidence < confidenceThreshold }.map { $0.fileURL })
         guard !ambiguousURLs.isEmpty else { return base }
-
         let ambiguousMetas = metas.filter { ambiguousURLs.contains($0.url) }
-        var excerpts: [(name: String, excerpt: String)] = []
-        for meta in ambiguousMetas {
-            if let body = await ContentExtractor.body(for: meta.url, kordoc: kordoc), !body.isEmpty {
-                excerpts.append((meta.name, body))
-            }
-        }
-        guard !excerpts.isEmpty else { return base }
 
-        let reassignPrompt = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: ambiguousMetas)
-        let context = CleanupPlanner.buildAmbiguousContext(excerpts)
-        let out2 = try await claude.ask(prompt: reassignPrompt, context: context)
-        guard let overrides = CleanupPlanner.parseAssignments(out2, scheme: scheme, metadata: ambiguousMetas) else {
-            return base // 2차 실패 시 1차 결과 유지
+        var overrides: [CleanupAssignment] = []
+        for chunk in CleanupPlanner.chunked(ambiguousMetas, size: Self.reassignChunkSize) {
+            var excerpts: [(name: String, excerpt: String)] = []
+            for meta in chunk {
+                if let body = await ContentExtractor.body(for: meta.url, kordoc: kordoc), !body.isEmpty {
+                    excerpts.append((meta.name, body))
+                }
+            }
+            guard !excerpts.isEmpty else { continue }
+
+            let reassignPrompt = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: chunk)
+            let context = CleanupPlanner.buildAmbiguousContext(excerpts)
+            let out2 = try await claude.ask(prompt: reassignPrompt, context: context)
+            if let part = CleanupPlanner.parseAssignments(out2, scheme: scheme, metadata: chunk) {
+                overrides.append(contentsOf: part)
+            }
+            // 청크 파싱 실패는 그 청크만 1차 결과 유지(기존 "2차 실패 시 1차 유지" 시맨틱의 청크판).
         }
+        guard !overrides.isEmpty else { return base }
         return CleanupPlanner.merge(base, with: overrides)
     }
 }

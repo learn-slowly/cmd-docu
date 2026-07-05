@@ -13,7 +13,7 @@ struct FolderCleanupView: View {
             Divider()
 
             if appState.cleanupBusy {
-                ProgressView("Claude가 분류 중…")
+                ProgressView(appState.cleanupProgress ?? "Claude가 분류 중…")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
             }

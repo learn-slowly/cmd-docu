@@ -11,6 +11,16 @@ enum CleanupPlanner {
         }.joined(separator: "\n")
     }
 
+    /// 배열을 size개씩 순서 보존 분할(순수). 배정 응답이 파일당 JSON 1엔트리라 출력이
+    /// 파일 수에 비례하는데, 한 방 요청은 대형 폴더에서 claude CLI 120s 타임아웃을
+    /// 구조적으로 초과한다(2026-07-05 Downloads 789개 실증) — 요청당 청크로 상한.
+    static func chunked<T>(_ items: [T], size: Int) -> [[T]] {
+        guard size > 0, !items.isEmpty else { return [] }
+        return stride(from: 0, to: items.count, by: size).map {
+            Array(items[$0..<min($0 + size, items.count)])
+        }
+    }
+
     /// 폴더명 안전화: 경로 구분자·금지문자·`..` 제거.
     static func sanitizeBucketName(_ name: String) -> String {
         let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>\u{0}")
