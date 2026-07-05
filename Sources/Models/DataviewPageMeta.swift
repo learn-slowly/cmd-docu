@@ -59,9 +59,12 @@ extension DataviewPageMeta {
     /// - lists: 코드펜스 밖 리스트 항목만, 직전 헤딩 텍스트를 subpath로.
     static func parse(content: String, name: String, folder: String, path: String,
                       mtime: Double, ctime: Double) -> DataviewPageMeta {
+        // CRLF 정규화(frontmatter 분리 전에 해야 yaml도 함께 정상화됨)
+        let normalized = content.replacingOccurrences(of: "\r\n", with: "\n")
+
         var frontmatter: [String: DataviewYAMLValue] = [:]
-        var body = content
-        if let split = CompanionNote.splitFrontmatter(content) {
+        var body = normalized
+        if let split = CompanionNote.splitFrontmatter(normalized) {
             frontmatter = parseYAMLLite(split.yaml)
             body = split.body
         }
@@ -85,6 +88,11 @@ extension DataviewPageMeta {
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("```") { inFence.toggle(); continue }
             if inFence { continue }
+
+            // 코드펜스 밖의 모든 줄에서 인라인 태그를 페이지 tags에 수집
+            let lineInlineTags = allMatches(tagRegex, in: trimmed)
+            lineInlineTags.forEach { tags.insert($0) }
+
             if trimmed.hasPrefix("#"), let range = trimmed.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
                 currentHeader = String(trimmed[range.upperBound...])
                 continue
@@ -98,7 +106,6 @@ extension DataviewPageMeta {
                 text = String(text[boxRange.upperBound...])
             }
             let itemTags = allMatches(tagRegex, in: text)
-            itemTags.forEach { tags.insert($0) }
             lists.append(DataviewListItemMeta(text: text, headerSubpath: currentHeader,
                                               tags: itemTags, task: task, completed: completed))
         }

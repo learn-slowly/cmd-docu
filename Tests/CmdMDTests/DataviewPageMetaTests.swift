@@ -80,4 +80,22 @@ final class DataviewPageMetaTests: XCTestCase {
         XCTAssertTrue(m.frontmatter.isEmpty)
         XCTAssertEqual(m.lists.count, 1)
     }
+
+    func testCRLFListTextHasNoCarriageReturn() {
+        // 회귀(리뷰 확증): CRLF 문서에서 text/headerSubpath 끝 \r 잔존 — JS 쪽 문자열 비교가 조용히 실패.
+        let m = DataviewPageMeta.parse(content: "## 헤딩\r\n- 항목\r\n", name: "n", folder: "f",
+                                       path: "f/n.md", mtime: 0, ctime: 0)
+        XCTAssertEqual(m.lists.first?.text, "항목")
+        XCTAssertEqual(m.lists.first?.headerSubpath, "헤딩")
+    }
+
+    func testPageTagsIncludeHeadingAndParagraphInlineTags() {
+        // 회귀(리뷰 확증): 헤딩·문단의 인라인 태그가 페이지 tags에서 누락되던 결함.
+        let m = DataviewPageMeta.parse(content: "## 컨디션 #daily_condition\n본문 #inline_tag\n- 항목 #item_tag",
+                                       name: "n", folder: "f", path: "f/n.md", mtime: 0, ctime: 0)
+        XCTAssertTrue(m.tags.contains("#daily_condition"), "헤딩 태그")
+        XCTAssertTrue(m.tags.contains("#inline_tag"), "문단 태그")
+        XCTAssertTrue(m.tags.contains("#item_tag"), "리스트 태그(기존 동작 유지)")
+        XCTAssertEqual(m.lists.first?.tags, ["#item_tag"], "항목별 tags는 항목 text 기준 유지")
+    }
 }
