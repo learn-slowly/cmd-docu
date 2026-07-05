@@ -37,6 +37,8 @@ final class DataviewPageIndex {
     }
 
     func pages(inFolder relativeFolder: String) -> [DataviewPageMeta] {
+        // 루트("") 질의는 전체 재귀 반환 — prefix "/" 오조립 방지.
+        guard !relativeFolder.isEmpty else { return allPages() }
         let prefix = relativeFolder.hasSuffix("/") ? relativeFolder : relativeFolder + "/"
         return allPages().filter { $0.path.hasPrefix(prefix) || $0.folder == relativeFolder }
     }

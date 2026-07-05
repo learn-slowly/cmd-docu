@@ -66,4 +66,11 @@ final class DataviewPageIndexTests: XCTestCase {
     func testSharedRegistryReturnsSameInstance() {
         XCTAssertTrue(DataviewPageIndex.shared(for: root) === DataviewPageIndex.shared(for: root))
     }
+
+    func testEmptyFolderQueryReturnsAllRecursive() {
+        // 회귀(리뷰 확증): ""(루트) 질의가 prefix "/" 오조립으로 루트 직속만 반환하던 결함.
+        let idx = DataviewPageIndex(root: root)
+        XCTAssertEqual(idx.pages(inFolder: "").count, idx.allPages().count,
+                       "루트 폴더는 전체 재귀 반환")
+    }
 }
