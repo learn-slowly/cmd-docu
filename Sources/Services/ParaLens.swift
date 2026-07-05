@@ -59,16 +59,21 @@ enum ParaLens {
     /// 항목 배열을 PARA 순서로 정렬해 반환한다. 분류는 `root`(현재 폴더) 기준.
     /// 정렬키: `(category.sortRank, isDirectory ? 0 : 1, name localizedStandard)`.
     /// 기존 항목 식별자·children은 그대로 보존된다.
+    /// 분류 키는 항목당 1회 사전계산(Schwartzian) — classify가 비교마다 URL 표준화·
+    /// pathComponents 배열을 할당해 n log n번 반복되던 비용 제거(2026-07-05 리뷰 백로그.
+    /// 트리 평탄화 후 펼쳐진 전체 트리가 렌더마다 정렬되므로 체감 비용이 됐다).
     static func sorted(_ items: [FileTreeItem], under root: URL?) -> [FileTreeItem] {
-        items.sorted { lhs, rhs in
-            let l = classify(lhs.url, under: root).sortRank
-            let r = classify(rhs.url, under: root).sortRank
-            if l != r { return l < r }
-            // 같은 분류: 폴더 먼저
-            let ld = lhs.isDirectory ? 0 : 1, rd = rhs.isDirectory ? 0 : 1
-            if ld != rd { return ld < rd }
-            // 이름 오름차순
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        let keyed = items.map { item in
+            (item: item,
+             rank: classify(item.url, under: root).sortRank,
+             dir: item.isDirectory ? 0 : 1)
         }
+        return keyed.sorted { lhs, rhs in
+            if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+            // 같은 분류: 폴더 먼저
+            if lhs.dir != rhs.dir { return lhs.dir < rhs.dir }
+            // 이름 오름차순
+            return lhs.item.name.localizedStandardCompare(rhs.item.name) == .orderedAscending
+        }.map(\.item)
     }
 }
