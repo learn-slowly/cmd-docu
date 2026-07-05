@@ -95,4 +95,17 @@ final class LocalWebAssetsTests: XCTestCase {
         XCTAssertTrue(block!.contains("MJS"), "mermaid JS 내용이 포함되어야 한다")
         XCTAssertTrue(block!.contains("<script>"), "<script> 태그로 감싸야 한다")
     }
+
+    // MARK: - luxon·dv-shim 자산 동봉 확인 (dataviewjs 프리뷰용)
+
+    func testLuxonAssetBundled() throws {
+        let js = try XCTUnwrap(LocalWebAssets.luxonJS, "luxon.min.js 동봉")
+        XCTAssertTrue(js.contains("DateTime"))
+    }
+
+    func testDvShimAssetBundled() throws {
+        let js = try XCTUnwrap(LocalWebAssets.dvShimJS, "dv-shim.js 동봉")
+        XCTAssertTrue(js.contains("__dvOutput"))
+        XCTAssertTrue(js.contains("__dvNative"))
+    }
 }

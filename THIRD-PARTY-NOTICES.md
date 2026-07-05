@@ -36,6 +36,14 @@ cmd-docu는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPAC
 - 비고: 다이어그램 렌더링. cmd-docu가 `Sources/Resources/web/mermaid/mermaid.min.js`(UMD)로 vendored 후
   `LocalWebAssets`가 인라인 주입한다. §4 MIT 전문 공통 본문 참조.
 
+### luxon 3.5.0
+- 저장소: https://github.com/moment/luxon
+- 라이선스: MIT License
+- Copyright (c) 2019 JS Foundation and other contributors
+- 비고: dataviewjs 프리뷰 렌더용 날짜 라이브러리. cmd-docu가 `Sources/Resources/web/luxon/luxon.min.js`로
+  vendored 후 dv-shim(`Sources/Resources/web/dataview/dv-shim.js`, cmd-docu 자체 작성)과 함께
+  `LocalWebAssets`가 JSContext에 로드한다. §4 MIT 전문 공통 본문 참조.
+
 ### Highlightr 2.3.0
 - 저장소: https://github.com/raspu/Highlightr
 - 라이선스: MIT License
@@ -87,7 +95,7 @@ cmd-docu는 [CmdMD](https://github.com/johnfkoo951/CmdMD)(MIT, 구요한/CMDSPAC
 
 ## 4. 라이선스 전문
 
-### MIT License (KaTeX, Mermaid, Highlightr, Yams 공통 본문)
+### MIT License (KaTeX, Mermaid, luxon, Highlightr, Yams 공통 본문)
 
 > 저작권 고지는 위 각 항목의 Copyright 줄을 따릅니다. 아래는 공통 본문입니다.
 

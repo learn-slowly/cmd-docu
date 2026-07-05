@@ -27,7 +27,7 @@ enum LocalWebAssets {
 
     /// SPM 리소스 번들(CmdMD_CmdMD.bundle) 위치를 반환한다.
     /// `Bundle.module`은 패키지된 .app에서 trap 이력이 있어 회피하고,
-    /// findHighlightrBundleURL과 동일한 3-루트 탐색을 쓴다.
+    /// findHighlightrBundleURL과 동일한 3-루트 탐색에 테스트 실행용 4번째 루트를 더한다.
     private static func findAppResourceBundleURL() -> URL? {
         let bundleName = "CmdMD_CmdMD.bundle"
         var roots: [URL] = []
@@ -35,6 +35,12 @@ enum LocalWebAssets {
         roots.append(Bundle.main.bundleURL)
         if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
             roots.append(exeDir)
+        }
+        // `swift test`(xctest CLI) 실행 시 Bundle.main은 시스템 xctest 실행파일이라 위 3-루트가 전부 빗나간다.
+        // 테스트 바이너리(.xctest)와 리소스 번들은 항상 같은 빌드 산출물 디렉터리에 나란히 놓이므로,
+        // 로드된 번들 중 .xctest를 찾아 그 부모 디렉터리를 추가 후보로 삼는다(프로덕션 앱 동작엔 영향 없음).
+        if let xctestBundle = Bundle.allBundles.first(where: { $0.bundlePath.hasSuffix(".xctest") }) {
+            roots.append(xctestBundle.bundleURL.deletingLastPathComponent())
         }
         let fm = FileManager.default
         for root in roots {
@@ -90,6 +96,12 @@ enum LocalWebAssets {
 
     /// mermaid.min.js(UMD). 번들 없으면 nil.
     static let mermaidJS: String? = readWebResource("mermaid/mermaid.min.js")
+
+    /// dataviewjs용 luxon(로컬 동봉) — 스펙 §5.
+    static let luxonJS: String? = readWebResource("luxon/luxon.min.js")
+
+    /// dv API 서브셋 shim — 스펙 §3 범위, JSContext 전용.
+    static let dvShimJS: String? = readWebResource("dataview/dv-shim.js")
 
     // MARK: - 순수 조립 함수 (테스트 가능, 입력=콘텐츠)
 
