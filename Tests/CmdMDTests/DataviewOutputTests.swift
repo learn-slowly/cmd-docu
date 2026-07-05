@@ -59,4 +59,24 @@ final class DataviewOutputTests: XCTestCase {
         XCTAssertTrue(html.contains(MarkdownRenderer.wikiLinkHref(target: "한글 노트").replacingOccurrences(of: "&", with: "&amp;"))
                       || html.contains(MarkdownRenderer.wikiLinkHref(target: "한글 노트")))
     }
+
+    func testLinkTargetKeepsDottedNameWithoutKnownExtension() {
+        // 회귀(리뷰 확증): 확장자 없는 점 든 경로를 deletingPathExtension이 "1.1"로 오절단
+        // — LinkedNoteResolver 점-이름 버그(2026-07-01 수정)와 동일 패턴의 재유입 차단.
+        let html = DataviewHTMLSerializer.html(for: [.list([
+            .link(path: "Calendar/1.1.1_노트.md", display: nil),
+            .link(path: "Calendar/2.2.2_이름", display: nil),
+        ])])
+        // md 확장자는 제거돼 "1.1.1_노트"가 마지막 컴포넌트
+        XCTAssertTrue(html.contains("note=Calendar/1.1.1_") || html.contains("note=Calendar%2F1.1.1_"),
+                      "md 확장자만 제거 후 점 든 이름 보존")
+        // 확장자 없으면 그대로 유지 (2.2.2_이름 보존)
+        XCTAssertTrue(html.contains("note=Calendar/2.2.2_") || html.contains("note=Calendar%2F2.2.2_"),
+                      "확장자 없으면 점 든 이름 그대로")
+        // 2.2로 오절단되지 않아야 함 (버그 증상 회귀 차단)
+        XCTAssertFalse(html.contains("note=Calendar/1.1\"") || html.contains("note=Calendar%2F1.1%22"),
+                       "1.1.1이 1.1로 오절단되면 안 됨")
+        XCTAssertFalse(html.contains("note=Calendar/2.2\"") || html.contains("note=Calendar%2F2.2%22"),
+                       "2.2.2가 2.2로 오절단되면 안 됨")
+    }
 }

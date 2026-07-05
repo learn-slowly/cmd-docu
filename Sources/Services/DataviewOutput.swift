@@ -51,7 +51,11 @@ enum DataviewHTMLSerializer {
         switch cell {
         case .text(let s): return s
         case .link(let path, let display):
-            let target = (path as NSString).deletingPathExtension
+            // 지원 확장자(md/markdown/txt)일 때만 제거 — 무조건 deletingPathExtension이면
+            // 점 든 이름("1.1.1_노트")을 "1.1"로 오절단한다(LinkedNoteResolver 점-이름 버그 전례).
+            let ext = (path as NSString).pathExtension.lowercased()
+            let target = ["md", "markdown", "txt"].contains(ext)
+                ? (path as NSString).deletingPathExtension : path
             let label = escape(display ?? (target as NSString).lastPathComponent)
             return "<a href=\"\(escape(MarkdownRenderer.wikiLinkHref(target: target)))\" class=\"wiki-link\">\(label)</a>"
         case .nested(let cells): return cells.map(cellHTML).joined(separator: "<br>")
