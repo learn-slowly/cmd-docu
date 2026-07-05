@@ -96,14 +96,14 @@
       var j = __dvNative.page(String(path));
       return j ? wrapPage(parsed(j)) : null;
     },
-    // ISO 전체 파싱 시도 → 문자열 안 yyyy-MM-dd 추출 폴백 → null.
+    // 옵시디언 Dataview 시맨틱: 연-월-일이 명시된 문자열만 날짜로 취급한다.
+    // luxon fromISO를 그대로 쓰면 "2026-W27"(ISO 주)·"2026-07"(연-월)까지 파싱돼
+    // 주간 표에 위클리·먼슬리 노트가 빈 행으로 끼어든다(실측 결함).
+    // 주의: 시간 성분은 버려진다 — 실사용 블록은 날짜 비교뿐이라 무영향.
     date: function (s) {
       if (s == null) return null;
       if (s.isLuxonDateTime) return s;
-      var str = String(s);
-      var dt = L.DateTime.fromISO(str);
-      if (dt.isValid) return dt;
-      var m = str.match(/\d{4}-\d{2}-\d{2}/);
+      var m = String(s).match(/\d{4}-\d{2}-\d{2}/);
       return m ? L.DateTime.fromISO(m[0]) : null;
     },
     fileLink: function (path, _embed, display) { return makeLink(path, display); },

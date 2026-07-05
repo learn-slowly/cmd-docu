@@ -103,14 +103,7 @@ final class DataviewEngineTests: XCTestCase {
         let items = try run(weeklyBlock, note: "2026-W27.md").get()
         guard case .table(let headers, let rows) = items.first else { return XCTFail("표여야 함") }
         XCTAssertEqual(headers.first, .text("날짜"))
-        // 실측 발견(브리프의 count==2 기대와 다름 — 실제 3): dv-shim.js의 dv.date()가
-        // 순정 luxon fromISO를 그대로 쓰는데, luxon은 "2026-W27"(파일 자기 이름, ISO 주 표기)도
-        // 유효한 날짜(그 주 월요일)로 파싱한다(node로 bundled luxon.min.js 직접 검증 완료).
-        // 그래서 p.file.day가 nil인 주간 노트 자신도 "day && day>=start&&<=end" 조건을
-        // 통과해 셀 전부 빈 문자열인 자기참조 행이 표에 추가된다. 진짜 원인은 dv-shim.js의
-        // dv.date 과다허용(실제 옵시디언 Dataview의 getDate는 이런 부분 ISO를 안 받아준다) —
-        // 이 태스크 범위(기존 파일 수정 금지)에서는 고치지 않고 실측대로 단언 + 후속 보고.
-        XCTAssertEqual(rows.count, 3, "주 안 데일리 2개(2026-06-20 제외) + 자기참조 빈 행 1개(실측 — 위 주석)")
+        XCTAssertEqual(rows.count, 2, "주 안 데일리 2개(2026-06-20 제외, 2026-W27 자기 자신도 제외)")
         // 이름순 정렬: 06-30 먼저. 링크 셀 + lists 헤딩/태그 라우팅 검증.
         guard case .link(let path, _) = rows[0][0] else { return XCTFail("첫 셀은 링크") }
         XCTAssertTrue(path.contains("2026-06-30"))
@@ -118,10 +111,20 @@ final class DataviewEngineTests: XCTestCase {
         XCTAssertEqual(rows[0][2], .text("죽"), "식사: 접두사 제거")
         XCTAssertEqual(rows[1][3], .text("캐싸일라 d+4"), "치료 헤딩 라우팅")
         XCTAssertEqual(rows[0][4], .text("메모A"))
-        // 3번째 행 = 2026-W27.md 자기참조(빈 행) — 위 발견 주석 실증.
-        guard case .link(let selfPath, _) = rows[2][0] else { return XCTFail("셋째 셀도 링크") }
-        XCTAssertTrue(selfPath.contains("2026-W27"))
-        XCTAssertEqual(rows[2][1], .text(""))
+    }
+
+    func testWeeklyTableExcludesWeekAndMonthNamedNotes() throws {
+        // 회귀(실측): dv.date가 ISO 주("2026-W27")·연-월("2026-07")을 파싱하면
+        // 주간 표에 위클리·먼슬리 노트가 빈 행으로 끼어든다 — 옵시디언과 다른 동작.
+        write("2026-07.md", "# 월간")
+        let items = try run(weeklyBlock, note: "2026-W27.md").get()
+        guard case .table(_, let rows) = items.first else { return XCTFail("표여야 함") }
+        for row in rows {
+            guard case .link(let path, _) = row[0] else { continue }
+            XCTAssertFalse(path.contains("2026-W27"), "위클리 자신 제외")
+            XCTAssertFalse(path.contains("2026-07.md"), "먼슬리 제외")
+        }
+        XCTAssertEqual(rows.count, 2)
     }
 
     func testRealMonthlyBlockListsWeeklies() throws {
