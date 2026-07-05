@@ -44,7 +44,7 @@
 
 `dv.pages(...)`는 **동기 API**다. WKWebView의 JS→네이티브 브릿지는 비동기뿐이라, 웹뷰 안 실행은 "필요 데이터를 실행 전에 추측해 선주입"(빗나가면 빈 결과, 대형 폴더는 수 MB) 아니면 코드 변형이 필요하다. `JSContext`(JavaScriptCore, macOS 내장·의존성 0)는 네이티브 함수를 **동기로** 노출할 수 있어 온디맨드 공급이 자연스럽다.
 
-보안 부수 효과: JSContext에는 fetch/XHR/DOM/네트워크 API가 아예 없어, 악성 블록이 볼트 메타데이터를 읽어도 **밖으로 보낼 방법 자체가 없다**. 실행 정책(결정 2)과 이중 방어.
+보안 부수 효과: JSContext에는 fetch/XHR/DOM/네트워크 API가 아예 없어, 악성 블록이 볼트 메타데이터를 읽어도 **밖으로 보낼 방법 자체가 없다**. 실행 정책(결정 2)과 이중 방어. 이 격리는 직렬화 경계까지 연장한다(최종 리뷰 반영): 텍스트 셀을 raw HTML로 통과시키면 결과가 주입되는 WKWebView(네트워크 가능)가 유출 채널이 되므로, 셀은 이스케이프 후 `<br>` 계열만 복원한다(§3 실사용 셀 HTML은 `<br>` join뿐).
 
 트레이드오프: DOM 직접 조작 API 불가(실사용 0건 — §3 비지원에 명시).
 
@@ -55,7 +55,7 @@
 ### 신규 컴포넌트
 
 - **`DataviewBlockExtractor`** (순수): 마크다운에서 ` ```dataviewjs ` 펜스 블록을 추출(코드·범위)하고, 각 블록을 고유 id의 placeholder `<div>`로 치환한 마크다운을 돌려준다. 기존 렌더러의 코드펜스 마스킹과 간섭하지 않도록 렌더 전 단계에서 동작.
-- **`DataviewPageIndex`** (actor): 페이지 메타 공급자. 폴더(재귀)·태그·단건 조회에 대해 `DataviewPageMeta`(§6) 배열을 돌려준다. 파일당 mtime 캐시(ContentExtractor 캐시 패턴). frontmatter 분리는 `CompanionNote.splitFrontmatter` 공용 로직 재사용, 대상 확장자는 md/markdown(+txt 제외 — Dataview도 md만 색인).
+- **`DataviewPageIndex`** (final class — JSContext 동기 콜백에서 actor await 불가, NSLock 캐시): 페이지 메타 공급자. 폴더(재귀)·태그·단건 조회에 대해 `DataviewPageMeta`(§6) 배열을 돌려준다. 파일당 mtime 캐시(ContentExtractor 캐시 패턴). frontmatter 분리는 `CompanionNote.splitFrontmatter` 공용 로직 재사용, 대상 확장자는 md/markdown(+txt 제외 — Dataview도 md만 색인).
 - **`DataviewEngine`**: JSContext 래퍼. 초기화 시 `luxon.min.js`+`dv-shim.js`(둘 다 로컬 동봉) 로드, 블록 코드 실행, `dv.table/list/paragraph/header/span` 호출을 수집해 **HTML 문자열로 직렬화**해 반환. 네이티브 브릿지는 동기 함수 소수(`__dvPages(source)`·`__dvPage(path)`)만 JSExport. 실행 시간 제한은 `JSContextGroupSetExecutionTimeLimit`(JavaScriptCore C API, 3초)로 강제.
 - **`Resources/web/dv-shim.js`**: `dv` 객체 구현(DataArray·current/pages/date/luxon/렌더 수집). luxon은 `scripts/vendor_web_assets.sh`에 luxon 3.x 다운로드 추가(KaTeX/Mermaid 동봉 패턴, THIRD-PARTY-NOTICES 갱신 — luxon은 MIT).
 
