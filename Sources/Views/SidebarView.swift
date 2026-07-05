@@ -165,10 +165,17 @@ struct FileTreeView: View {
                     }
 
                     List {
-                        ForEach(LibrarySorting.sorted(appState.fileTree,
-                                                      by: appState.sortForFolder(appState.currentFolder),
-                                                      under: appState.currentFolder), id: \.url) { item in
-                            FileTreeItemRow(item: item)
+                        // 평탄화: 모든 노드가 각자의 List 행 — 자식을 부모 행 안에
+                        // 중첩하면 macOS가 우클릭을 행 단위로 해석해 최상위 폴더
+                        // contextMenu가 자식 행을 가로챈다(2026-07-05 실기 실증).
+                        ForEach(FileTreeFlattener.flatten(items: appState.fileTree,
+                                                          expanded: appState.expandedFolders,
+                                                          root: appState.currentFolder,
+                                                          parent: appState.currentFolder,
+                                                          sortFor: appState.sortForFolder)) { row in
+                            // 들여쓰기는 행 내부(depth)에서 적용 — 밖에서 패딩하면
+                            // 거터가 행 히트영역(우클릭·드롭) 밖으로 빠진다(리뷰 지적).
+                            FileTreeItemRow(item: row.item, depth: row.depth)
                         }
                     }
                     .listStyle(.sidebar)
@@ -357,6 +364,9 @@ struct SearchResultRow: View {
 struct FileTreeItemRow: View {
     @Environment(AppState.self) private var appState
     let item: FileTreeItem
+    /// 평탄화 깊이(들여쓰기 단계). 패딩은 히트영역 체인(contentShape·contextMenu·onDrop)
+    /// 앞에 행 내부에서 적용해 거터까지 행이 소유한다.
+    var depth: Int = 0
 
     private var isFavorited: Bool {
         appState.favorites.contains(where: { $0.url == item.url })
@@ -378,69 +388,58 @@ struct FileTreeItemRow: View {
     @ViewBuilder
     private var rowContent: some View {
         if item.isDirectory {
-            // 폴더: chevron 버튼(펼침만) + 라벨 탭(폴더 선택→라이브러리) 수동 분리
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 4) {
-                    // chevron — 펼침/접힘만. 폴더 선택·모드 전환 없음.
-                    Button {
-                        appState.toggleFolderExpansion(item.url)
-                    } label: {
-                        Image(systemName: appState.expandedFolders.contains(item.url)
-                              ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 14, height: 14)
-                    }
-                    .buttonStyle(.plain)
+            // 폴더: chevron 버튼(펼침만) + 라벨 탭(폴더 선택→라이브러리) 수동 분리.
+            // 자식은 여기서 렌더하지 않는다 — FileTreeFlattener가 각자의 List 행으로
+            // 편다(컨텍스트 메뉴 오귀속 수정·List 기본 행 간격도 자연 적용).
+            HStack(spacing: 4) {
+                // chevron — 펼침/접힘만. 폴더 선택·모드 전환 없음.
+                Button {
+                    appState.toggleFolderExpansion(item.url)
+                } label: {
+                    Image(systemName: appState.expandedFolders.contains(item.url)
+                          ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 14)
+                }
+                .buttonStyle(.plain)
 
-                    // 라벨 탭 = 폴더 선택(라이브러리 모드 전환)
-                    // maxWidth로 빈 공간도 탭 영역으로 포함한다.
-                    labelRow
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            // ⌘클릭 = 선택 토글만(모드 전환 없음, F1b 스펙 §3.2)
-                            if NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
-                                appState.toggleFileSelection(item.url)
-                            } else {
-                                appState.clearFileSelection()
-                                appState.selectFolderForLibrary(item.url)
-                            }
+                // 라벨 탭 = 폴더 선택(라이브러리 모드 전환)
+                // maxWidth로 빈 공간도 탭 영역으로 포함한다.
+                labelRow
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // ⌘클릭 = 선택 토글만(모드 전환 없음, F1b 스펙 §3.2)
+                        if NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
+                            appState.toggleFileSelection(item.url)
+                        } else {
+                            appState.clearFileSelection()
+                            appState.selectFolderForLibrary(item.url)
                         }
-                }
-                // 행 전체 우클릭 히트영역 확보.
-                .contentShape(Rectangle())
-                .contextMenu {
-                    FileTreeContextMenu(item: item)
-                }
-                .background(isDropTargeted ? Color.cmdsAccent.opacity(0.18) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 4))   // 행 폭 전체 하이라이트(스펙 §3)
-                .onDrag {
-                    let urls = DragPayload.urls(for: item.url, selection: appState.fileSelection)
-                    appState.draggingURLs = urls
-                    return DragPayload.makeProvider(for: urls, primary: item.url)
-                }
-                .onDrop(of: FileDropDelegate.acceptedTypes,
-                        delegate: FileDropDelegate(destination: item.url, appState: appState,
-                                                   onHoverChange: handleDropHover))
-
-                // 자식: 펼쳐진 경우만 표시, 들여쓰기 12pt.
-                // 세로 여백 — 자식들은 List 행 밖(부모 행 안 VStack)이라 List의 기본 행 간격을
-                // 못 받는다. 최상위 행과 밀도를 맞추기 위해 행마다 여백을 준다(스모크 피드백).
-                if appState.expandedFolders.contains(item.url) {
-                    ForEach(LibrarySorting.sorted(item.children,
-                                                  by: appState.sortForFolder(item.url),
-                                                  under: appState.currentFolder), id: \.url) { child in
-                        FileTreeItemRow(item: child)
-                            .padding(.leading, 12)
-                            .padding(.vertical, 3)
                     }
-                }
             }
+            .padding(.leading, CGFloat(depth) * 12)
+            // 행 전체 우클릭 히트영역 확보(들여쓰기 거터 포함 — 패딩 뒤에 셰이프).
+            .contentShape(Rectangle())
+            .contextMenu {
+                FileTreeContextMenu(item: item)
+            }
+            .background(isDropTargeted ? Color.cmdsAccent.opacity(0.18) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 4))   // 행 폭 전체 하이라이트(스펙 §3)
+            .onDrag {
+                let urls = DragPayload.urls(for: item.url, selection: appState.fileSelection)
+                appState.draggingURLs = urls
+                return DragPayload.makeProvider(for: urls, primary: item.url)
+            }
+            .onDrop(of: FileDropDelegate.acceptedTypes,
+                    delegate: FileDropDelegate(destination: item.url, appState: appState,
+                                               onHoverChange: handleDropHover))
         } else {
-            // 파일 행도 maxWidth로 빈 공간을 탭 영역에 포함한다.
+            // 파일 행도 maxWidth로 빈 공간을 탭 영역에 포함한다(거터 포함).
             labelRow
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, CGFloat(depth) * 12)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     if NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
