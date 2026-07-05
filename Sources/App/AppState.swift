@@ -15,6 +15,9 @@ final class AppState {
     // Tab System
     var tabs: [EditorTab] = []
     var activeTabId: UUID?
+    /// 외부 열기(더블클릭·드롭)와 세션 복원을 도착 순으로 직렬 처리하는 체인(스펙 §2.3).
+    /// 마지막에 처리된 파일이 활성 탭이 된다. 내부 열기(라이브러리·트리 클릭)는 이 큐를 타지 않는다.
+    var externalOpenChain: Task<Void, Never>?
     var documents: [UUID: MarkdownDocument] = [:]
     var originalContents: [UUID: String] = [:]
     /// kordoc 오피스 변환 상태(키 = EditorTab.id). office 탭은 MarkdownDocument가 없다.
@@ -1075,6 +1078,32 @@ final class AppState {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             NotificationCenter.default.post(name: .scrollToPDFPage,
                                             object: PDFPageJump(url: url, page: page))
+        }
+    }
+
+    /// 외부에서 온 파일 열기 요청을 직렬 큐에 제출한다 — 항상 새 탭(같은 URL은 기존 탭 활성,
+    /// 스펙 §2.2). 배치 안 순서 = 열리는 순서, 마지막 파일이 활성.
+    func enqueueExternalOpen(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let prev = externalOpenChain
+        externalOpenChain = Task { @MainActor in
+            await prev?.value
+            self.mainMode = .reader
+            for url in urls {
+                await self.loadAndActivateDocument(at: url, inNewTab: true)
+            }
+            self.presentMainWindowIfNeeded()
+        }
+    }
+
+    /// 외부 열기 처리 후 문서 창이 숨겨져 있으면 표시한다. 단일 Window 씬은 WindowGroup과
+    /// 달리 이벤트 전달용 새 창을 만들지 않으므로 필요(스펙 §2.1 — SwiftUI가 자체 재표시하면
+    /// 보험, 안 하면 필수 경로). headless 테스트에선 NSApp이 nil이라 no-op.
+    private func presentMainWindowIfNeeded() {
+        guard let app = NSApp else { return }
+        app.activate(ignoringOtherApps: true)
+        if let window = app.windows.first(where: { $0.canBecomeMain }), !window.isVisible {
+            window.makeKeyAndOrderFront(nil)
         }
     }
 

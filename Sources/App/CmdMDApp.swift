@@ -348,7 +348,8 @@ struct CmdMDApp: App {
         if url.scheme == "cmdmd" {
             appState.openInternalURL(url)
         } else if url.isFileURL {
-            appState.openDocument(at: url)
+            // 외부 열기 = 직렬 큐(항상 새 탭·다중은 마지막 활성 — 스펙 §2.2·§2.3).
+            appState.enqueueExternalOpen([url])
         }
     }
     
