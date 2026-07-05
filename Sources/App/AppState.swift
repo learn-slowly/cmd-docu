@@ -14,7 +14,11 @@ final class AppState {
 
     // Tab System
     var tabs: [EditorTab] = []
-    var activeTabId: UUID?
+    var activeTabId: UUID? {
+        didSet { activeTabIdChangeCount += 1 }
+    }
+    /// 테스트 관찰용 — 배치 복원이 활성 탭을 정확히 1회만 지정하는지 검증(스펙 §3-1).
+    private(set) var activeTabIdChangeCount = 0
     /// 외부 열기(더블클릭·드롭)와 세션 복원을 도착 순으로 직렬 처리하는 체인(스펙 §2.3).
     /// 마지막에 처리된 파일이 활성 탭이 된다. 내부 열기(라이브러리·트리 클릭)는 이 큐를 타지 않는다.
     var externalOpenChain: Task<Void, Never>?
@@ -1137,33 +1141,30 @@ final class AppState {
     @MainActor
     private func loadAndActivateDocument(at url: URL, inNewTab: Bool) async {
         // 짝꿍 노트를 직접 열면 대응 미디어로 리다이렉트 — 노트는 미디어 뷰 안에서 열람·편집한다.
-        if let mediaURL = Self.mediaRedirectTarget(for: url) {
-            await loadAndActivateDocument(at: mediaURL, inNewTab: inNewTab)
-            return
-        }
-
-        if let existingTab = tabs.first(where: { $0.fileURL == url }) {
+        let target = Self.mediaRedirectTarget(for: url) ?? url
+        if let existingTab = tabs.first(where: { $0.fileURL == target }) {
             activeTabId = existingTab.id
             return
         }
+        guard let tab = await loadDocument(at: target) else { return }
+        placeTab(tab, inNewTab: inNewTab)
+        finishOpening(tab)
+        saveSession()
+    }
 
-        // 이미지·PDF·오피스: MarkdownDocument/워처/originalContents 없이 탭만.
+    /// 문서를 읽어 "미배치" 탭을 만든다 — placeTab/활성화/saveSession 없음(스펙 §2.4).
+    /// 리다이렉트·중복 판별은 호출자 몫. markdown 로드 실패 시 errorMessage 세팅 후 nil.
+    @MainActor
+    private func loadDocument(at url: URL) async -> EditorTab? {
+        // 이미지·PDF·오피스·미디어: MarkdownDocument/워처/originalContents 없이 탭만.
         let kind = DocumentKind(from: url)
         if kind != .markdown {
-            let tab = EditorTab(
+            return EditorTab(
                 fileURL: url,
                 title: url.deletingPathExtension().lastPathComponent,
                 kind: kind
             )
-            placeTab(tab, inNewTab: inNewTab)
-            addToRecentFiles(url)
-            if kind == .office {
-                retryOfficeConversion(tabID: tab.id, fileURL: url)
-            }
-            saveSession()
-            return
         }
-
         do {
             let document = try await fileService.loadDocument(from: url)
             let tab = EditorTab(
@@ -1173,13 +1174,29 @@ final class AppState {
             )
             documents[document.id] = document
             originalContents[document.id] = document.fullText
-            placeTab(tab, inNewTab: inNewTab)
-            addToRecentFiles(url)
-            startWatchingFile(at: url, for: tab.id)
-            harvestTags(from: document)
-            saveSession()
+            return tab
         } catch {
             errorMessage = "Failed to open file: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// 열기 마무리 부수효과(최근 파일·오피스 변환 재시도·파일 워처·태그 수확) —
+    /// 단건(loadAndActivateDocument)·배치(restoreSessionIfNeeded) 공용.
+    @MainActor
+    private func finishOpening(_ tab: EditorTab) {
+        guard let url = tab.fileURL else { return }
+        addToRecentFiles(url)
+        switch tab.kind {
+        case .office:
+            retryOfficeConversion(tabID: tab.id, fileURL: url)
+        case .markdown:
+            startWatchingFile(at: url, for: tab.id)
+            if let document = documents[tab.documentId] {
+                harvestTags(from: document)
+            }
+        default:
+            break
         }
     }
 
@@ -3372,18 +3389,37 @@ final class AppState {
         let files = session.openFiles.filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !files.isEmpty else { return }
 
-        Task { @MainActor in
-            var restoredTabIds: Set<UUID> = []
+        // 배치 복원(스펙 §2.4) — 로드만 하고 일괄 append, 활성 탭은 끝에 정확히 1회.
+        // 이 Task를 외부 열기 큐 선두에 시드해, 복원 중 도착한 외부 열기(onOpenURL·드롭)는
+        // 체인상 복원 뒤에 처리된다 → 자연히 "외부 파일 = 마지막 = 활성".
+        externalOpenChain = Task { @MainActor in
+            var restored: [EditorTab] = []
             for url in files {
-                await loadAndActivateDocument(at: url, inNewTab: true)
-                if let activeTabId {
-                    restoredTabIds.insert(activeTabId)
+                let target = Self.mediaRedirectTarget(for: url) ?? url
+                guard !tabs.contains(where: { $0.fileURL == target }),
+                      !restored.contains(where: { $0.fileURL == target }) else { continue }
+                if let tab = await loadDocument(at: target) {
+                    restored.append(tab)
                 }
             }
-            if let index = session.activeFileIndex, index < tabs.count,
-               Self.shouldRestoreActiveTab(current: activeTabId, restoredTabIds: restoredTabIds) {
-                activeTabId = tabs[index].id
+            guard !restored.isEmpty else { return }
+            tabs.append(contentsOf: restored)
+            for tab in restored { finishOpening(tab) }
+
+            // 방어적 가드 유지(스펙 §2.4) — 체인 밖 경로(사용자 클릭)가 먼저 활성 탭을
+            // 만들었으면 덮어쓰지 않는다. 저장 인덱스는 openFiles 기준이므로 URL로 해석
+            // (존재 필터·중복 제거로 인덱스가 밀리는 구버전 시프트 수정).
+            if Self.shouldRestoreActiveTab(current: activeTabId,
+                                           restoredTabIds: Set(restored.map(\.id))) {
+                var activeTab: EditorTab?
+                if let index = session.activeFileIndex, index < session.openFiles.count {
+                    let savedURL = session.openFiles[index]
+                    let target = Self.mediaRedirectTarget(for: savedURL) ?? savedURL
+                    activeTab = restored.first(where: { $0.fileURL == target })
+                }
+                activeTabId = (activeTab ?? restored.last)?.id
             }
+            saveSession()
         }
     }
 
