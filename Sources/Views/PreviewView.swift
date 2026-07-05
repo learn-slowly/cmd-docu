@@ -43,9 +43,11 @@ struct MarkdownPreviewView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.scrollSyncEnabled = scrollSyncEnabled
 
-        let html = context.coordinator.renderer.renderToHTML(markdown: markdown, baseURL: baseURL, options: options)
+        let prepared = context.coordinator.prepareDataview(markdown, baseURL: baseURL)
+        let html = context.coordinator.renderer.renderToHTML(markdown: prepared, baseURL: baseURL, options: options)
         context.coordinator.lastSource = markdown
         context.coordinator.lastOptions = options
+        context.coordinator.lastBaseURL = baseURL
         context.coordinator.currentDocumentID = documentID
         webView.loadHTMLString(html, baseURL: baseURL)
 
@@ -59,6 +61,8 @@ struct MarkdownPreviewView: NSViewRepresentable {
         // the top, rather than carrying the previous document's scroll offset.
         if context.coordinator.currentDocumentID != documentID {
             context.coordinator.currentDocumentID = documentID
+            // 문서 전환 — 클릭-투-런 승인은 이전 문서에 한정하므로 리셋.
+            context.coordinator.dataviewApproved = false
             context.coordinator.renderImmediately(markdown: markdown, baseURL: baseURL, options: options)
             return
         }
@@ -85,8 +89,14 @@ struct MarkdownPreviewView: NSViewRepresentable {
         let renderer = MarkdownRenderer()
         var lastSource: String = ""
         var lastOptions: MarkdownRenderOptions?
+        var lastBaseURL: URL?
         var scrollSyncEnabled: Bool = true
         var currentDocumentID: UUID?
+
+        // MARK: dataviewjs (스펙 §5·§7)
+        var dataviewBlocks: [DataviewBlock] = []
+        var dataviewApproved = false          // 클릭-투-런 승인 — 문서 바뀌면 리셋
+        var dataviewRunToken = 0              // 재렌더/탭 전환 시 증가 — 스테일 주입 가드
 
         private var pendingScrollY: Double = 0
         private var renderDebounce: DispatchWorkItem?
@@ -131,9 +141,11 @@ struct MarkdownPreviewView: NSViewRepresentable {
         func renderImmediately(markdown: String, baseURL: URL?, options: MarkdownRenderOptions) {
             renderDebounce?.cancel()
             guard let webView else { return }
-            let html = renderer.renderToHTML(markdown: markdown, baseURL: baseURL, options: options)
+            let prepared = prepareDataview(markdown, baseURL: baseURL)
+            let html = renderer.renderToHTML(markdown: prepared, baseURL: baseURL, options: options)
             lastSource = markdown
             lastOptions = options
+            lastBaseURL = baseURL
             pendingScrollY = 0
             webView.loadHTMLString(html, baseURL: baseURL)
         }
@@ -148,9 +160,11 @@ struct MarkdownPreviewView: NSViewRepresentable {
             let docID = currentDocumentID
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.currentDocumentID == docID, let webView = self.webView else { return }
-                let html = self.renderer.renderToHTML(markdown: markdown, baseURL: baseURL, options: options)
+                let prepared = self.prepareDataview(markdown, baseURL: baseURL)
+                let html = self.renderer.renderToHTML(markdown: prepared, baseURL: baseURL, options: options)
                 self.lastSource = markdown
                 self.lastOptions = options
+                self.lastBaseURL = baseURL
                 webView.evaluateJavaScript("window.scrollY") { [weak self] value, _ in
                     guard let self, self.currentDocumentID == docID, let webView = self.webView else { return }
                     self.pendingScrollY = (value as? Double) ?? 0
@@ -198,6 +212,101 @@ struct MarkdownPreviewView: NSViewRepresentable {
                 let checked = body["checked"] as? Bool ?? true
                 AppState.shared?.toggleTask(atLine: line, checked: checked)
             }
+
+            if type == "dataviewRun", body["id"] is Int {
+                // 클릭-투-런 승인 — 이 탭·이 문서가 열려 있는 동안 유지(스펙 §7), 재렌더로 실행.
+                dataviewApproved = true
+                rerenderCurrentMarkdown()
+            }
+        }
+
+        // MARK: dataviewjs 실행 배선 (스펙 §5·§7)
+
+        /// dataviewjs 블록을 추출하고 placeholder를 끼운 마크다운을 돌려준다.
+        /// renderToHTML의 코드 마스킹 전에 원문에서 떼어내야 하므로 모든 렌더 경로가 이걸 먼저 거친다.
+        /// 자동(볼트 안 또는 승인됨)이면 스피너 카드+백그라운드 실행 예약, 아니면 "실행" 버튼 카드를 남긴다.
+        func prepareDataview(_ markdown: String, baseURL: URL?) -> String {
+            dataviewRunToken += 1
+            let (vaults, indexed) = Self.dataviewPolicyInputs()
+            let notePath = activeNoteURL(baseURL: baseURL)?.path ?? ""
+            let auto = dataviewApproved
+                || DataviewRunPolicy.isAutoRun(notePath: notePath, vaultPaths: vaults, indexedFolders: indexed)
+
+            // extract 클로저는 코드 원문을 모르므로(runButtonCard가 필요) 유니크 sentinel을 먼저 끼우고,
+            // blocks를 얻은 뒤 sentinel을 최종 HTML로 치환하는 2단계.
+            let result = DataviewBlockExtractor.extract(markdown) { id in
+                Self.dataviewSentinel(id)
+            }
+            dataviewBlocks = result.blocks
+            guard !result.blocks.isEmpty else { return result.markdown }
+
+            var out = result.markdown
+            for block in result.blocks {
+                let replacement = auto
+                    ? "<div class=\"dataview-block\" id=\"dv-b\(block.id)\">\(DataviewHTMLSerializer.pendingCard())</div>"
+                    : DataviewHTMLSerializer.runButtonCard(blockId: block.id, code: block.code)
+                out = out.replacingOccurrences(of: Self.dataviewSentinel(block.id), with: replacement)
+            }
+            if auto { scheduleDataviewRuns(baseURL: baseURL) }
+            return out
+        }
+
+        /// 마크다운 본문에 나타날 리 없는 sentinel(제어문자 경계) — prepareDataview 안에서만 쓰고 반환 전 전부 치환됨.
+        private static func dataviewSentinel(_ id: Int) -> String { "\u{0}dv-block-\(id)\u{0}" }
+
+        /// 이 프리뷰가 보여주는 노트의 URL — 활성 탭 파일 URL(dataview 컨텍스트), 없으면 baseURL 폴백.
+        private func activeNoteURL(baseURL: URL?) -> URL? {
+            AppState.shared?.currentTabFileURL ?? baseURL
+        }
+
+        private static func dataviewPolicyInputs() -> ([String], [String]) {
+            guard let state = AppState.shared else { return ([], []) }
+            return (state.vaults.map { $0.rootPath.path }, state.settings.indexedFolders)
+        }
+
+        func scheduleDataviewRuns(baseURL: URL?) {
+            guard !dataviewBlocks.isEmpty else { return }
+            let token = dataviewRunToken
+            let blocks = dataviewBlocks
+            let (vaults, indexed) = Self.dataviewPolicyInputs()
+            guard let noteURL = activeNoteURL(baseURL: baseURL) else { return }
+            let rootPath = DataviewRunPolicy.rootPath(for: noteURL.path, vaultPaths: vaults, indexedFolders: indexed)
+            let rootURL = rootPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+                ?? noteURL.deletingLastPathComponent()
+
+            Task.detached(priority: .userInitiated) { [weak self] in
+                for block in blocks {
+                    let result = DataviewEngine.run(code: block.code,
+                                                    context: DataviewRunContext(noteURL: noteURL, rootURL: rootURL))
+                    let html: String
+                    switch result {
+                    case .success(let items): html = DataviewHTMLSerializer.html(for: items)
+                    case .failure(.timeout):
+                        html = DataviewHTMLSerializer.errorCard(message: "실행이 3초를 넘어 중단했습니다", code: block.code)
+                    case .failure(.assetsMissing):
+                        html = DataviewHTMLSerializer.errorCard(message: "렌더 자산을 찾지 못했습니다", code: block.code)
+                    case .failure(.script(let msg)):
+                        html = DataviewHTMLSerializer.errorCard(message: msg, code: block.code)
+                    }
+                    await MainActor.run { [weak self] in
+                        guard let self, self.dataviewRunToken == token else { return }   // 스테일 가드
+                        self.injectDataviewResult(blockId: block.id, html: html)
+                    }
+                }
+            }
+        }
+
+        private func injectDataviewResult(blockId: Int, html: String) {
+            guard let data = try? JSONEncoder().encode(html),
+                  let quoted = String(data: data, encoding: .utf8) else { return }
+            let js = "(function(){var el=document.getElementById('dv-b\(blockId)');if(el){el.innerHTML=\(quoted);}})();"
+            webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        /// 클릭-투-런 승인 후 현재 마크다운을 다시 렌더(스크롤 보존 디바운스 경로 재사용).
+        private func rerenderCurrentMarkdown() {
+            guard let options = lastOptions else { return }
+            scheduleRender(markdown: lastSource, baseURL: lastBaseURL, options: options)
         }
 
         // MARK: Navigation policy
