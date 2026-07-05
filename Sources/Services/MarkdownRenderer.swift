@@ -181,6 +181,12 @@ class MarkdownRenderer {
         return allowed
     }()
 
+    /// 위키링크 href 조립 — 프리뷰 위키링크와 dataview 링크 셀이 같은 스킴을 쓴다.
+    static func wikiLinkHref(target: String) -> String {
+        let encoded = target.addingPercentEncoding(withAllowedCharacters: internalLinkQueryValueAllowed) ?? target
+        return "cmdmd://open?note=\(encoded)"
+    }
+
     private let wikiLinkPattern = try! NSRegularExpression(
         pattern: #"(!?)\[\[(?:(.+?)\|)?(.+?)\]\]"#,
         options: []
@@ -351,8 +357,7 @@ class MarkdownRenderer {
                     )
                 }
             } else {
-                let encoded = target.addingPercentEncoding(withAllowedCharacters: Self.internalLinkQueryValueAllowed) ?? target
-                let href = "cmdmd://open?note=\(encoded)"
+                let href = Self.wikiLinkHref(target: target)
                 result = (result as NSString).replacingCharacters(
                     in: match.range,
                     with: "<a href=\"\(htmlEscape(href))\" class=\"wiki-link\">\(displayText)</a>"
