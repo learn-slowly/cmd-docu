@@ -97,6 +97,10 @@ struct MarkdownPreviewView: NSViewRepresentable {
         var dataviewBlocks: [DataviewBlock] = []
         var dataviewApproved = false          // 클릭-투-런 승인 — 문서 바뀌면 리셋
         var dataviewRunToken = 0              // 재렌더/탭 전환 시 증가 — 스테일 주입 가드
+        // 현재 토큰의 완료 주입 버퍼(blockId→html). 엔진이 페이지 커밋보다 빨리 끝나면
+        // evaluateJavaScript가 옛 문서에 버려지므로(주입-로드 레이스), didFinish에서 이 버퍼를
+        // 재주입해 새 DOM에 반영한다. prepareDataview의 토큰 증가 시 클리어.
+        var dataviewPendingInjections: [Int: String] = [:]
 
         private var pendingScrollY: Double = 0
         private var renderDebounce: DispatchWorkItem?
@@ -180,6 +184,11 @@ struct MarkdownPreviewView: NSViewRepresentable {
                 webView.evaluateJavaScript("window.scrollTo(0, \(pendingScrollY));", completionHandler: nil)
                 pendingScrollY = 0
             }
+            // 주입-로드 레이스 복구: 엔진이 페이지 커밋 전에 끝나 즉시 주입이 옛 DOM에 버려졌다면,
+            // 이제 새 DOM이 준비됐으니 버퍼의 전 결과를 재주입한다(innerHTML 멱등).
+            for (blockId, html) in dataviewPendingInjections {
+                injectDataviewResult(blockId: blockId, html: html)
+            }
         }
 
         private func scrollToHeadingSlug(_ slug: String) {
@@ -227,6 +236,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
         /// 자동(볼트 안 또는 승인됨)이면 스피너 카드+백그라운드 실행 예약, 아니면 "실행" 버튼 카드를 남긴다.
         func prepareDataview(_ markdown: String, baseURL: URL?) -> String {
             dataviewRunToken += 1
+            dataviewPendingInjections.removeAll()   // 새 렌더 — 이전 토큰의 완료 버퍼 폐기
             let (vaults, indexed) = Self.dataviewPolicyInputs()
             let notePath = activeNoteURL(baseURL: baseURL)?.path ?? ""
             let auto = dataviewApproved
@@ -297,6 +307,9 @@ struct MarkdownPreviewView: NSViewRepresentable {
         }
 
         private func injectDataviewResult(blockId: Int, html: String) {
+            // 버퍼에 저장하고(didFinish 재주입 대비) evaluateJavaScript도 즉시 시도한다 —
+            // 두 순서(엔진이 커밋보다 먼저/나중) 모두 커버. innerHTML 재설정은 멱등이라 이중 주입 무해.
+            dataviewPendingInjections[blockId] = html
             guard let data = try? JSONEncoder().encode(html),
                   let quoted = String(data: data, encoding: .utf8) else { return }
             let js = "(function(){var el=document.getElementById('dv-b\(blockId)');if(el){el.innerHTML=\(quoted);}})();"

