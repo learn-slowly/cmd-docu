@@ -108,4 +108,29 @@ final class AppPasteboardActionsTests: XCTestCase {
         let pdfView = PDFView()
         XCTAssertTrue(AppState.responderYieldsFileKeys(pdfView), "PDFView → 양보")
     }
+
+    // 회귀(2026-07-05 실기 스모크): 두벌식 한글 입력 소스에서 charactersIgnoringModifiers가
+    // 자모("ㅁ"/"ㅊ"/"ㅍ")로 와 ⌘A/⌘C/⌘V/⌥⌘V 파일 키가 전멸하던 결함 —
+    // 입력 소스 독립 판독(keyLetter)이 Cmd 적용 문자로 폴백해야 한다.
+    func testKeyLetterKoreanInputSourceFallsBackToCommandApplied() {
+        // 한글 IM 실측값: ign=자모, commandApplied=ASCII
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "ㅁ", commandApplied: "a"), "a")
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "ㅊ", commandApplied: "c"), "c")
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "ㅍ", commandApplied: "v"), "v")
+    }
+
+    func testKeyLetterAsciiInputSourcePrefersIgnoringModifiers() {
+        // ABC 등 ASCII 입력 소스: 기존 경로 그대로(⌥⌘V에서 commandApplied가 "√"여도 무관)
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "a", commandApplied: "a"), "a")
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "v", commandApplied: "√"), "v")
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "A", commandApplied: "a"), "a", "대문자는 소문자로")
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "[", commandApplied: "["), "[", "비문자 ASCII도 그대로")
+    }
+
+    func testKeyLetterDegenerateInputs() {
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: nil, commandApplied: nil), "")
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "", commandApplied: ""), "")
+        // 둘 다 비ASCII면 원값 반환 — 어떤 케이스와도 비교 실패로 자연 무시
+        XCTAssertEqual(AppState.keyLetter(ignoringModifiers: "ㅁ", commandApplied: "ㅁ"), "ㅁ")
+    }
 }

@@ -2452,6 +2452,18 @@ final class AppState {
         selectionAnchor = libraryOrderedURLs.first
     }
 
+    /// 키 이벤트의 문자 판독(입력 소스 독립) — 두벌식 한글 등 비ASCII 입력 소스에서는
+    /// charactersIgnoringModifiers가 자모("ㅁ"/"ㅊ"/"ㅍ")로 와 문자 매칭이 전멸한다(실측).
+    /// ASCII 단일 문자면 그대로 쓰고, 아니면 Cmd 적용 문자(입력기 우회 ASCII·⌥도 벗김)로
+    /// 폴백한다. 둘 다 비ASCII면 원값 반환(비교 실패로 자연 무시).
+    static func keyLetter(ignoringModifiers: String?, commandApplied: String?) -> String {
+        let ign = (ignoringModifiers ?? "").lowercased()
+        if ign.count == 1, let s = ign.unicodeScalars.first, s.isASCII { return ign }
+        let cmd = (commandApplied ?? "").lowercased()
+        if cmd.count == 1, let s = cmd.unicodeScalars.first, s.isASCII { return cmd }
+        return ign
+    }
+
     /// 파일 키(⌘C 등)를 양보해야 하는 응답자인가 — 자체 복사/편집을 가진 뷰들.
     /// NSText(에디터·필드 에디터) 외에 WKWebView(미리보기)·PDFView(PDF 리더)도 자체 copy 구현.
     /// 뷰 계층 상위에 있을 수 있어(웹뷰 내부 서브뷰가 firstResponder) 조상 체인을 걷는다.
@@ -2475,8 +2487,9 @@ final class AppState {
         // deviceIndependentFlagsMask는 capsLock 비트를 포함 — CapsLock ON이면 정확 일치가
         // 전부 실패한다. 우리가 관심 있는 수식키만 교집합으로 추린다.
         let flags = event.modifierFlags.intersection([.command, .option, .shift, .control])
-        // String?를 switch 리터럴 패턴에 직접 매칭할 수 없다 — 빈 문자열로 언랩.
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        // 한글 입력 소스에서도 물리 키를 읽도록 입력 소스 독립 판독(keyLetter) 사용.
+        let key = Self.keyLetter(ignoringModifiers: event.charactersIgnoringModifiers,
+                                 commandApplied: event.characters(byApplyingModifiers: .command))
 
         // ⎋ 선택 해제
         if event.keyCode == 53, flags.isEmpty, !fileSelection.isEmpty {

@@ -641,9 +641,13 @@ struct ShortcutRow: View {
         case 125: key = "ArrowDown"
         case 49:  key = "Space"
         default:
-            guard let chars = event.charactersIgnoringModifiers?.lowercased(),
-                  chars.count == 1 else { return }
-            key = chars
+            // 한글 입력 소스에서 자모("ㅁ")가 키로 저장되면 영구 불일치 바인딩이 된다 —
+            // 입력 소스 독립 판독으로 물리 키 문자를 기록한다.
+            let letter = AppState.keyLetter(
+                ignoringModifiers: event.charactersIgnoringModifiers,
+                commandApplied: event.characters(byApplyingModifiers: .command))
+            guard letter.count == 1 else { return }
+            key = letter
         }
 
         var b = KeyBinding(key: key)
