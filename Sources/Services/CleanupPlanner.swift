@@ -73,6 +73,14 @@ enum CleanupPlanner {
 
 extension CleanupPlanner {
 
+    /// 인덱스가 붙은 파일 목록("[i] 이름 | 확장자 | 크기"). 배정 응답이 파일명을 반복하지
+    /// 않고 i만 돌려주게 해 출력(≈응답 시간)을 파일명 길이와 무관하게 상한한다.
+    static func indexedMetadataList(_ metas: [FileMeta]) -> String {
+        metas.enumerated().map { i, m in
+            "[\(i)] \(m.name) | \(m.ext.isEmpty ? "(없음)" : m.ext) | \(m.size)B"
+        }.joined(separator: "\n")
+    }
+
     static func buildAssignPrompt(scheme: CleanupScheme, metadata metas: [FileMeta]) -> String {
         let list = scheme.map { "- \($0.id) — \($0.hint)" }.joined(separator: "\n")
         return """
@@ -83,10 +91,11 @@ extension CleanupPlanner {
         다음 파일들을 각각 위 스킴의 id 중 하나에 배정하라. 확신이 없으면 confidence를 낮게 준다.
         어디에도 맞지 않으면 id를 빈 문자열("")로 둔다.
 
-        \(metadataList(metas))
+        \(indexedMetadataList(metas))
 
-        답은 다른 텍스트 없이 strict JSON 한 줄로만 한다:
-        {"assignments":[{"name":"<파일명>","id":"<스킴 id 또는 \\"\\">","reason":"<한 줄>","confidence":0.0}]}
+        답은 다른 텍스트 없이 strict JSON 한 줄로만 한다. i는 위 목록의 인덱스 숫자,
+        reason은 15자 이내로 짧게:
+        {"assignments":[{"i":0,"id":"<스킴 id 또는 \\"\\">","reason":"<15자 이내>","confidence":0.0}]}
         """
     }
 
@@ -102,10 +111,13 @@ extension CleanupPlanner {
 
     private struct AssignParse: Decodable { let assignments: [AssignmentParse] }
     private struct AssignmentParse: Decodable {
-        let name: String; let id: String; let reason: String?; let confidence: Double?
+        // i(인덱스) 우선, name은 폴백 — 긴 한글 파일명 반복이 응답 출력을 키워
+        // 청크당 120s 타임아웃 경계를 넘던 문제(2026-07-05 Downloads 실측) 대응.
+        let i: Int?; let name: String?; let id: String; let reason: String?; let confidence: Double?
     }
 
-    /// 파일명으로 메타와 매칭하고 id를 스킴 허용 목록으로 검증(밖이면 ""). confidence는 0...1 클램프.
+    /// 인덱스([i]) 우선, 파일명 폴백으로 메타와 매칭하고 id를 스킴 허용 목록으로 검증(밖이면 "").
+    /// confidence는 0...1 클램프. 범위 밖 인덱스·미지의 이름은 버린다.
     static func parseAssignments(_ stdout: String, scheme: CleanupScheme, metadata metas: [FileMeta]) -> [CleanupAssignment]? {
         guard let json = extractJSONObject(stdout),
               let data = json.data(using: .utf8),
@@ -117,7 +129,14 @@ extension CleanupPlanner {
 
         var result: [CleanupAssignment] = []
         for a in parsed.assignments {
-            guard let url = byName[a.name] else { continue }
+            let url: URL
+            if let i = a.i, metas.indices.contains(i) {
+                url = metas[i].url
+            } else if let name = a.name, let byNameURL = byName[name] {
+                url = byNameURL
+            } else {
+                continue
+            }
             let validId = validIds.contains(a.id) ? a.id : ""
             let conf = min(1.0, max(0.0, a.confidence ?? 0))
             result.append(CleanupAssignment(fileURL: url, bucketId: validId, reason: a.reason ?? "", confidence: conf))

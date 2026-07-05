@@ -31,18 +31,26 @@ actor CleanupService {
         return scheme
     }
 
+    /// 타임아웃 1회 재시도 — 실데이터에서 청크 하나가 경계선(120s)에 걸려 전체 배정이
+    /// 무산되는 것을 방어한다(2026-07-05 Downloads 실측). 다른 에러는 그대로 전파.
+    private func askWithRetry(prompt: String, context: String) async throws -> String {
+        do { return try await claude.ask(prompt: prompt, context: context) }
+        catch ClaudeError.timeout { return try await claude.ask(prompt: prompt, context: context) }
+    }
+
     /// 1차 메타데이터 배정(청크 분할·onProgress는 1차 청크 단위) → confidence 낮은
     /// 파일만 본문 발췌로 2차 재배정(역시 청크) 후 병합.
     func assign(scheme: CleanupScheme, metas: [FileMeta],
                 onProgress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil)
     async throws -> [CleanupAssignment] {
         // 1차: 메타데이터만으로 청크별 배정 — 청크당 출력(파일 수)이 상한된다.
+        // 컨텍스트는 인덱스 목록(응답이 i만 돌려줘 긴 파일명 반복 제거 — 프롬프트와 일치).
         let chunks = CleanupPlanner.chunked(metas, size: Self.assignChunkSize)
         var base: [CleanupAssignment] = []
         for (index, chunk) in chunks.enumerated() {
             onProgress?(index + 1, chunks.count)
             let prompt = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: chunk)
-            let out = try await claude.ask(prompt: prompt, context: CleanupPlanner.metadataList(chunk))
+            let out = try await askWithRetry(prompt: prompt, context: CleanupPlanner.indexedMetadataList(chunk))
             guard let part = CleanupPlanner.parseAssignments(out, scheme: scheme, metadata: chunk) else {
                 throw CleanupError.parseFailed
             }
@@ -66,7 +74,7 @@ actor CleanupService {
 
             let reassignPrompt = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: chunk)
             let context = CleanupPlanner.buildAmbiguousContext(excerpts)
-            let out2 = try await claude.ask(prompt: reassignPrompt, context: context)
+            let out2 = try await askWithRetry(prompt: reassignPrompt, context: context)
             if let part = CleanupPlanner.parseAssignments(out2, scheme: scheme, metadata: chunk) {
                 overrides.append(contentsOf: part)
             }

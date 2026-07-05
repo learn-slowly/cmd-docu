@@ -22,11 +22,12 @@ final class CleanupChunkingTests: XCTestCase {
 
         func ask(prompt: String, context: String) async throws -> String {
             calls.append((prompt, context))
-            // context(metadataList)에 등장한 파일명들로 배정 JSON 생성.
-            let names = Self.fileNames(fromMetadataList: context)
-            let entries = names.map { name in
-                let conf = lowConfidenceNames.contains(name) ? 0.3 : 0.9
-                return "{\"name\":\"\(name)\",\"id\":\"\(bucketId)\",\"reason\":\"t\",\"confidence\":\(conf)}"
+            // context(indexedMetadataList)의 [i] 목록으로 인덱스 배정 JSON 생성
+            // (실 응답 계약과 동일 — 파일명 반복 없이 i만).
+            let items = Self.indexedItems(fromContext: context)
+            let entries = items.map { item in
+                let conf = lowConfidenceNames.contains(item.name) ? 0.3 : 0.9
+                return "{\"i\":\(item.index),\"id\":\"\(bucketId)\",\"reason\":\"t\",\"confidence\":\(conf)}"
             }
             return "{\"assignments\":[\(entries.joined(separator: ","))]}"
         }
@@ -34,13 +35,16 @@ final class CleanupChunkingTests: XCTestCase {
         func callCount() -> Int { calls.count }
         func contexts() -> [String] { calls.map(\.context) }
 
-        /// metadataList 줄에서 파일명 추출("- 이름 …" 형식 가정 — 형식이 바뀌면 테스트가 알려준다).
-        static func fileNames(fromMetadataList context: String) -> [String] {
+        /// indexedMetadataList 줄에서 (인덱스, 파일명) 추출("[i] 이름 | …" 형식 —
+        /// 형식이 바뀌면 테스트가 알려준다).
+        static func indexedItems(fromContext context: String) -> [(index: Int, name: String)] {
             context.split(separator: "\n").compactMap { line in
-                guard line.hasPrefix("- ") else { return nil }
-                let rest = line.dropFirst(2)
-                // 이름 뒤 구분자 전까지(공백 포함 이름은 픽스처에서 안 씀).
-                return rest.split(separator: " ").first.map(String.init)
+                guard line.hasPrefix("["),
+                      let close = line.firstIndex(of: "]"),
+                      let index = Int(line[line.index(after: line.startIndex)..<close]) else { return nil }
+                let rest = line[line.index(close, offsetBy: 2)...]
+                guard let name = rest.split(separator: " ").first.map(String.init) else { return nil }
+                return (index, name)
             }
         }
     }
@@ -91,7 +95,7 @@ final class CleanupChunkingTests: XCTestCase {
 
         // 각 청크 context에 그 청크 파일만 실렸는지(입력도 상한).
         let contexts = await fake.contexts()
-        let sizes = contexts.map { FakeClaude.fileNames(fromMetadataList: $0).count }
+        let sizes = contexts.map { FakeClaude.indexedItems(fromContext: $0).count }
         XCTAssertEqual(sizes, [80, 80, 40])
     }
 
@@ -116,5 +120,35 @@ final class CleanupChunkingTests: XCTestCase {
     private actor ProgressRecorder {
         var entries: [(done: Int, total: Int)] = []
         func record(done: Int, total: Int) { entries.append((done, total)) }
+    }
+
+    // MARK: 인덱스 기반 응답 파싱(출력 압축 — 긴 한글 파일명 반복 제거)
+
+    /// i가 있으면 인덱스로 매칭(청크-로컬), 범위 밖 i는 버린다. name 폴백도 여전히 동작.
+    func testParseAssignmentsIndexForm() {
+        let dir = URL(fileURLWithPath: "/tmp/cleanup-chunk-test")
+        let metas = makeMetas(3, dir: dir)
+        let out = """
+        {"assignments":[
+          {"i":0,"id":"docs","reason":"a","confidence":0.9},
+          {"i":2,"id":"docs","reason":"b","confidence":0.8},
+          {"i":9,"id":"docs","reason":"범위밖","confidence":1.0},
+          {"name":"file_001.md","id":"docs","reason":"이름폴백","confidence":0.7}
+        ]}
+        """
+        let a = CleanupPlanner.parseAssignments(out, scheme: scheme, metadata: metas)
+        XCTAssertEqual(a?.count, 3, "범위 밖 인덱스는 버림, i 2건+name 폴백 1건")
+        XCTAssertEqual(a?[0].fileURL, metas[0].url)
+        XCTAssertEqual(a?[1].fileURL, metas[2].url)
+        XCTAssertEqual(a?[2].fileURL, metas[1].url, "name 폴백 매칭")
+    }
+
+    /// 배정 프롬프트가 인덱스 목록·i 응답 계약·reason 길이 제한을 담는다.
+    func testAssignPromptUsesIndexContract() {
+        let dir = URL(fileURLWithPath: "/tmp/cleanup-chunk-test")
+        let p = CleanupPlanner.buildAssignPrompt(scheme: scheme, metadata: makeMetas(2, dir: dir))
+        XCTAssertTrue(p.contains("[0] file_000.md"), "인덱스 목록")
+        XCTAssertTrue(p.contains("\"i\":0"), "i 응답 계약")
+        XCTAssertTrue(p.contains("15자 이내"), "reason 길이 제한")
     }
 }
