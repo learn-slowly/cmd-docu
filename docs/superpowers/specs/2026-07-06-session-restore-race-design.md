@@ -45,6 +45,11 @@ AppState에 외부 열기 전용 직렬 큐를 둔다: `private var externalOpen
 
 - 체인 방식: `enqueueExternalOpen`은 이전 체인 Task를 캡처하고 `Task { @MainActor in await prev?.value; for url in urls { await loadAndActivateDocument(at: url, inNewTab: true) } }`로 잇는다. MainActor 직렬 + 도착 순 FIFO → **마지막 처리 파일이 활성**.
 - `onOpenURL` 다발(파일마다 개별 발화)은 각 호출이 `enqueueExternalOpen([url])`로 제출 — 도착 순이 곧 처리 순.
+
+> **정정(2026-07-06 실기 스모크):** 단일 `Window` 씬에선 배치 열기(Finder 다중 선택)가
+> `.onOpenURL`에 **첫 URL만** 전달된다(실측 — WindowGroup은 URL마다 씬을 만들어 개별
+> 발화했던 것). 정경로를 `AppDelegate.application(_:open:)`(URL 배열 수신)로 옮기고
+> `.onOpenURL`은 폴백으로 유지.
 - 드롭 다중은 **provider 순서 보존 수집 후 일괄 제출**: `openExternalFileDrops`를 "인덱스 슬롯 배열에 수집(콜백 순서 무관) → 완료 시 URL 배열로 `enqueueExternalOpen`" 구조로 재작성. 단일 드롭도 같은 경로(아래 시맨틱 변경 참고).
 - **시맨틱 변경(F2 스펙과의 차이, 명시적 결정)**: F2는 "단일 드롭 = 기존 동작(활성 탭 교체)"였으나(`AppState.swift:2438` 주석), 본 설계로 **드롭도 외부 열기로 통일되어 항상 새 탭**이 된다. 활성 탭이 드롭 한 번에 교체당하는 놀람을 없애는 방향이며, 더블클릭과 드롭의 시맨틱이 일치한다.
 

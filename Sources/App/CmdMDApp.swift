@@ -347,6 +347,7 @@ struct CmdMDApp: App {
         .menuBarExtraStyle(.window)
     }
     
+    // 정경로는 AppDelegate.application(_:open:) — 이건 폴백(단일 Window 씬에선 배치의 첫 URL만 온다).
     private func handleURL(_ url: URL) {
         if url.scheme == "cmdmd" {
             appState.openInternalURL(url)
@@ -418,6 +419,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if AppState.shared?.handleFileOpsKeyEvent(event) == true { return nil }
             return event
         }
+    }
+
+    /// Finder 열기(단건·다중 선택 배치)·URL 스킴의 정경로. 단일 Window 씬에선
+    /// `.onOpenURL`이 배치의 첫 URL만 받으므로(실측) 배열 전체를 받는 이 경로가 필수.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        AppState.routeOpenedURLs(urls, to: AppState.shared)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

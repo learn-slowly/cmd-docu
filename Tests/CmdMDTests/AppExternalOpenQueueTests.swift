@@ -70,4 +70,21 @@ final class AppExternalOpenQueueTests: XCTestCase {
         XCTAssertNil(app.externalOpenChain)
         XCTAssertTrue(app.tabs.isEmpty)
     }
+
+    // MARK: - 스모크 픽스 1(배치 열기 유실) — routeOpenedURLs
+
+    func testRouteOpenedURLsBatchOpensAllFilesInOrder() async {
+        let a = makeNote("r1.md"), b = makeNote("r2.md"), c = makeNote("r3.md")
+        AppState.routeOpenedURLs([a, b, c], to: app)
+        await app.externalOpenChain?.value
+        XCTAssertEqual(app.tabs.compactMap(\.fileURL), [a, b, c])
+        XCTAssertEqual(app.activeTab?.fileURL, c)
+    }
+
+    func testRouteOpenedURLsSkipsNonFileAndNilAppState() async {
+        AppState.routeOpenedURLs([URL(string: "https://example.com")!], to: app)
+        XCTAssertNil(app.externalOpenChain)
+        XCTAssertTrue(app.tabs.isEmpty)
+        AppState.routeOpenedURLs([makeNote("x.md")], to: nil)   // crash 없이 무시
+    }
 }

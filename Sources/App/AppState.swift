@@ -1100,6 +1100,23 @@ final class AppState {
         }
     }
 
+    /// AppKit `application(_:open:)`가 받은 URL 배열을 분류·라우팅한다 — cmdmd 스킴은
+    /// 내부 열기, 파일은 외부 열기 직렬 큐로. 단일 Window 씬에선 배치 열기(Finder 다중
+    /// 선택)가 `.onOpenURL`에 첫 URL만 전달되는 실측 한계가 있어(WindowGroup은 URL마다
+    /// 씬을 만들어 개별 발화했음), 전체 배열을 받는 델리게이트 경로가 정경로다.
+    static func routeOpenedURLs(_ urls: [URL], to appState: AppState?) {
+        guard let appState else { return }
+        var files: [URL] = []
+        for url in urls {
+            if url.scheme == "cmdmd" {
+                appState.openInternalURL(url)
+            } else if url.isFileURL {
+                files.append(url)
+            }
+        }
+        appState.enqueueExternalOpen(files)
+    }
+
     /// 외부 열기 처리 후 문서 창을 앞으로 가져온다(닫혀 있으면 재표시). 단일 Window 씬은
     /// WindowGroup과 달리 이벤트 전달용 새 창을 만들지 않으므로 필요(스펙 §2.1).
     /// 닫힌(ordered-out) 창은 canBecomeMain이 항상 false라(최종 리뷰 프로브 실측) 그 조건으로는
