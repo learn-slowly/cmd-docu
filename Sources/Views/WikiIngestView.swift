@@ -11,6 +11,7 @@ struct WikiIngestView: View {
     @State private var newPageName: String = ""
     @State private var entries: [WikiIngestLogEntry] = []
     @State private var appliedURL: URL? = nil
+    @State private var applying = false                // 적용 이중 클릭(중복 기록) 방지
     @State private var diffLines: [LineDiff.Line] = []
 
     private static let newMarker = "__NEW__"
@@ -40,6 +41,19 @@ struct WikiIngestView: View {
                 generateSection
                 if let proposal = appState.wikiMergeProposal, proposal.sourceURL == request.url {
                     diffSection(proposal)
+                }
+            }
+
+            // 적용 성공 시 wikiMergeProposal이 nil이 되어 diffSection이 사라지므로,
+            // "페이지 열기"는 diff 밖에서 appliedURL만으로 게이트한다.
+            if let appliedURL {
+                HStack(spacing: 8) {
+                    Label("적용 완료", systemImage: "checkmark.circle")
+                        .foregroundStyle(.green)
+                    Button("페이지 열기") {
+                        appState.openDocument(at: appliedURL, inNewTab: true)
+                        dismiss()
+                    }
                 }
             }
 
@@ -130,22 +144,20 @@ struct WikiIngestView: View {
 
             HStack {
                 Button("적용") {
+                    // 이중 클릭 재진입 가드 — applyWikiMerge 중복 실행이면 기록이 2건 남는다.
+                    guard !applying else { return }
+                    applying = true
                     Task {
                         if let dest = await appState.applyWikiMerge(proposal) {
                             appliedURL = dest
                             appState.wikiMergeProposal = nil
                             reload()
                         }
+                        applying = false
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(appState.wikiIngestBusy)
-                if let appliedURL {
-                    Button("페이지 열기") {
-                        appState.openDocument(at: appliedURL, inNewTab: true)
-                        dismiss()
-                    }
-                }
+                .disabled(appState.wikiIngestBusy || applying)
             }
         }
     }
