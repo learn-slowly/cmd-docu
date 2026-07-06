@@ -102,6 +102,8 @@ struct AppSettings: Codable, Equatable {
 
     // MARK: LLM-Wiki 인제스트
     var wikiFolder: String? = nil          // LLM-Wiki 인제스트 대상 폴더(절대 경로)
+    var wikiRulesSummary: String? = nil      // 위키 규칙 요약(파악 결과·사용자 편집 가능)
+    var wikiRulesCapturedAt: Date? = nil     // 규칙 파악 일시(표시용)
 
     // MARK: RAG 설정
     /// 자료에 묻기(RAG) 질의 확장 토글(동의어 recall 보완). 기본 ON.
@@ -168,6 +170,8 @@ struct AppSettings: Codable, Equatable {
         claudeRoutingEnabled = try c.decodeIfPresent(Bool.self, forKey: .claudeRoutingEnabled) ?? d.claudeRoutingEnabled
         indexedFolders = try c.decodeIfPresent([String].self, forKey: .indexedFolders) ?? d.indexedFolders
         wikiFolder = try c.decodeIfPresent(String.self, forKey: .wikiFolder) ?? d.wikiFolder
+        wikiRulesSummary = try c.decodeIfPresent(String.self, forKey: .wikiRulesSummary) ?? d.wikiRulesSummary
+        wikiRulesCapturedAt = try c.decodeIfPresent(Date.self, forKey: .wikiRulesCapturedAt) ?? d.wikiRulesCapturedAt
         ragExpandQuery = try c.decodeIfPresent(Bool.self, forKey: .ragExpandQuery) ?? d.ragExpandQuery
         libraryLayouts = try c.decodeIfPresent([String: LibraryLayout].self, forKey: .libraryLayouts) ?? d.libraryLayouts
         librarySorts = try c.decodeIfPresent([String: LibrarySort].self, forKey: .librarySorts) ?? d.librarySorts

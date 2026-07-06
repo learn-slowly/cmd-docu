@@ -188,6 +188,8 @@ final class AppState {
     var wikiIngestBusy: Bool = false
     var wikiMergeProposal: WikiMergeProposal? = nil
     var wikiIngestError: String? = nil
+    var wikiRulesBusy: Bool = false
+    var wikiRulesMessage: String? = nil
 
     // MARK: - 파일 작업(F1a) 상태
 
@@ -240,6 +242,8 @@ final class AppState {
     /// 테스트가 가짜 Claude 주입 WikiIngestService로 교체할 수 있게 internal var(클린업 전례).
     var wikiIngestService: WikiIngestService
     let wikiBackupStore: WikiBackupStore
+    /// 테스트에서 가짜 Claude 주입 WikiRulesService로 교체할 수 있게 internal var.
+    var wikiRulesService: WikiRulesService
     private let moveExecutor: MoveExecutor
     private let dataURL: URL
 
@@ -773,6 +777,7 @@ final class AppState {
         cleanupService = CleanupService(claude: claudeService, kordoc: kordocService)
         wikiIngestService = WikiIngestService(claude: claudeService, kordoc: kordocService)
         wikiBackupStore = WikiBackupStore(directory: appDir)
+        wikiRulesService = WikiRulesService(claude: claudeService)
         moveExecutor = MoveExecutor(store: moveLogStore)
 
         fileService = FileService()
@@ -3310,6 +3315,34 @@ final class AppState {
         cleanupBatches = await moveLogStore.load().reversed()
     }
 
+    /// 위키 규칙 파악(스펙 §2.1) — 성공 시 요약·일시를 설정에 저장. 성공 여부 반환.
+    @MainActor
+    func captureWikiRules() async -> Bool {
+        guard !wikiRulesBusy else { return false }
+        guard let folderPath = settings.wikiFolder else {
+            wikiRulesMessage = "위키 폴더가 설정되지 않았습니다."
+            return false
+        }
+        wikiRulesBusy = true
+        wikiRulesMessage = nil
+        defer { wikiRulesBusy = false }
+        do {
+            let summary = try await wikiRulesService.captureRules(
+                wikiFolder: URL(fileURLWithPath: folderPath))
+            settings.wikiRulesSummary = summary
+            settings.wikiRulesCapturedAt = Date()
+            saveUserData()
+            wikiRulesMessage = "규칙을 파악했습니다."
+            return true
+        } catch WikiRulesError.noRuleSources {
+            wikiRulesMessage = "규칙 파일(CLAUDE.md·templates)이 없습니다 — 내장 기본 스키마로 동작합니다."
+            return false
+        } catch {
+            wikiRulesMessage = "규칙 파악에 실패했습니다: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     // MARK: - 위키 인제스트 흐름 (제안→확인→실행, 스펙 §2.5)
 
     /// 대상 페이지가 열린 탭에서 저장 안 된 편집 상태면 true — 인제스트/복원이 디스크를
@@ -3349,10 +3382,12 @@ final class AppState {
         defer { wikiIngestBusy = false }
         do {
             let today = Self.wikiTodayFormatter.string(from: Date())
+            let trimmedRules = settings.wikiRulesSummary?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             wikiMergeProposal = try await wikiIngestService.propose(
                 source: source, target: target,
                 wikiFolder: URL(fileURLWithPath: folderPath),
-                rulesSummary: nil,   // Task 5에서 settings.wikiRulesSummary 전달로 교체
+                rulesSummary: (trimmedRules?.isEmpty == false) ? trimmedRules : nil,
                 today: today)
         } catch let e as WikiIngestError {
             wikiIngestError = Self.wikiErrorMessage(e)
@@ -3382,6 +3417,9 @@ final class AppState {
                 pageURL: dest,
                 oldBody: proposal.isNewPage ? nil : currentBody,
                 sourceName: proposal.sourceURL.lastPathComponent)
+            try FileManager.default.createDirectory(
+                at: dest.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
             try proposal.newBody.write(to: dest, atomically: true, encoding: .utf8)
             showToast("위키 페이지에 병합했습니다")
             return dest

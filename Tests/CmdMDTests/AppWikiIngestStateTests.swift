@@ -170,4 +170,69 @@ final class AppWikiIngestStateTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppSettings.self, from: old)
         XCTAssertNil(decoded.wikiFolder)
     }
+
+    private actor RecordingClaude: ClaudeAsking {
+        let response: String
+        private(set) var prompts: [String] = []
+        init(response: String) { self.response = response }
+        func ask(prompt: String, context: String) async throws -> String {
+            prompts.append(prompt)
+            return response
+        }
+        func lastPrompt() -> String? { prompts.last }
+    }
+
+    func testCaptureWikiRulesStoresSummaryAndDate() async throws {
+        try "# 규칙\n한국어로 쓴다.".write(
+            to: wikiDir.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+        app.wikiRulesService = WikiRulesService(claude: RecordingClaude(response: "- 한국어 전용"))
+        let ok = await app.captureWikiRules()
+        XCTAssertTrue(ok)
+        XCTAssertEqual(app.settings.wikiRulesSummary, "- 한국어 전용")
+        XCTAssertNotNil(app.settings.wikiRulesCapturedAt)
+        XCTAssertFalse(app.wikiRulesBusy)
+    }
+
+    func testCaptureWikiRulesWithoutSourcesSetsMessage() async {
+        app.wikiRulesService = WikiRulesService(claude: RecordingClaude(response: "x"))
+        let ok = await app.captureWikiRules()   // wikiDir에 규칙 파일 없음
+        XCTAssertFalse(ok)
+        XCTAssertNotNil(app.wikiRulesMessage)
+        XCTAssertNil(app.settings.wikiRulesSummary)
+    }
+
+    func testGenerateWikiMergePassesStoredRulesSummary() async {
+        app.settings.wikiRulesSummary = "반말로 쓴다"
+        let claude = RecordingClaude(response: "# 새주제\n\n요약")
+        app.wikiIngestService = WikiIngestService(claude: claude, kordoc: KordocService())
+        await app.generateWikiMerge(source: makeSource(), target: .new(name: "새주제"))
+        let prompt = await claude.lastPrompt()
+        XCTAssertTrue(prompt?.contains("반말로 쓴다") == true)
+    }
+
+    func testGenerateWikiMergeMapsAutoErrors() async {
+        app.settings.wikiRulesSummary = "규칙"
+        app.wikiIngestService = WikiIngestService(
+            claude: RecordingClaude(response: "# 마커 없음"), kordoc: KordocService())
+        await app.generateWikiMerge(source: makeSource(), target: .auto)
+        XCTAssertNil(app.wikiMergeProposal)
+        XCTAssertNotNil(app.wikiIngestError)
+    }
+
+    func testApplyCreatesIntermediateDirectoriesForAutoPage() async {
+        let page = wikiDir.appendingPathComponent("references/새논문.md")   // references/ 미존재
+        let proposal = WikiMergeProposal(pageURL: page, isNewPage: true,
+                                         oldBody: "", newBody: "# 새논문\n요약",
+                                         sourceURL: makeSource())
+        let dest = await app.applyWikiMerge(proposal)
+        XCTAssertNotNil(dest)
+        XCTAssertEqual(try? String(contentsOf: dest!, encoding: .utf8), "# 새논문\n요약")
+    }
+
+    func testWikiRulesSettingsDecodeBackwardCompatible() throws {
+        let old = "{\"hasCompletedOnboarding\": true}".data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: old)
+        XCTAssertNil(decoded.wikiRulesSummary)
+        XCTAssertNil(decoded.wikiRulesCapturedAt)
+    }
 }
