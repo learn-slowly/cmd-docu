@@ -51,7 +51,16 @@ actor WikiBackupStore {
             id: UUID(), pageURL: pageURL, backupFile: backupFile,
             sourceName: sourceName, date: roundedDate)
         entries.append(entry)
-        persist()
+        do {
+            try persist()
+        } catch {
+            // 로그를 못 쓰면 기록 없는 고아 백업이 남는다 — 항목과 백업 파일을 되물리고 실패를 알린다.
+            entries.removeLast()
+            if let backupFile {
+                try? FileManager.default.removeItem(at: backupsDir.appendingPathComponent(backupFile))
+            }
+            throw error
+        }
         return entry
     }
 
@@ -77,12 +86,11 @@ actor WikiBackupStore {
         }
     }
 
-    private func persist() {
+    private func persist() throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        if let data = try? encoder.encode(entries) {
-            try? data.write(to: logURL)
-        }
+        let data = try encoder.encode(entries)
+        try data.write(to: logURL)
     }
 
     private static let timestampFormatter: DateFormatter = {

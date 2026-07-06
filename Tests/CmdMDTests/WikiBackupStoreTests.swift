@@ -77,4 +77,22 @@ final class WikiBackupStoreTests: XCTestCase {
         let entries = await store.allEntries()
         XCTAssertEqual(entries.map(\.id), [e2.id, e1.id])
     }
+
+    func testRecordApplyThrowsWhenLogUnwritable() async throws {
+        let store = WikiBackupStore(directory: dataDir)
+        // 로그 파일 자리를 디렉터리로 점유해 쓰기를 결정적으로 실패시킨다.
+        try FileManager.default.createDirectory(
+            at: dataDir.appendingPathComponent("wiki-ingest-log.json"),
+            withIntermediateDirectories: true)
+        do {
+            _ = try await store.recordApply(pageURL: wikiDir.appendingPathComponent("p.md"),
+                                            oldBody: "x", sourceName: "s")
+            XCTFail("에러여야 함")
+        } catch { }
+        let entries = await store.allEntries()
+        XCTAssertTrue(entries.isEmpty)   // 실패한 기록은 로그에 남지 않는다
+        let backups = try FileManager.default.contentsOfDirectory(
+            atPath: dataDir.appendingPathComponent("wiki-backups").path)
+        XCTAssertTrue(backups.isEmpty)   // 고아 백업도 남지 않는다
+    }
 }
