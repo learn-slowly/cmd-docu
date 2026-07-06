@@ -117,6 +117,9 @@ struct ContentView: View {
         .sheet(item: $state.fileInfoRequest) { request in
             FileInfoView(request: request)
         }
+        .sheet(item: $state.wikiIngestRequest) { request in
+            WikiIngestView(request: request)
+        }
         .sheet(isPresented: $state.showFileOpsHistory) {
             FileOpsHistoryView()
         }

@@ -737,6 +737,36 @@ struct ToolsSettingsView: View {
             }
 
             Section {
+                HStack {
+                    if let folder = appState.settings.wikiFolder {
+                        Text(folder)
+                            .font(.callout)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text("설정 안 됨")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(appState.settings.wikiFolder == nil ? "지정…" : "변경…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        if panel.runModal() == .OK, let url = panel.url {
+                            appState.settings.wikiFolder = url.path
+                            appState.saveUserData()
+                        }
+                    }
+                }
+            } header: {
+                Text("LLM-Wiki")
+            } footer: {
+                Text("파일을 위키 페이지에 병합하는 인제스트의 대상 폴더입니다.")
+                    .font(.caption)
+            }
+
+            Section {
                 if FileAssociationService.appBundleURL == nil {
                     Text("패키징된 앱(/Applications의 cmdALL.app)에서만 사용할 수 있습니다.")
                         .foregroundStyle(.secondary)

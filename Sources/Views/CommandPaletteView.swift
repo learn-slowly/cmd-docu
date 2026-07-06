@@ -279,6 +279,20 @@ struct Command: Identifiable {
             },
 
             Command(
+                title: "현재 문서를 위키에 인제스트",
+                subtitle: "열린 문서를 위키 페이지에 Claude 병합",
+                icon: "text.badge.plus",
+                shortcut: nil,
+                keywords: ["위키", "인제스트", "wiki", "ingest", "병합", "merge"]
+            ) {
+                if let url = appState.activeTab?.fileURL {
+                    appState.requestWikiIngest(source: url)
+                } else {
+                    appState.showToast("열린 문서가 없습니다")
+                }
+            },
+
+            Command(
                 title: "폴더 정리 (배치)",
                 subtitle: "Claude 제안으로 폴더를 종류·주제별로 정리",
                 icon: "folder.badge.gearshape",

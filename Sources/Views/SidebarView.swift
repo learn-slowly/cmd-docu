@@ -546,6 +546,13 @@ struct FileTreeContextMenu: View {
         } label: {
             Label("정보 보기", systemImage: "info.circle")
         }
+        if !item.isDirectory {
+            Button {
+                appState.requestWikiIngest(source: item.url)
+            } label: {
+                Label("위키에 인제스트…", systemImage: "text.badge.plus")
+            }
+        }
         Divider()
 
         if item.isDirectory {
