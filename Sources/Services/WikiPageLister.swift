@@ -9,7 +9,12 @@ enum WikiPageLister {
         while let rel = enumerator.nextObject() as? String {
             let last = (rel as NSString).lastPathComponent
             if last.hasPrefix(".") {
-                enumerator.skipDescendants()   // .git 등 숨김 디렉터리 하위 진입 차단(성능)
+                // 숨김 "디렉터리"만 하강 차단 — 숨김 파일에서 skipDescendants()를 부르면
+                // 가장 최근 서브디렉터리(=그 파일을 담은 보이는 폴더)의 하강이 취소돼
+                // 페이지가 무증상 누락된다(.DS_Store 실측 — 리뷰 확정 Critical).
+                if (enumerator.fileAttributes?[.type] as? FileAttributeType) == .typeDirectory {
+                    enumerator.skipDescendants()
+                }
                 continue
             }
             guard rel.lowercased().hasSuffix(".md") else { continue }
