@@ -49,6 +49,16 @@ final class WikiIngestModelsTests: XCTestCase {
         XCTAssertFalse(r.truncated)
     }
 
+    func testExcerptCoversFullAcademicPaper() {
+        // 실사례 회귀(2026-07-06 신진욱2011): 36쪽 논문 추출 텍스트 48,273자가 12k 한도에
+        // 잘려 페이지가 "앞부분 발췌 기반"으로만 생성됐다. 단일 문서 전체 이해가 목적이므로
+        // 한도는 학술 논문 한 편(수십 쪽)을 덮어야 한다.
+        let paper = String(repeating: "가", count: 48_273)
+        let r = WikiIngestModels.truncatedExcerpt(paper)
+        XCTAssertFalse(r.truncated)
+        XCTAssertEqual(r.text.count, 48_273)
+    }
+
     func testExcerptOverLimitTruncates() {
         let long = String(repeating: "가", count: WikiIngestModels.sourceExcerptLimit + 100)
         let r = WikiIngestModels.truncatedExcerpt(long)

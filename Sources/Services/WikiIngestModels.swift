@@ -17,8 +17,10 @@ struct WikiMergeProposal: Equatable {
 
 /// 위키 인제스트 순수 헬퍼 — 대상 URL·병합 프롬프트(페이지 스키마 내장)·응답 검증·크기 한도.
 enum WikiIngestModels {
-    /// 소스 발췌 한도 — 출력이 아니라 입력 절단(RagContextBuilder 12k 전례).
-    static let sourceExcerptLimit = 12_000
+    /// 소스 발췌 한도 — 입력 절단. 단일 문서 전체 이해가 목적이라 학술 논문 한 편(수십 쪽)을
+    /// 덮는 크기여야 한다(2026-07-06 실사례: 36쪽 논문 48,273자가 구 12k 한도에 잘려 페이지가
+    /// "앞부분 발췌 기반"으로만 생성). 타임아웃 방어는 출력 쪽(pageBodyLimit)이 담당한다.
+    static let sourceExcerptLimit = 60_000
     /// 대상 페이지 한도 — 출력=페이지 전문이라 이 값이 곧 출력 상한(타임아웃 방어, 폴더 정리 교훈).
     static let pageBodyLimit = 24_000
 
