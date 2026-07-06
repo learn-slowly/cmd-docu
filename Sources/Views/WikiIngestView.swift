@@ -87,8 +87,7 @@ struct WikiIngestView: View {
             Text("위키 폴더가 설정되지 않았습니다.").foregroundStyle(.secondary)
             Button("위키 폴더 지정…") {
                 if let url = Self.pickFolder() {
-                    appState.settings.wikiFolder = url.path
-                    appState.saveUserData()
+                    appState.setWikiFolder(url)
                     reload()
                 }
             }
@@ -99,7 +98,8 @@ struct WikiIngestView: View {
         VStack(alignment: .leading, spacing: 6) {
             Picker("대상 페이지", selection: $selection) {
                 Text("선택…").tag("")
-                if appState.settings.wikiRulesSummary?.isEmpty == false {
+                if appState.settings.wikiRulesSummary?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
                     Text("자동(규칙에 따름)").tag(Self.autoMarker)
                 }
                 Divider()

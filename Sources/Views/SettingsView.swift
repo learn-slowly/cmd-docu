@@ -888,9 +888,7 @@ struct WikiSettingsView: View {
                         panel.canChooseFiles = false
                         panel.allowsMultipleSelection = false
                         if panel.runModal() == .OK, let url = panel.url {
-                            // 심링크는 실경로로 정규화(규칙 파일·페이지 나열의 기준 경로).
-                            appState.settings.wikiFolder = url.resolvingSymlinksInPath().path
-                            appState.saveUserData()
+                            appState.setWikiFolder(url)
                         }
                     }
                 }

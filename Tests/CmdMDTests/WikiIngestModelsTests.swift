@@ -170,6 +170,27 @@ final class WikiIngestModelsTests: XCTestCase {
         XCTAssertFalse(prompt.contains("\"# 자료\" 헤딩으로 시작"))
     }
 
+    /// 최종 리뷰 반영(Important 1) — autoPlacement면 우선순위 블록이 규칙 7(경로 마커)도
+    /// 앱 계약으로 명시해, 위키 규칙(예: "frontmatter로 시작")이 마커 자체를 밀어내지 않게 한다.
+    func testMergePromptAutoPlacementPriorityMentionsMarkerContract() {
+        let (prompt, _) = WikiIngestModels.mergePrompt(
+            pageTitle: "자료", pageBody: "", sourceName: "자료.pdf", sourceExcerpt: "e",
+            excerptTruncated: false, isNewPage: true,
+            autoPlacement: true, rulesSummary: "문서는 frontmatter로 시작한다.", today: "2026-07-06")
+        XCTAssertTrue(prompt.contains("7"))
+        XCTAssertTrue(prompt.contains("첫 줄"))
+    }
+
+    /// 비auto 경로는 기존 1·2·3·5 문구를 그대로 유지해야 한다(하위호환).
+    func testMergePromptNonAutoPriorityKeepsOriginalContractWording() {
+        let (prompt, _) = WikiIngestModels.mergePrompt(
+            pageTitle: "t", pageBody: "b", sourceName: "s.pdf", sourceExcerpt: "e",
+            excerptTruncated: false, isNewPage: false,
+            autoPlacement: false, rulesSummary: "규칙", today: "2026-07-06")
+        XCTAssertTrue(prompt.contains("기본 규칙 1·2·3·5"))
+        XCTAssertFalse(prompt.contains("1·2·3·5·7"))
+    }
+
     // MARK: - 경로 마커 파싱·검증 (스펙 §2.4)
 
     func testExtractAutoPageParsesMarkerAndBody() {
@@ -192,6 +213,25 @@ final class WikiIngestModelsTests: XCTestCase {
         XCTAssertNil(WikiIngestModels.extractAutoPage(from: ""))
     }
 
+    /// 최종 리뷰 반영(Important 2) — 위키 규칙이 "frontmatter로 시작"류면 마커가
+    /// 첫 줄이 아니라 frontmatter 뒤로 밀릴 수 있다. 앞쪽 10줄 안이면 찾아야 하고,
+    /// 마커가 있던 그 줄만 제거되고 나머지 줄(frontmatter 포함)은 본문에 남아야 한다.
+    func testExtractAutoPageFindsMarkerWithinLeadingTenLines() {
+        let out = """
+        ---
+        title: 신진욱2011
+        tags: [사회학]
+        ---
+        <!-- page: references/신진욱2011.md -->
+        # 신진욱2011
+        본문
+        """
+        let r = WikiIngestModels.extractAutoPage(from: out)
+        XCTAssertEqual(r?.relativePath, "references/신진욱2011.md")
+        XCTAssertEqual(r?.body, "---\ntitle: 신진욱2011\ntags: [사회학]\n---\n# 신진욱2011\n본문")
+        XCTAssertFalse(r?.body.contains("<!-- page:") ?? true)
+    }
+
     func testValidatedAutoPageURLAcceptsRelativeMd() {
         let url = WikiIngestModels.validatedAutoPageURL(relativePath: "references/신진욱2011.md",
                                                         wikiFolder: tempDir)
@@ -201,7 +241,7 @@ final class WikiIngestModelsTests: XCTestCase {
 
     func testValidatedAutoPageURLRejectsBadPaths() {
         for bad in ["/etc/passwd.md", "../밖.md", "a/../../밖.md", "~/x.md",
-                    "references/문서.txt", "", "references/"] {
+                    "references/문서.txt", "", "references/", ".obsidian/x.md"] {
             XCTAssertNil(WikiIngestModels.validatedAutoPageURL(relativePath: bad, wikiFolder: tempDir),
                          "거부돼야 함: \(bad)")
         }

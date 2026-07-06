@@ -71,12 +71,16 @@ enum WikiIngestModels {
             rules += "\n7. 이 페이지는 새 페이지다. \"# \(pageTitle)\" 헤딩으로 시작해 새 자료의 요약으로 구성하라."
         }
         if let rulesSummary, !rulesSummary.isEmpty {
+            let contractLine = autoPlacement
+                ? "단 기본 규칙 1·2·3·5·7(경로 마커 포함)은 앱의 계약이므로 항상 지킨다 — 특히 " +
+                    "7의 첫 줄 마커는 위키 규칙과 무관하게 반드시 출력 첫 줄이다."
+                : "단 기본 규칙 1·2·3·5(전문 출력·sources 누적·유실 금지·재인제스트 갱신)는 " +
+                    "앱의 계약이므로 항상 지킨다."
             rules += """
 
 
             이 위키에는 자체 규칙이 있다. 아래 <위키 규칙>이 위 기본 규칙 4·6(내용 구성·언어)과 \
-            제목·명명·frontmatter 필드 구성에 **우선한다**. 단 기본 규칙 1·2·3·5(전문 출력·\
-            sources 누적·유실 금지·재인제스트 갱신)는 앱의 계약이므로 항상 지킨다.
+            제목·명명·frontmatter 필드 구성에 **우선한다**. \(contractLine)
 
             <위키 규칙>
             \(rulesSummary)
@@ -124,8 +128,10 @@ enum WikiIngestModels {
         return text
     }
 
-    /// 자동 배치 응답 파싱 — 첫 줄 `<!-- page: 상대/경로.md -->` 마커를 읽고 본문에서 제거.
-    /// 전체 코드펜스는 먼저 벗긴다. 마커가 없으면 nil(자동 배치 실패).
+    /// 자동 배치 응답 파싱 — `<!-- page: 상대/경로.md -->` 마커를 읽고 본문에서 그 줄만 제거.
+    /// 전체 코드펜스는 먼저 벗긴다. Claude가 frontmatter 등을 마커보다 앞에 내놓는 경우를
+    /// 대비해 첫 줄뿐 아니라 **앞쪽 10줄 안**에서 마커 줄을 찾는다(스펙 §2.4·최종 리뷰 반영 —
+    /// 위키 규칙이 "문서는 frontmatter로 시작" 류면 마커가 밀릴 수 있다). 못 찾으면 nil.
     static func extractAutoPage(from stdout: String) -> (relativePath: String, body: String)? {
         var text = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let fenceLines = text.components(separatedBy: "\n")
@@ -135,24 +141,30 @@ enum WikiIngestModels {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         var lines = text.components(separatedBy: "\n")
-        guard let first = lines.first?.trimmingCharacters(in: .whitespaces),
-              first.hasPrefix("<!--"), first.hasSuffix("-->") else { return nil }
-        let inner = first.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
-        guard inner.hasPrefix("page:") else { return nil }
-        let path = inner.dropFirst(5).trimmingCharacters(in: .whitespaces)
-        guard !path.isEmpty else { return nil }
-        lines.removeFirst()
-        let body = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return (String(path), body)
+        let scanLimit = min(lines.count, 10)
+        for index in 0..<scanLimit {
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { continue }
+            let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+            guard inner.hasPrefix("page:") else { continue }
+            let path = inner.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            guard !path.isEmpty else { continue }
+            lines.remove(at: index)
+            let body = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            return (String(path), body)
+        }
+        return nil
     }
 
     /// 자동 배치 상대 경로 4중 검증 — 상대 경로만·탈출("..", 절대, "~") 차단·루트 하위 확인·
     /// .md 강제(CleanupPlanner.destinationDir 전례). 존재 여부 검사는 하지 않는다(Service 몫).
     static func validatedAutoPageURL(relativePath: String, wikiFolder: URL) -> URL? {
+        let components = relativePath.components(separatedBy: "/")
         guard !relativePath.isEmpty,
               !relativePath.hasPrefix("/"), !relativePath.hasPrefix("~"),
               relativePath.lowercased().hasSuffix(".md"),
-              !relativePath.components(separatedBy: "/").contains("..") else { return nil }
+              !components.contains(".."),
+              !components.contains(where: { $0.hasPrefix(".") }) else { return nil }
         let dest = wikiFolder.appendingPathComponent(relativePath)
         let rootPath = wikiFolder.standardizedFileURL.path
         let destPath = dest.standardizedFileURL.path

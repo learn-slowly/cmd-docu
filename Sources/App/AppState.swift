@@ -3315,6 +3315,19 @@ final class AppState {
         cleanupBatches = await moveLogStore.load().reversed()
     }
 
+    /// 위키 폴더 지정/변경 — 심링크는 실경로로 정규화(진입점 공통), 폴더가 바뀌면
+    /// 이전 위키의 규칙 요약·일시를 비운다(옛 규칙이 새 위키 인제스트를 조종하는 스테일 방지).
+    @MainActor
+    func setWikiFolder(_ url: URL) {
+        let resolved = url.resolvingSymlinksInPath().path
+        guard settings.wikiFolder != resolved else { return }
+        settings.wikiFolder = resolved
+        settings.wikiRulesSummary = nil
+        settings.wikiRulesCapturedAt = nil
+        wikiRulesMessage = "위키 폴더가 바뀌었습니다 — 규칙을 다시 파악하세요."
+        saveUserData()
+    }
+
     /// 위키 규칙 파악(스펙 §2.1) — 성공 시 요약·일시를 설정에 저장. 성공 여부 반환.
     @MainActor
     func captureWikiRules() async -> Bool {

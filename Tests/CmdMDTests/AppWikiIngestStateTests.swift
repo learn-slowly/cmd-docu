@@ -229,6 +229,31 @@ final class AppWikiIngestStateTests: XCTestCase {
         XCTAssertEqual(try? String(contentsOf: dest!, encoding: .utf8), "# 새논문\n요약")
     }
 
+    /// 최종 리뷰 반영(Important 1) — 위키 폴더를 다른 폴더로 재지정하면 옛 위키의 규칙
+    /// 요약·일시가 스테일로 남지 않게 비워야 한다(옛 규칙이 새 위키 인제스트를 조종 방지).
+    func testSetWikiFolderClearsRulesSummaryWhenFolderChanges() {
+        app.settings.wikiRulesSummary = "옛 위키 규칙"
+        app.settings.wikiRulesCapturedAt = Date()
+        let otherWiki = TempDataDirectory.make()
+        defer { TempDataDirectory.cleanup(otherWiki) }
+        app.setWikiFolder(otherWiki)
+        XCTAssertEqual(app.settings.wikiFolder, otherWiki.resolvingSymlinksInPath().path)
+        XCTAssertNil(app.settings.wikiRulesSummary)
+        XCTAssertNil(app.settings.wikiRulesCapturedAt)
+        XCTAssertNotNil(app.wikiRulesMessage)
+    }
+
+    /// 같은 폴더를 재지정(경로 정규화 후 동일)하면 요약·일시가 보존돼야 한다.
+    func testSetWikiFolderPreservesRulesSummaryWhenSameFolder() {
+        // setUp이 unresolved path를 넣으므로, 먼저 setWikiFolder로 정규화된 값을 맞춰둔다.
+        app.setWikiFolder(wikiDir)
+        app.settings.wikiRulesSummary = "그대로 유지"
+        app.settings.wikiRulesCapturedAt = Date()
+        app.setWikiFolder(wikiDir)   // 같은 폴더 재지정 — no-op이어야 함
+        XCTAssertEqual(app.settings.wikiRulesSummary, "그대로 유지")
+        XCTAssertNotNil(app.settings.wikiRulesCapturedAt)
+    }
+
     func testWikiRulesSettingsDecodeBackwardCompatible() throws {
         let old = "{\"hasCompletedOnboarding\": true}".data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AppSettings.self, from: old)
