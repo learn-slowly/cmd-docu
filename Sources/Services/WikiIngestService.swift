@@ -42,6 +42,8 @@ actor WikiIngestService {
                 throw WikiIngestError.invalidNewPageName
             }
             pageURL = url; oldBody = ""; isNewPage = true
+        case .auto:
+            throw WikiIngestError.badResponse  // 임시 케이스 — Task 4에서 정식 구현(규칙 기반 자동 배치)
         }
 
         let (excerpt, truncated) = WikiIngestModels.truncatedExcerpt(sourceBody)

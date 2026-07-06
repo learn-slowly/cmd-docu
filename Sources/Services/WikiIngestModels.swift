@@ -4,6 +4,7 @@ import Foundation
 enum WikiIngestTarget: Equatable {
     case existing(URL)
     case new(name: String)
+    case auto              // 규칙 기반 자동 배치 — Claude가 위치·파일명 제안(스펙 §2.4)
 }
 
 /// Claude 병합 제안 — 승인 전까지 디스크에 닿지 않는 순수 값(제안→확인→실행).
@@ -39,10 +40,14 @@ enum WikiIngestModels {
         return (String(body.prefix(sourceExcerptLimit)), true)
     }
 
-    /// 병합 프롬프트 — 규칙(=앱 안의 페이지 스키마)은 prompt에, 본문들은 context(stdin)에.
+    /// 병합 프롬프트 — 규칙(=페이지 스키마)은 prompt에, 본문들은 context(stdin)에.
+    /// rulesSummary가 있으면 위키 자체 규칙이 내용 구성·언어(기본 규칙 4·6)에 우선한다.
+    /// 앱 계약(전문 출력·sources 누적·유실 금지·재인제스트 갱신 = 규칙 1·2·3·5)은 항상 유지.
     static func mergePrompt(pageTitle: String, pageBody: String,
                             sourceName: String, sourceExcerpt: String,
                             excerptTruncated: Bool, isNewPage: Bool,
+                            autoPlacement: Bool = false,
+                            rulesSummary: String? = nil,
                             today: String) -> (prompt: String, context: String) {
         var rules = """
         당신은 개인 지식 위키의 사서다. 아래 [위키 페이지]에 [새 자료]의 내용을 병합해, \
@@ -57,8 +62,26 @@ enum WikiIngestModels {
         5. sources에 이미 있는 자료가 다시 오면 중복 서술을 만들지 말고 해당 부분을 갱신만 한다.
         6. 위키 본문은 한국어로 쓴다(자료가 외국어여도).
         """
-        if isNewPage {
+        if autoPlacement {
+            rules += "\n7. 이 페이지는 새 페이지다. 아래 위키 규칙에 따라 이 문서가 놓일 위치와 " +
+                "파일명을 정해, 출력 **첫 줄**에 정확히 `<!-- page: 상대/경로.md -->` 형식의 " +
+                "주석을 쓰고(위키 루트 기준 상대 경로), 다음 줄부터 페이지 전문을 출력하라. " +
+                "제목 헤딩도 위키 규칙에 맞게 정한다."
+        } else if isNewPage {
             rules += "\n7. 이 페이지는 새 페이지다. \"# \(pageTitle)\" 헤딩으로 시작해 새 자료의 요약으로 구성하라."
+        }
+        if let rulesSummary, !rulesSummary.isEmpty {
+            rules += """
+
+
+            이 위키에는 자체 규칙이 있다. 아래 <위키 규칙>이 위 기본 규칙 4·6(내용 구성·언어)과 \
+            제목·명명·frontmatter 필드 구성에 **우선한다**. 단 기본 규칙 1·2·3·5(전문 출력·\
+            sources 누적·유실 금지·재인제스트 갱신)는 앱의 계약이므로 항상 지킨다.
+
+            <위키 규칙>
+            \(rulesSummary)
+            </위키 규칙>
+            """
         }
         if excerptTruncated {
             rules += "\n주의: [새 자료]는 앞부분 발췌본이다."
@@ -99,6 +122,45 @@ enum WikiIngestModels {
         guard !text.isEmpty else { return nil }
         if oldBodyLength > 0, text.count < oldBodyLength * 40 / 100 { return nil }
         return text
+    }
+
+    /// 자동 배치 응답 파싱 — 첫 줄 `<!-- page: 상대/경로.md -->` 마커를 읽고 본문에서 제거.
+    /// 전체 코드펜스는 먼저 벗긴다. 마커가 없으면 nil(자동 배치 실패).
+    static func extractAutoPage(from stdout: String) -> (relativePath: String, body: String)? {
+        var text = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fenceLines = text.components(separatedBy: "\n")
+        if fenceLines.count >= 2, fenceLines[0].hasPrefix("```"),
+           fenceLines[fenceLines.count - 1].trimmingCharacters(in: .whitespaces) == "```" {
+            text = fenceLines.dropFirst().dropLast().joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var lines = text.components(separatedBy: "\n")
+        guard let first = lines.first?.trimmingCharacters(in: .whitespaces),
+              first.hasPrefix("<!--"), first.hasSuffix("-->") else { return nil }
+        let inner = first.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        guard inner.hasPrefix("page:") else { return nil }
+        let path = inner.dropFirst(5).trimmingCharacters(in: .whitespaces)
+        guard !path.isEmpty else { return nil }
+        lines.removeFirst()
+        let body = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (String(path), body)
+    }
+
+    /// 자동 배치 상대 경로 4중 검증 — 상대 경로만·탈출("..", 절대, "~") 차단·루트 하위 확인·
+    /// .md 강제(CleanupPlanner.destinationDir 전례). 존재 여부 검사는 하지 않는다(Service 몫).
+    static func validatedAutoPageURL(relativePath: String, wikiFolder: URL) -> URL? {
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("/"), !relativePath.hasPrefix("~"),
+              relativePath.lowercased().hasSuffix(".md"),
+              !relativePath.components(separatedBy: "/").contains("..") else { return nil }
+        let dest = wikiFolder.appendingPathComponent(relativePath)
+        let rootPath = wikiFolder.standardizedFileURL.path
+        let destPath = dest.standardizedFileURL.path
+        guard destPath.hasPrefix(rootPath + "/") else { return nil }
+        // 마지막 구성요소가 실제 파일명인지("references/" 같은 디렉터리 경로 거부).
+        guard dest.lastPathComponent.lowercased().hasSuffix(".md"),
+              dest.lastPathComponent.count > 3 else { return nil }
+        return dest
     }
 }
 

@@ -131,4 +131,79 @@ final class WikiIngestModelsTests: XCTestCase {
         // 새 페이지(기존 0자)엔 미적용
         XCTAssertNotNil(WikiIngestModels.extractMarkdown(from: small, oldBodyLength: 0))
     }
+
+    // MARK: - 규칙 주입 (스펙 §2.3)
+
+    func testMergePromptWithoutRulesSummaryIsUnchanged() {
+        // 하위호환 — rulesSummary nil이면 기존 프롬프트와 동일해야 한다.
+        let old = WikiIngestModels.mergePrompt(
+            pageTitle: "t", pageBody: "b", sourceName: "s.pdf", sourceExcerpt: "e",
+            excerptTruncated: false, isNewPage: false, today: "2026-07-06")
+        let new = WikiIngestModels.mergePrompt(
+            pageTitle: "t", pageBody: "b", sourceName: "s.pdf", sourceExcerpt: "e",
+            excerptTruncated: false, isNewPage: false,
+            autoPlacement: false, rulesSummary: nil, today: "2026-07-06")
+        XCTAssertEqual(old.prompt, new.prompt)
+        XCTAssertEqual(old.context, new.context)
+    }
+
+    func testMergePromptInjectsRulesSummaryWithPrecedenceAndContract() {
+        let (prompt, _) = WikiIngestModels.mergePrompt(
+            pageTitle: "t", pageBody: "b", sourceName: "s.pdf", sourceExcerpt: "e",
+            excerptTruncated: false, isNewPage: false,
+            autoPlacement: false, rulesSummary: "모든 요약은 반말로 쓴다.", today: "2026-07-06")
+        XCTAssertTrue(prompt.contains("모든 요약은 반말로 쓴다."))
+        XCTAssertTrue(prompt.contains("위키 규칙"))
+        XCTAssertTrue(prompt.contains("우선"))            // 위키 규칙 우선 명시
+        XCTAssertTrue(prompt.contains("sources"))         // 앱 계약(sources 누적)은 여전히 존재
+        XCTAssertTrue(prompt.contains("유실"))            // 앱 계약(유실 금지) 유지
+    }
+
+    func testMergePromptAutoPlacementAddsMarkerInstruction() {
+        let (prompt, _) = WikiIngestModels.mergePrompt(
+            pageTitle: "자료", pageBody: "", sourceName: "자료.pdf", sourceExcerpt: "e",
+            excerptTruncated: false, isNewPage: true,
+            autoPlacement: true, rulesSummary: "규칙", today: "2026-07-06")
+        XCTAssertTrue(prompt.contains("<!-- page:"))
+        XCTAssertTrue(prompt.contains("상대"))
+        // 자동 배치에선 고정 제목 헤딩 강제("# 자료")가 없어야 한다(규칙이 제목을 정함).
+        XCTAssertFalse(prompt.contains("\"# 자료\" 헤딩으로 시작"))
+    }
+
+    // MARK: - 경로 마커 파싱·검증 (스펙 §2.4)
+
+    func testExtractAutoPageParsesMarkerAndBody() {
+        let out = "<!-- page: references/신진욱2011.md -->\n---\ntitle: x\n---\n# 신진욱2011\n본문"
+        let r = WikiIngestModels.extractAutoPage(from: out)
+        XCTAssertEqual(r?.relativePath, "references/신진욱2011.md")
+        XCTAssertEqual(r?.body.hasPrefix("---"), true)
+        XCTAssertFalse(r?.body.contains("<!-- page:") ?? true)
+    }
+
+    func testExtractAutoPageAllowsLeadingWhitespaceAndFence() {
+        // 전체 코드펜스에 감싸여 와도 벗긴 뒤 첫 줄 마커를 읽는다.
+        let out = "```markdown\n<!-- page: a/b.md -->\n# 제목\n본문\n```"
+        let r = WikiIngestModels.extractAutoPage(from: out)
+        XCTAssertEqual(r?.relativePath, "a/b.md")
+    }
+
+    func testExtractAutoPageReturnsNilWithoutMarker() {
+        XCTAssertNil(WikiIngestModels.extractAutoPage(from: "# 제목\n본문"))
+        XCTAssertNil(WikiIngestModels.extractAutoPage(from: ""))
+    }
+
+    func testValidatedAutoPageURLAcceptsRelativeMd() {
+        let url = WikiIngestModels.validatedAutoPageURL(relativePath: "references/신진욱2011.md",
+                                                        wikiFolder: tempDir)
+        XCTAssertEqual(url?.lastPathComponent, "신진욱2011.md")
+        XCTAssertTrue(url!.standardizedFileURL.path.hasPrefix(tempDir.standardizedFileURL.path + "/"))
+    }
+
+    func testValidatedAutoPageURLRejectsBadPaths() {
+        for bad in ["/etc/passwd.md", "../밖.md", "a/../../밖.md", "~/x.md",
+                    "references/문서.txt", "", "references/"] {
+            XCTAssertNil(WikiIngestModels.validatedAutoPageURL(relativePath: bad, wikiFolder: tempDir),
+                         "거부돼야 함: \(bad)")
+        }
+    }
 }
