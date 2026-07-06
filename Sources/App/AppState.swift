@@ -183,6 +183,12 @@ final class AppState {
     var cleanupBatches: [MoveBatch] = []
     var cleanupError: String?
 
+    // MARK: - 위키 인제스트 (LLM-Wiki Ingest)
+    var wikiIngestRequest: WikiIngestRequest? = nil
+    var wikiIngestBusy: Bool = false
+    var wikiMergeProposal: WikiMergeProposal? = nil
+    var wikiIngestError: String? = nil
+
     // MARK: - 파일 작업(F1a) 상태
 
     /// 파일작업 세대 토큰 — rename/새폴더/휴지통/되돌리기마다 증가.
@@ -231,6 +237,9 @@ final class AppState {
     let fileOpsLogStore: FileOpsLogStore
     /// 테스트가 FakeClaude 주입 CleanupService로 교체할 수 있게 internal var(실사용 재대입 없음).
     var cleanupService: CleanupService
+    /// 테스트가 가짜 Claude 주입 WikiIngestService로 교체할 수 있게 internal var(클린업 전례).
+    var wikiIngestService: WikiIngestService
+    let wikiBackupStore: WikiBackupStore
     private let moveExecutor: MoveExecutor
     private let dataURL: URL
 
@@ -762,6 +771,8 @@ final class AppState {
         moveLogStore = MoveLogStore(directory: appDir)
         fileOpsLogStore = FileOpsLogStore(directory: appDir)
         cleanupService = CleanupService(claude: claudeService, kordoc: kordocService)
+        wikiIngestService = WikiIngestService(claude: claudeService, kordoc: kordocService)
+        wikiBackupStore = WikiBackupStore(directory: appDir)
         moveExecutor = MoveExecutor(store: moveLogStore)
 
         fileService = FileService()
@@ -3298,6 +3309,96 @@ final class AppState {
     func loadCleanupBatches() async {
         cleanupBatches = await moveLogStore.load().reversed()
     }
+
+    // MARK: - 위키 인제스트 흐름 (제안→확인→실행, 스펙 §2.5)
+
+    /// 인제스트 시트 열기 — 이전 제안·에러를 비우고 소스를 지정한다.
+    func requestWikiIngest(source: URL) {
+        guard !wikiIngestBusy else { wikiIngestRequest = WikiIngestRequest(url: source); return }
+        wikiMergeProposal = nil
+        wikiIngestError = nil
+        wikiIngestRequest = WikiIngestRequest(url: source)
+    }
+
+    /// 병합 제안 생성 — busy 가드, 에러는 한국어 메시지로 시트에 표시.
+    @MainActor
+    func generateWikiMerge(source: URL, target: WikiIngestTarget) async {
+        guard !wikiIngestBusy else { return }
+        guard let folderPath = settings.wikiFolder else {
+            wikiIngestError = "위키 폴더가 설정되지 않았습니다."
+            return
+        }
+        wikiIngestBusy = true
+        wikiIngestError = nil
+        wikiMergeProposal = nil
+        defer { wikiIngestBusy = false }
+        do {
+            let today = Self.wikiTodayFormatter.string(from: Date())
+            wikiMergeProposal = try await wikiIngestService.propose(
+                source: source, target: target,
+                wikiFolder: URL(fileURLWithPath: folderPath), today: today)
+        } catch let e as WikiIngestError {
+            wikiIngestError = Self.wikiErrorMessage(e)
+        } catch {
+            wikiIngestError = Self.claudeErrorMessage(error)
+        }
+    }
+
+    /// 적용 — 백업 기록 후 페이지 덮어쓰기(새 페이지면 생성). 성공 시 실제 쓴 URL 반환.
+    /// 제안 생성과 적용 사이의 변화(TOCTOU)에 방어한다: 새 페이지는 적용 시점에 재uniquify
+    /// (그 사이 같은 이름 파일이 생겼으면 덮어쓰지 않고 비켜 감), 백업은 proposal의
+    /// oldBody가 아니라 "적용 시점 디스크 본"을 저장한다(그 사이 편집분도 백업에 남게).
+    @MainActor
+    func applyWikiMerge(_ proposal: WikiMergeProposal) async -> URL? {
+        do {
+            let dest = proposal.isNewPage ? proposal.pageURL.uniquified() : proposal.pageURL
+            let currentBody = try? String(contentsOf: dest, encoding: .utf8)
+            if !proposal.isNewPage && currentBody == nil {
+                wikiIngestError = "대상 페이지를 다시 읽지 못했습니다 — 파일이 이동/삭제됐을 수 있습니다."
+                return nil
+            }
+            _ = try await wikiBackupStore.recordApply(
+                pageURL: dest,
+                oldBody: proposal.isNewPage ? nil : currentBody,
+                sourceName: proposal.sourceURL.lastPathComponent)
+            try proposal.newBody.write(to: dest, atomically: true, encoding: .utf8)
+            showToast("위키 페이지에 병합했습니다")
+            return dest
+        } catch {
+            wikiIngestError = "적용에 실패했습니다: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// 기록에서 되돌리기. 성공 여부 반환.
+    @MainActor
+    func restoreWikiIngest(_ entry: WikiIngestLogEntry) async -> Bool {
+        do {
+            try await wikiBackupStore.restore(entry)
+            showToast("되돌렸습니다")
+            return true
+        } catch {
+            wikiIngestError = "되돌리기에 실패했습니다: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private static func wikiErrorMessage(_ e: WikiIngestError) -> String {
+        switch e {
+        case .sourceUnreadable: return "소스 문서의 본문을 읽지 못했습니다(미지원 형식이거나 변환 실패)."
+        case .pageUnreadable: return "대상 페이지를 읽지 못했습니다."
+        case .pageTooLarge: return "페이지가 너무 큽니다(24,000자 초과) — 분할 후 다시 시도하세요."
+        case .invalidNewPageName: return "새 페이지 이름이 비어 있거나 쓸 수 없습니다."
+        case .badResponse: return "Claude 응답이 페이지 전문 형식이 아닙니다 — 다시 시도하세요."
+        }
+    }
+
+    private static let wikiTodayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
     // MARK: - Claude 인증 (설정 화면)
 

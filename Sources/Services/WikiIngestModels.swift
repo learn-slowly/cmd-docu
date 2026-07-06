@@ -99,3 +99,9 @@ enum WikiIngestModels {
         return text
     }
 }
+
+/// 인제스트 시트 요청 — .sheet(item:) 배선용(RenameRequest 패턴).
+struct WikiIngestRequest: Identifiable {
+    let id = UUID()
+    let url: URL
+}
