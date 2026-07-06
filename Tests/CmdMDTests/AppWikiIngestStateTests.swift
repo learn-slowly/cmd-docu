@@ -126,6 +126,44 @@ final class AppWikiIngestStateTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: page, encoding: .utf8), "# 이전")
     }
 
+    /// 대상 페이지가 열린 탭에서 저장 안 된 편집 상태면 적용을 거부한다 — 그러지 않으면
+    /// 디스크는 병합본으로 덮이는데 더티 버퍼는 그대로라, 이후 사용자의 ⌘S가 병합 결과를
+    /// 조용히 되덮는다(F1a rename flush와 동류).
+    func testApplyRefusesWhenTargetPageIsDirtyTab() async throws {
+        let page = wikiDir.appendingPathComponent("주제.md")
+        try "# 이전".write(to: page, atomically: true, encoding: .utf8)
+        let document = MarkdownDocument(content: "편집 중인 본문")
+        let tab = EditorTab(documentId: document.id, fileURL: page)
+        app.tabs = [tab]
+        app.documents[document.id] = document
+        app.originalContents[document.id] = "저장된 본문"   // content와 달라 더티 판정
+
+        let proposal = WikiMergeProposal(pageURL: page, isNewPage: false,
+                                         oldBody: "# 이전", newBody: "# 병합 후",
+                                         sourceURL: makeSource())
+        let dest = await app.applyWikiMerge(proposal)
+        XCTAssertNil(dest)
+        XCTAssertNotNil(app.wikiIngestError)
+        XCTAssertEqual(try String(contentsOf: page, encoding: .utf8), "# 이전")   // 디스크 불변
+    }
+
+    /// 같은 이유로, 기존 페이지가 대상인 병합 제안 생성도 거부한다 — Claude 호출 자체를 막는다.
+    func testGenerateRefusesWhenExistingTargetIsDirtyTab() async {
+        let page = wikiDir.appendingPathComponent("주제.md")
+        try? "# 이전".write(to: page, atomically: true, encoding: .utf8)
+        let document = MarkdownDocument(content: "편집 중인 본문")
+        let tab = EditorTab(documentId: document.id, fileURL: page)
+        app.tabs = [tab]
+        app.documents[document.id] = document
+        app.originalContents[document.id] = "저장된 본문"
+
+        app.wikiIngestService = WikiIngestService(
+            claude: StubClaude(response: "호출되면 안 됨"), kordoc: KordocService())
+        await app.generateWikiMerge(source: makeSource(), target: .existing(page))
+        XCTAssertNil(app.wikiMergeProposal)
+        XCTAssertNotNil(app.wikiIngestError)
+    }
+
     func testWikiFolderSettingDecodeBackwardCompatible() throws {
         // 구버전 settings.json(wikiFolder 키 없음)이 그대로 디코드된다.
         let old = "{\"hasCompletedOnboarding\": true}".data(using: .utf8)!

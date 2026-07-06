@@ -113,6 +113,7 @@ struct WikiIngestView: View {
         HStack(spacing: 10) {
             Button("병합 생성") {
                 guard let target else { return }
+                appliedURL = nil   // 이전 병합의 "적용 완료" 배너가 새 병합 시트에 잔존하지 않도록.
                 Task { await appState.generateWikiMerge(source: request.url, target: target) }
             }
             .disabled(target == nil || appState.wikiIngestBusy)

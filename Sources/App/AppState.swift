@@ -3312,9 +3312,20 @@ final class AppState {
 
     // MARK: - 위키 인제스트 흐름 (제안→확인→실행, 스펙 §2.5)
 
+    /// 대상 페이지가 열린 탭에서 저장 안 된 편집 상태면 true — 인제스트/복원이 디스크를
+    /// 덮으면 이후 사용자의 ⌘S가 병합 결과를 조용히 되덮는다(F1a rename flush와 동류).
+    private func wikiTargetHasDirtyTab(_ url: URL) -> Bool {
+        guard let tab = tabs.first(where: { $0.fileURL == url }) else { return false }
+        return isTabDirty(tab)
+    }
+
     /// 인제스트 시트 열기 — 이전 제안·에러를 비우고 소스를 지정한다.
     func requestWikiIngest(source: URL) {
-        guard !wikiIngestBusy else { wikiIngestRequest = WikiIngestRequest(url: source); return }
+        guard !wikiIngestBusy else {
+            wikiIngestError = nil
+            wikiIngestRequest = WikiIngestRequest(url: source)
+            return
+        }
         wikiMergeProposal = nil
         wikiIngestError = nil
         wikiIngestRequest = WikiIngestRequest(url: source)
@@ -3326,6 +3337,10 @@ final class AppState {
         guard !wikiIngestBusy else { return }
         guard let folderPath = settings.wikiFolder else {
             wikiIngestError = "위키 폴더가 설정되지 않았습니다."
+            return
+        }
+        if case .existing(let url) = target, wikiTargetHasDirtyTab(url) {
+            wikiIngestError = "이 페이지가 탭에서 저장 안 된 편집 상태입니다 — 저장 후 다시 시도하세요."
             return
         }
         wikiIngestBusy = true
@@ -3352,6 +3367,10 @@ final class AppState {
     func applyWikiMerge(_ proposal: WikiMergeProposal) async -> URL? {
         do {
             let dest = proposal.isNewPage ? proposal.pageURL.uniquified() : proposal.pageURL
+            if wikiTargetHasDirtyTab(dest) {
+                wikiIngestError = "이 페이지가 탭에서 저장 안 된 편집 상태입니다 — 저장 후 다시 시도하세요."
+                return nil
+            }
             let currentBody = try? String(contentsOf: dest, encoding: .utf8)
             if !proposal.isNewPage && currentBody == nil {
                 wikiIngestError = "대상 페이지를 다시 읽지 못했습니다 — 파일이 이동/삭제됐을 수 있습니다."
@@ -3373,6 +3392,10 @@ final class AppState {
     /// 기록에서 되돌리기. 성공 여부 반환.
     @MainActor
     func restoreWikiIngest(_ entry: WikiIngestLogEntry) async -> Bool {
+        if wikiTargetHasDirtyTab(entry.pageURL) {
+            wikiIngestError = "이 페이지가 탭에서 저장 안 된 편집 상태입니다 — 저장 후 다시 시도하세요."
+            return false
+        }
         do {
             try await wikiBackupStore.restore(entry)
             showToast("되돌렸습니다")
