@@ -176,6 +176,81 @@ final class AppFileDropTests: XCTestCase {
         XCTAssertEqual(app.tabs.count, before, "파일 URL provider가 없으면 탭이 생기지 않아야 함")
     }
 
+    // MARK: - 드롭 순서 보존 + 외부 열기 큐 통일 (세션 복원 경합 수정)
+
+    /// 드롭 다중 열기 — provider 순서 보존·마지막 활성(스펙 §2.3). loadItem 콜백은
+    /// 임의 순서라 슬롯 수집 없인 비결정적이었다.
+    @MainActor
+    func testOpenExternalFileDropsPreservesProviderOrderAndActivatesLast() async {
+        let app = AppState(dataDirectory: tempDir)
+        let names = ["drop-a.md", "drop-b.md", "drop-c.md"]
+        let urls: [URL] = names.map { makeFile($0) }
+        let providers = urls.map { NSItemProvider(object: $0 as NSURL) }
+
+        app.openExternalFileDrops(providers)
+        await waitForChainSeeded(app)
+        await app.externalOpenChain?.value
+
+        XCTAssertEqual(app.tabs.compactMap(\.fileURL).map(\.lastPathComponent), names)
+        XCTAssertEqual(app.activeTabId, app.tabs.last?.id)
+    }
+
+    /// 단일 드롭 = 항상 새 탭(F2 '단일 드롭=활성 탭 교체'의 명시적 개정 — 스펙 §2.3).
+    @MainActor
+    func testSingleExternalDropOpensNewTabInsteadOfReplacing() async {
+        let app = AppState(dataDirectory: tempDir)
+        let first = makeFile("existing.md")
+        let dropped = makeFile("dropped.md")
+
+        app.enqueueExternalOpen([first])
+        await app.externalOpenChain?.value
+        XCTAssertEqual(app.tabs.count, 1)
+
+        app.openExternalFileDrops([NSItemProvider(object: dropped as NSURL)])
+        await waitForChainSeeded(app, minimumTabs: 2)
+        await app.externalOpenChain?.value
+
+        XCTAssertEqual(app.tabs.compactMap(\.fileURL).map(\.lastPathComponent),
+                       ["existing.md", "dropped.md"])   // 교체 아님 — 둘 다 남는다
+        XCTAssertEqual(app.activeTab?.fileURL?.lastPathComponent, "dropped.md")
+    }
+
+    /// collectDropURLs 슬롯 수집 — 콜백이 "역순"으로 와도 provider 순서를 보존(스펙 §3-5).
+    /// registerItem loadHandler에 지연을 넣어 역순 도착을 결정적으로 재현한다.
+    func testCollectDropURLsPreservesOrderWithReversedCallbacks() {
+        let urls: [URL] = ["slow.md", "mid.md", "fast.md"].map { makeFile($0) }
+        // 첫 provider가 가장 늦게, 마지막이 가장 먼저 완료되도록 지연을 역배치.
+        let delays: [Double] = [0.3, 0.15, 0.0]
+        let providers: [NSItemProvider] = zip(urls, delays).map { url, delay in
+            let p = NSItemProvider()
+            p.registerItem(forTypeIdentifier: "public.file-url") { completion, _, _ in
+                DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                    completion?(url.dataRepresentation as NSData, nil)
+                }
+            }
+            return p
+        }
+
+        let exp = expectation(description: "collect")
+        var result: [URL] = []
+        AppState.collectDropURLs(providers) { urls in
+            result = urls
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+        XCTAssertEqual(result.map(\.lastPathComponent), ["slow.md", "mid.md", "fast.md"])
+    }
+
+    /// collectDropURLs(비동기 group.notify)가 체인을 시드할 때까지 대기하는 폴링 헬퍼.
+    @MainActor
+    private func waitForChainSeeded(_ app: AppState, minimumTabs: Int = 1,
+                                    timeout: TimeInterval = 5) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while app.tabs.count < minimumTabs && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
     // MARK: - expandFolder 멱등(스프링로딩용)
 
     @MainActor

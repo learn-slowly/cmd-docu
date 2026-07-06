@@ -2454,43 +2454,35 @@ final class AppState {
     /// providers → fileURL 수집(외부 Finder 드래그 전용). 내부 드래그는 handleFileDrop이
     /// draggingURLs 스냅샷으로 직접 처리해 이 경로에 오지 않는다(파스테보드/​provider 어느 쪽도
     /// 커스텀 페이로드 데이터를 나르지 못하는 실측 — DragPayload.isInternalDrag 주석 참조).
+    /// 반환 순서 = provider 순서(인덱스 슬롯 — loadItem 콜백은 임의 스레드·임의 순서, 스펙 §2.3).
     static func collectDropURLs(_ providers: [NSItemProvider],
                                 completion: @escaping ([URL]) -> Void) {
-        var urls: [URL] = []
-        let lock = NSLock()   // loadItem 콜백은 임의 스레드 — append 직렬화
+        let fileProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier("public.file-url")
+        }
+        var slots = [URL?](repeating: nil, count: fileProviders.count)
+        let lock = NSLock()   // loadItem 콜백은 임의 스레드 — 슬롯 쓰기 직렬화
         let group = DispatchGroup()
-        for provider in providers
-        where provider.hasItemConformingToTypeIdentifier("public.file-url") {
+        for (index, provider) in fileProviders.enumerated() {
             group.enter()
             provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
                 if let data = item as? Data,
                    let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    lock.lock(); urls.append(url); lock.unlock()
+                    lock.lock(); slots[index] = url; lock.unlock()
                 }
                 group.leave()
             }
         }
-        group.notify(queue: .main) { completion(urls) }
+        group.notify(queue: .main) { completion(slots.compactMap { $0 }) }
     }
 
-    /// 리더 영역 위 외부(Finder) 파일 드롭 = 열기. 창 레벨 드롭과 동일 시맨틱을 재사용해,
-    /// 에디터·프리뷰 등 리더 표면에서도 "리더 위 문서 드롭=열기" 패리티를 회복한다(F2 후속).
-    /// public.file-url provider만 걸러 여러 개면 새 탭으로, 단일이면 기존 동작(inNewTab 강제 없음).
+    /// 리더·창 레벨 외부(Finder) 파일 드롭 = 열기. 직렬 큐로 수렴해 더블클릭과 시맨틱 통일 —
+    /// 항상 새 탭, 다중은 provider 순서대로 열고 마지막 활성(스펙 §2.3).
+    /// 개정(2026-07-06): F2의 "단일 드롭 = 활성 탭 교체"를 폐기 — 드롭 한 번에 작업 중이던
+    /// 탭이 교체당하는 놀람 제거, 더블클릭·드롭 시맨틱 일치.
     func openExternalFileDrops(_ providers: [NSItemProvider]) {
-        let fileProviders = providers.filter {
-            $0.hasItemConformingToTypeIdentifier("public.file-url")
-        }
-        guard !fileProviders.isEmpty else { return }
-        let openInNewTab = fileProviders.count > 1   // 단일 드롭은 기존 동작 유지
-        for provider in fileProviders {
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { [weak self] item, _ in
-                if let data = item as? Data,
-                   let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    DispatchQueue.main.async {
-                        self?.openDocument(at: url, inNewTab: openInNewTab)
-                    }
-                }
-            }
+        Self.collectDropURLs(providers) { [weak self] urls in
+            self?.enqueueExternalOpen(urls)
         }
     }
 
