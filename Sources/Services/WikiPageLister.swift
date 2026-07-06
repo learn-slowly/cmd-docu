@@ -6,9 +6,12 @@ enum WikiPageLister {
     static func relativePages(under root: URL) -> [String] {
         guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
         var pages: [String] = []
-        for case let rel as String in enumerator {
-            let components = rel.components(separatedBy: "/")
-            if components.contains(where: { $0.hasPrefix(".") }) { continue }
+        while let rel = enumerator.nextObject() as? String {
+            let last = (rel as NSString).lastPathComponent
+            if last.hasPrefix(".") {
+                enumerator.skipDescendants()   // .git 등 숨김 디렉터리 하위 진입 차단(성능)
+                continue
+            }
             guard rel.lowercased().hasSuffix(".md") else { continue }
             pages.append(rel)
         }
