@@ -52,7 +52,8 @@ final class WikiIngestServiceTests: XCTestCase {
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
 
         let p = try await service.propose(source: makeSource(), target: .existing(page),
-                                          wikiFolder: wikiDir, today: "2026-07-06")
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
         XCTAssertEqual(p.pageURL, page)
         XCTAssertFalse(p.isNewPage)
         XCTAssertEqual(p.oldBody, "# 주제\n\n기존 본문")
@@ -69,7 +70,8 @@ final class WikiIngestServiceTests: XCTestCase {
         let fake = FakeClaude(response: "# 새주제\n\n요약")
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
         let p = try await service.propose(source: makeSource(), target: .new(name: "새주제"),
-                                          wikiFolder: wikiDir, today: "2026-07-06")
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
         XCTAssertTrue(p.isNewPage)
         XCTAssertEqual(p.oldBody, "")
         XCTAssertEqual(p.pageURL.lastPathComponent, "새주제.md")
@@ -82,7 +84,8 @@ final class WikiIngestServiceTests: XCTestCase {
         let fake = FakeClaude(response: "# p\n본문본문본문\n추가", timeoutsBeforeSuccess: 1)
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
         _ = try await service.propose(source: makeSource(), target: .existing(page),
-                                      wikiFolder: wikiDir, today: "2026-07-06")
+                                      wikiFolder: wikiDir, rulesSummary: nil,
+                                      today: "2026-07-06")
         let count = await fake.callCount()
         XCTAssertEqual(count, 2)
     }
@@ -93,7 +96,8 @@ final class WikiIngestServiceTests: XCTestCase {
         let missing = srcDir.appendingPathComponent("없음.md")
         do {
             _ = try await service.propose(source: missing, target: .new(name: "n"),
-                                          wikiFolder: wikiDir, today: "2026-07-06")
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
             XCTFail("에러여야 함")
         } catch let e as WikiIngestError {
             XCTAssertEqual(e, .sourceUnreadable)
@@ -108,7 +112,8 @@ final class WikiIngestServiceTests: XCTestCase {
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
         do {
             _ = try await service.propose(source: makeSource(), target: .existing(page),
-                                          wikiFolder: wikiDir, today: "2026-07-06")
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
             XCTFail("에러여야 함")
         } catch let e as WikiIngestError {
             XCTAssertEqual(e, .pageTooLarge)
@@ -124,7 +129,8 @@ final class WikiIngestServiceTests: XCTestCase {
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
         do {
             _ = try await service.propose(source: makeSource(), target: .existing(page),
-                                          wikiFolder: wikiDir, today: "2026-07-06")
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
             XCTFail("에러여야 함")
         } catch let e as WikiIngestError {
             XCTAssertEqual(e, .badResponse)
@@ -136,10 +142,80 @@ final class WikiIngestServiceTests: XCTestCase {
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
         do {
             _ = try await service.propose(source: makeSource(), target: .new(name: "///"),
-                                          wikiFolder: wikiDir, today: "2026-07-06")
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
             XCTFail("에러여야 함")
         } catch let e as WikiIngestError {
             XCTAssertEqual(e, .invalidNewPageName)
         } catch { XCTFail("다른 에러: \(error)") }
+    }
+
+    func testProposeAutoParsesSuggestedPath() async throws {
+        let merged = "<!-- page: references/신진욱2011.md -->\n# 신진욱2011\n\n요약"
+        let fake = FakeClaude(response: merged)
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        let p = try await service.propose(source: makeSource(), target: .auto,
+                                          wikiFolder: wikiDir, rulesSummary: "규칙",
+                                          today: "2026-07-06")
+        XCTAssertTrue(p.isNewPage)
+        XCTAssertEqual(p.pageURL,
+                       wikiDir.appendingPathComponent("references/신진욱2011.md"))
+        XCTAssertFalse(p.newBody.contains("<!-- page:"))   // 마커는 본문에서 제거
+        XCTAssertFalse(FileManager.default.fileExists(atPath: p.pageURL.path))  // 무쓰기
+    }
+
+    func testProposeAutoThrowsWithoutMarker() async {
+        let fake = FakeClaude(response: "# 마커 없음\n본문")
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        do {
+            _ = try await service.propose(source: makeSource(), target: .auto,
+                                          wikiFolder: wikiDir, rulesSummary: "규칙",
+                                          today: "2026-07-06")
+            XCTFail("에러여야 함")
+        } catch let e as WikiIngestError {
+            XCTAssertEqual(e, .autoPathInvalid)
+        } catch { XCTFail("다른 에러: \(error)") }
+    }
+
+    func testProposeAutoThrowsOnEscapePath() async {
+        let fake = FakeClaude(response: "<!-- page: ../밖.md -->\n# x\n본문")
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        do {
+            _ = try await service.propose(source: makeSource(), target: .auto,
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
+            XCTFail("에러여야 함")
+        } catch let e as WikiIngestError {
+            XCTAssertEqual(e, .autoPathInvalid)
+        } catch { XCTFail("다른 에러: \(error)") }
+    }
+
+    func testProposeAutoThrowsWhenPathOccupied() async throws {
+        let refDir = wikiDir.appendingPathComponent("references")
+        try FileManager.default.createDirectory(at: refDir, withIntermediateDirectories: true)
+        try "# 기존".write(to: refDir.appendingPathComponent("신진욱2011.md"),
+                          atomically: true, encoding: .utf8)
+        let fake = FakeClaude(response: "<!-- page: references/신진욱2011.md -->\n# x\n본문")
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        do {
+            _ = try await service.propose(source: makeSource(), target: .auto,
+                                          wikiFolder: wikiDir, rulesSummary: nil,
+                                          today: "2026-07-06")
+            XCTFail("에러여야 함")
+        } catch let e as WikiIngestError {
+            XCTAssertEqual(e, .autoPathOccupied("references/신진욱2011.md"))
+        } catch { XCTFail("다른 에러: \(error)") }
+    }
+
+    func testProposeExistingPassesRulesSummaryToPrompt() async throws {
+        let page = wikiDir.appendingPathComponent("주제.md")
+        try "# 주제\n\n기존 본문".write(to: page, atomically: true, encoding: .utf8)
+        let fake = FakeClaude(response: "# 주제\n\n기존 본문\n\n추가")
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        _ = try await service.propose(source: makeSource(), target: .existing(page),
+                                      wikiFolder: wikiDir, rulesSummary: "반말로 쓴다",
+                                      today: "2026-07-06")
+        let calls = await fake.calls
+        XCTAssertTrue(calls.last?.prompt.contains("반말로 쓴다") == true)
     }
 }

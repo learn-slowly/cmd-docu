@@ -6,6 +6,8 @@ enum WikiIngestError: Error, Equatable {
     case pageTooLarge          // 페이지 한도 초과(출력=전문이라 타임아웃 방어)
     case invalidNewPageName    // 정제 후 빈 이름
     case badResponse           // 응답 검증 실패(빈 값·급축소)
+    case autoPathInvalid           // 자동 배치 — 마커 없음/경로 검증 실패
+    case autoPathOccupied(String)  // 자동 배치 — 제안 경로에 이미 페이지 존재(상대경로)
 }
 
 /// 병합 제안 생성만 담당 — 디스크에 쓰지 않는다(적용은 AppState+WikiBackupStore,
@@ -20,9 +22,36 @@ actor WikiIngestService {
     }
 
     func propose(source: URL, target: WikiIngestTarget,
-                 wikiFolder: URL, today: String) async throws -> WikiMergeProposal {
+                 wikiFolder: URL, rulesSummary: String?,
+                 today: String) async throws -> WikiMergeProposal {
         guard let sourceBody = await ContentExtractor.body(for: source, kordoc: kordoc) else {
             throw WikiIngestError.sourceUnreadable
+        }
+        let (excerpt, truncated) = WikiIngestModels.truncatedExcerpt(sourceBody)
+
+        // 자동 배치 — Claude가 위치·파일명을 마커로 제안(스펙 §2.4).
+        if case .auto = target {
+            let title = source.deletingPathExtension().lastPathComponent
+            let (prompt, context) = WikiIngestModels.mergePrompt(
+                pageTitle: title, pageBody: "",
+                sourceName: source.lastPathComponent, sourceExcerpt: excerpt,
+                excerptTruncated: truncated, isNewPage: true,
+                autoPlacement: true, rulesSummary: rulesSummary, today: today)
+            let stdout = try await askWithRetry(prompt: prompt, context: context)
+            guard let (relPath, rawBody) = WikiIngestModels.extractAutoPage(from: stdout),
+                  let pageURL = WikiIngestModels.validatedAutoPageURL(
+                      relativePath: relPath, wikiFolder: wikiFolder) else {
+                throw WikiIngestError.autoPathInvalid
+            }
+            guard !FileManager.default.fileExists(atPath: pageURL.path) else {
+                throw WikiIngestError.autoPathOccupied(relPath)
+            }
+            guard let newBody = WikiIngestModels.extractMarkdown(from: rawBody,
+                                                                 oldBodyLength: 0) else {
+                throw WikiIngestError.badResponse
+            }
+            return WikiMergeProposal(pageURL: pageURL, isNewPage: true,
+                                     oldBody: "", newBody: newBody, sourceURL: source)
         }
 
         let pageURL: URL
@@ -43,15 +72,16 @@ actor WikiIngestService {
             }
             pageURL = url; oldBody = ""; isNewPage = true
         case .auto:
-            throw WikiIngestError.badResponse  // 임시 케이스 — Task 4에서 정식 구현(규칙 기반 자동 배치)
+            // 도달 불가(위에서 조기 반환) — switch 전수성용. 크래시 대신 안전한 에러.
+            throw WikiIngestError.autoPathInvalid
         }
 
-        let (excerpt, truncated) = WikiIngestModels.truncatedExcerpt(sourceBody)
         let title = pageURL.deletingPathExtension().lastPathComponent
         let (prompt, context) = WikiIngestModels.mergePrompt(
             pageTitle: title, pageBody: oldBody,
             sourceName: source.lastPathComponent, sourceExcerpt: excerpt,
-            excerptTruncated: truncated, isNewPage: isNewPage, today: today)
+            excerptTruncated: truncated, isNewPage: isNewPage,
+            rulesSummary: rulesSummary, today: today)
 
         let stdout = try await askWithRetry(prompt: prompt, context: context)
         guard let newBody = WikiIngestModels.extractMarkdown(from: stdout,

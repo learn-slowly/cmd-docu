@@ -3351,7 +3351,9 @@ final class AppState {
             let today = Self.wikiTodayFormatter.string(from: Date())
             wikiMergeProposal = try await wikiIngestService.propose(
                 source: source, target: target,
-                wikiFolder: URL(fileURLWithPath: folderPath), today: today)
+                wikiFolder: URL(fileURLWithPath: folderPath),
+                rulesSummary: nil,   // Task 5에서 settings.wikiRulesSummary 전달로 교체
+                today: today)
         } catch let e as WikiIngestError {
             wikiIngestError = Self.wikiErrorMessage(e)
         } catch {
@@ -3413,6 +3415,8 @@ final class AppState {
         case .pageTooLarge: return "페이지가 너무 큽니다(24,000자 초과) — 분할 후 다시 시도하세요."
         case .invalidNewPageName: return "새 페이지 이름이 비어 있거나 쓸 수 없습니다."
         case .badResponse: return "Claude 응답이 페이지 전문 형식이 아닙니다 — 다시 시도하세요."
+        case .autoPathInvalid: return "Claude가 배치 위치를 제안하지 못했습니다 — 다시 시도하거나 폴더를 직접 선택하세요."
+        case .autoPathOccupied(let path): return "제안된 경로에 이미 페이지가 있습니다: \(path)"
         }
     }
 
