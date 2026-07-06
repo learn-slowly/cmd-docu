@@ -6,7 +6,10 @@ struct CmdMDApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        WindowGroup {
+        // 단일 창 씬(스펙 §2.1) — WindowGroup은 콜드 런치 시 상태 복원 창과 외부 열기(onOpenURL)
+        // 이벤트 전달용 창을 각각 만들어 중복 문서 창 2개가 생겼다(같은 AppState 공유).
+        // Window로 구조적으로 차단. 부수효과: File > New Window 기본 커맨드도 함께 사라진다(의도).
+        Window("cmdALL", id: "main") {
             ContentView()
                 .environment(appState)
                 .onOpenURL { url in
