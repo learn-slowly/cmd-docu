@@ -6,7 +6,7 @@ struct WikiIngestView: View {
     @Environment(\.dismiss) private var dismiss
     let request: WikiIngestRequest
 
-    @State private var pages: [URL] = []
+    @State private var pages: [String] = []     // 위키 루트 기준 상대경로(기존 [URL]에서 교체)
     @State private var selection: String = ""          // 선택된 기존 페이지 path 또는 NEW
     @State private var newPageName: String = ""
     @State private var entries: [WikiIngestLogEntry] = []
@@ -15,17 +15,20 @@ struct WikiIngestView: View {
     @State private var diffLines: [LineDiff.Line] = []
 
     private static let newMarker = "__NEW__"
+    private static let autoMarker = "__AUTO__"
 
     private var wikiFolderURL: URL? {
         appState.settings.wikiFolder.map { URL(fileURLWithPath: $0) }
     }
 
     private var target: WikiIngestTarget? {
+        if selection == Self.autoMarker { return .auto }
         if selection == Self.newMarker {
             let name = newPageName.trimmingCharacters(in: .whitespaces)
             return name.isEmpty ? nil : .new(name: name)
         }
-        return selection.isEmpty ? nil : .existing(URL(fileURLWithPath: selection))
+        guard !selection.isEmpty, let root = wikiFolderURL else { return nil }
+        return .existing(root.appendingPathComponent(selection))
     }
 
     var body: some View {
@@ -96,8 +99,12 @@ struct WikiIngestView: View {
         VStack(alignment: .leading, spacing: 6) {
             Picker("대상 페이지", selection: $selection) {
                 Text("선택…").tag("")
-                ForEach(pages, id: \.path) { page in
-                    Text(page.deletingPathExtension().lastPathComponent).tag(page.path)
+                if appState.settings.wikiRulesSummary?.isEmpty == false {
+                    Text("자동(규칙에 따름)").tag(Self.autoMarker)
+                }
+                Divider()
+                ForEach(pages, id: \.self) { rel in
+                    Text(rel.hasSuffix(".md") ? String(rel.dropLast(3)) : rel).tag(rel)
                 }
                 Divider()
                 Text("새 페이지…").tag(Self.newMarker)
@@ -128,8 +135,8 @@ struct WikiIngestView: View {
     private func diffSection(_ proposal: WikiMergeProposal) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(proposal.isNewPage
-                 ? "새 페이지: \(proposal.pageURL.lastPathComponent)"
-                 : "변경 미리보기: \(proposal.pageURL.lastPathComponent)")
+                 ? "새 페이지: \(relativeDisplayPath(proposal.pageURL))"
+                 : "변경 미리보기: \(relativeDisplayPath(proposal.pageURL))")
                 .font(.subheadline).bold()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -204,14 +211,18 @@ struct WikiIngestView: View {
 
     // MARK: - 헬퍼
 
-    /// 위키 폴더 최상위 .md 목록(이름순)과 기록을 다시 읽는다.
+    /// 위키 루트 기준 상대경로 표시(자동 제안 경로 확인용 — 스펙 §2.6). 루트 밖이면 파일명만.
+    private func relativeDisplayPath(_ url: URL) -> String {
+        guard let root = wikiFolderURL else { return url.lastPathComponent }
+        let rootPath = root.standardizedFileURL.path + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(rootPath) ? String(path.dropFirst(rootPath.count)) : url.lastPathComponent
+    }
+
+    /// 위키 폴더 하위 전체 .md 목록(재귀·상대경로·이름순)과 기록을 다시 읽는다.
     private func reload() {
         if let folder = wikiFolderURL {
-            let items = (try? FileManager.default.contentsOfDirectory(
-                at: folder, includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles])) ?? []
-            pages = items.filter { $0.pathExtension.lowercased() == "md" }
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            pages = WikiPageLister.relativePages(under: folder)
         } else {
             pages = []
         }

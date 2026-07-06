@@ -32,6 +32,11 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
+
+            WikiSettingsView()
+                .tabItem {
+                    Label("Wiki", systemImage: "text.book.closed")
+                }
         }
         .frame(width: 560, height: 500)
     }
@@ -736,34 +741,9 @@ struct ToolsSettingsView: View {
                     .font(.caption)
             }
 
-            Section {
-                HStack {
-                    if let folder = appState.settings.wikiFolder {
-                        Text(folder)
-                            .font(.callout)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } else {
-                        Text("설정 안 됨")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(appState.settings.wikiFolder == nil ? "지정…" : "변경…") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseDirectories = true
-                        panel.canChooseFiles = false
-                        panel.allowsMultipleSelection = false
-                        if panel.runModal() == .OK, let url = panel.url {
-                            appState.settings.wikiFolder = url.path
-                            appState.saveUserData()
-                        }
-                    }
-                }
-            } header: {
-                Text("LLM-Wiki")
-            } footer: {
-                Text("파일을 위키 페이지에 병합하는 인제스트의 대상 폴더입니다.")
-                    .font(.caption)
+            Section("LLM-Wiki") {
+                Text("위키 설정은 Wiki 탭으로 이동했습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
@@ -883,6 +863,75 @@ struct ToolsSettingsView: View {
                 hasChecked = true
             }
         }
+    }
+}
+
+// MARK: - Wiki
+
+/// LLM-Wiki 설정(스펙 §2.6) — 위키 루트 지정·규칙 파악·요약 검토/수정.
+struct WikiSettingsView: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        @Bindable var state = appState
+        Form {
+            Section("위키 폴더") {
+                HStack {
+                    Text(appState.settings.wikiFolder ?? "설정 안 됨")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button(appState.settings.wikiFolder == nil ? "지정…" : "변경…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        if panel.runModal() == .OK, let url = panel.url {
+                            // 심링크는 실경로로 정규화(규칙 파일·페이지 나열의 기준 경로).
+                            appState.settings.wikiFolder = url.resolvingSymlinksInPath().path
+                            appState.saveUserData()
+                        }
+                    }
+                }
+                Text("위키의 루트 폴더를 지정합니다 — 규칙 파일(CLAUDE.md·templates/)이 있는 곳.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("위키 규칙") {
+                HStack(spacing: 10) {
+                    Button(appState.settings.wikiRulesSummary == nil ? "위키 규칙 파악" : "재파악") {
+                        Task { await appState.captureWikiRules() }
+                    }
+                    .disabled(appState.settings.wikiFolder == nil || appState.wikiRulesBusy)
+                    if appState.wikiRulesBusy {
+                        ProgressView().controlSize(.small)
+                        Text("Claude가 규칙을 읽는 중…")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let at = appState.settings.wikiRulesCapturedAt {
+                        Text("파악: \(at.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if let message = appState.wikiRulesMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                TextEditor(text: Binding(
+                    get: { state.settings.wikiRulesSummary ?? "" },
+                    set: { newValue in
+                        state.settings.wikiRulesSummary = newValue.isEmpty ? nil : newValue
+                        state.saveUserData()
+                    }))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 160)
+                Text("인제스트가 이 요약을 따릅니다. 직접 수정할 수 있고, 재파악하면 덮어씁니다(수정분 유실 주의).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
     }
 }
 
