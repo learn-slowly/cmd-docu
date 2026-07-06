@@ -1100,15 +1100,17 @@ final class AppState {
         }
     }
 
-    /// 외부 열기 처리 후 문서 창이 숨겨져 있으면 표시한다. 단일 Window 씬은 WindowGroup과
-    /// 달리 이벤트 전달용 새 창을 만들지 않으므로 필요(스펙 §2.1 — SwiftUI가 자체 재표시하면
-    /// 보험, 안 하면 필수 경로). headless 테스트에선 NSApp이 nil이라 no-op.
-    private func presentMainWindowIfNeeded() {
+    /// 외부 열기 처리 후 문서 창을 앞으로 가져온다(닫혀 있으면 재표시). 단일 Window 씬은
+    /// WindowGroup과 달리 이벤트 전달용 새 창을 만들지 않으므로 필요(스펙 §2.1).
+    /// 닫힌(ordered-out) 창은 canBecomeMain이 항상 false라(최종 리뷰 프로브 실측) 그 조건으로는
+    /// 못 찾는다 — Window(id: "main")가 NSWindow.identifier에 남기는 접두사로 우선 판별하고,
+    /// (보이는 창용) canBecomeMain 폴백을 둔다. headless 테스트에선 NSApp이 nil이라 no-op.
+    func presentMainWindowIfNeeded() {
         guard let app = NSApp else { return }
         app.activate(ignoringOtherApps: true)
-        if let window = app.windows.first(where: { $0.canBecomeMain }), !window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-        }
+        let main = app.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true })
+            ?? app.windows.first(where: { $0.canBecomeMain })
+        main?.makeKeyAndOrderFront(nil)
     }
 
     /// 새 탭을 추가하거나 활성 탭을 교체(교체 시 옛 탭 자원 정리).
@@ -3395,21 +3397,27 @@ final class AppState {
                 }
             }
             guard !restored.isEmpty else { return }
-            tabs.append(contentsOf: restored)
-            for tab in restored { finishOpening(tab) }
+            // 로드 도중 사용자가 내부 열기로 같은 파일을 먼저 열었을 수 있다(내부 열기는
+            // 큐를 안 탄다 — 스펙 §5). append 직전 재필터로 중복 탭 창을 닫는다.
+            let fresh = restored.filter { tab in
+                !tabs.contains(where: { $0.fileURL == tab.fileURL })
+            }
+            guard !fresh.isEmpty else { return }
+            tabs.append(contentsOf: fresh)
+            for tab in fresh { finishOpening(tab) }
 
             // 방어적 가드 유지(스펙 §2.4) — 체인 밖 경로(사용자 클릭)가 먼저 활성 탭을
             // 만들었으면 덮어쓰지 않는다. 저장 인덱스는 openFiles 기준이므로 URL로 해석
             // (존재 필터·중복 제거로 인덱스가 밀리는 구버전 시프트 수정).
             if Self.shouldRestoreActiveTab(current: activeTabId,
-                                           restoredTabIds: Set(restored.map(\.id))) {
+                                           restoredTabIds: Set(fresh.map(\.id))) {
                 var activeTab: EditorTab?
                 if let index = session.activeFileIndex, index < session.openFiles.count {
                     let savedURL = session.openFiles[index]
                     let target = Self.mediaRedirectTarget(for: savedURL) ?? savedURL
-                    activeTab = restored.first(where: { $0.fileURL == target })
+                    activeTab = fresh.first(where: { $0.fileURL == target })
                 }
-                activeTabId = (activeTab ?? restored.last)?.id
+                activeTabId = (activeTab ?? fresh.last)?.id
             }
             saveSession()
         }

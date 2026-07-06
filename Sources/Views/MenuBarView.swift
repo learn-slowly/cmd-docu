@@ -12,8 +12,7 @@ struct MenuBarView: View {
 
             HStack {
                 Button {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first(where: { $0.canBecomeMain })?.makeKeyAndOrderFront(nil)
+                    appState.presentMainWindowIfNeeded()
                 } label: {
                     Label("Open cmdALL", systemImage: "macwindow")
                         .font(.caption)
