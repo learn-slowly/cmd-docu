@@ -210,13 +210,18 @@ final class AppWikiIngestStateTests: XCTestCase {
         XCTAssertTrue(prompt?.contains("반말로 쓴다") == true)
     }
 
-    func testGenerateWikiMergeMapsAutoErrors() async {
+    func testGenerateWikiMergeAutoWithoutMarkerFallsBackToInbox() async {
+        // 마커 없는 응답도 이제 실패하지 않고 _인박스 폴백 제안이 뜬다(2026-07-07 사용자 결정).
         app.settings.wikiRulesSummary = "규칙"
         app.wikiIngestService = WikiIngestService(
-            claude: RecordingClaude(response: "# 마커 없음"), kordoc: KordocService())
+            claude: RecordingClaude(response: "# 마커 없음\n본문본문본문 충분히 긴 내용"),
+            kordoc: KordocService())
         await app.generateWikiMerge(source: makeSource(), target: .auto)
-        XCTAssertNil(app.wikiMergeProposal)
-        XCTAssertNotNil(app.wikiIngestError)
+        XCTAssertNotNil(app.wikiMergeProposal)
+        XCTAssertNil(app.wikiIngestError)
+        XCTAssertTrue(app.wikiMergeProposal?.pageURL.path.contains("_인박스") == true,
+                      "폴백 경로가 _인박스여야: \(app.wikiMergeProposal?.pageURL.path ?? "nil")")
+        XCTAssertEqual(app.wikiMergeProposal?.isNewPage, true)
     }
 
     func testApplyCreatesIntermediateDirectoriesForAutoPage() async {

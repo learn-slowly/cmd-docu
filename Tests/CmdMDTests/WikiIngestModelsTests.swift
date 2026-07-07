@@ -41,6 +41,61 @@ final class WikiIngestModelsTests: XCTestCase {
                        tempDir.standardizedFileURL.path)
     }
 
+    // MARK: - inboxFallbackURL (auto 배치 마커 부재 시 폴백)
+
+    func testInboxFallbackURLUsesRootWhenNoPagesDir() {
+        let url = WikiIngestModels.inboxFallbackURL(sourceName: "미디어_리터러시_개념.md",
+                                                    wikiFolder: tempDir)
+        XCTAssertEqual(url, tempDir.appendingPathComponent("_인박스/미디어_리터러시_개념.md"))
+    }
+
+    func testInboxFallbackURLUsesPagesInboxWhenPagesFolderExists() throws {
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("pages"),
+                                                withIntermediateDirectories: true)
+        let url = WikiIngestModels.inboxFallbackURL(sourceName: "자료.md", wikiFolder: tempDir)
+        XCTAssertEqual(url, tempDir.appendingPathComponent("pages/_인박스/자료.md"))
+    }
+
+    func testInboxFallbackURLIgnoresPagesFile() throws {
+        // pages가 '파일'이면 디렉터리 아님 → 루트 _인박스로(디렉터리 판정).
+        try "x".write(to: tempDir.appendingPathComponent("pages"), atomically: true, encoding: .utf8)
+        let url = WikiIngestModels.inboxFallbackURL(sourceName: "자료.md", wikiFolder: tempDir)
+        XCTAssertEqual(url, tempDir.appendingPathComponent("_인박스/자료.md"))
+    }
+
+    func testInboxFallbackURLSanitizesAndUniquifies() throws {
+        let inbox = tempDir.appendingPathComponent("_인박스")
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try "x".write(to: inbox.appendingPathComponent("주제.md"), atomically: true, encoding: .utf8)
+        // 구분자 제거 + 충돌 uniquify
+        let url = WikiIngestModels.inboxFallbackURL(sourceName: "주제.md", wikiFolder: tempDir)
+        XCTAssertEqual(url.lastPathComponent, "주제 (1).md")
+        let url2 = WikiIngestModels.inboxFallbackURL(sourceName: "미디어/이론.md", wikiFolder: tempDir)
+        XCTAssertEqual(url2.lastPathComponent, "미디어-이론.md")
+    }
+
+    func testInboxFallbackURLDefaultsWhenNameEmptyAfterSanitize() {
+        // 이름이 전부 무효 문자(콜론 등)라 정제 후 의미 문자가 없으면 "문서".
+        let url = WikiIngestModels.inboxFallbackURL(sourceName: ":::.md", wikiFolder: tempDir)
+        XCTAssertEqual(url.lastPathComponent, "문서.md")
+    }
+
+    func testInboxFallbackURLStripsLeadingDotToAvoidHiddenFile() {
+        // 점-접두 소스명(.foo.pdf)이 숨김 페이지(.foo.md)가 되면 트리·라이브러리(.skipsHiddenFiles)에서
+        // 사라진다 — validatedAutoPageURL의 숨김 컴포넌트 거부와 정합하게 선행 점을 제거한다.
+        XCTAssertEqual(
+            WikiIngestModels.inboxFallbackURL(sourceName: ".foo.pdf", wikiFolder: tempDir).lastPathComponent,
+            "foo.md")
+        XCTAssertEqual(
+            WikiIngestModels.inboxFallbackURL(sourceName: ".hidden.hwp", wikiFolder: tempDir).lastPathComponent,
+            "hidden.md")
+        // 점 위주 이름도 결과가 숨김 파일이면 안 된다(핵심 불변식).
+        for weird in ["..md", ".md", "...pdf"] {
+            let name = WikiIngestModels.inboxFallbackURL(sourceName: weird, wikiFolder: tempDir).lastPathComponent
+            XCTAssertFalse(name.hasPrefix("."), "숨김 파일이면 안 됨: \(weird) → \(name)")
+        }
+    }
+
     // MARK: - truncatedExcerpt
 
     func testExcerptUnderLimitPassesThrough() {

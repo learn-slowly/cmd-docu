@@ -6,7 +6,7 @@ enum WikiIngestError: Error, Equatable {
     case pageTooLarge          // 페이지 한도 초과(출력=전문이라 타임아웃 방어)
     case invalidNewPageName    // 정제 후 빈 이름
     case badResponse           // 응답 검증 실패(빈 값·급축소)
-    case autoPathInvalid           // 자동 배치 — 마커 없음/경로 검증 실패
+    case autoPathInvalid           // 자동 배치 — 도달 불가 방어용(마커 없음/경로 무효는 _인박스 폴백)
     case autoPathOccupied(String)  // 자동 배치 — 제안 경로에 이미 페이지 존재(상대경로)
 }
 
@@ -38,13 +38,29 @@ actor WikiIngestService {
                 excerptTruncated: truncated, isNewPage: true,
                 autoPlacement: true, rulesSummary: rulesSummary, today: today)
             let stdout = try await askWithRetry(prompt: prompt, context: context)
-            guard let (relPath, rawBody) = WikiIngestModels.extractAutoPage(from: stdout),
-                  let pageURL = WikiIngestModels.validatedAutoPageURL(
-                      relativePath: relPath, wikiFolder: wikiFolder) else {
-                throw WikiIngestError.autoPathInvalid
+
+            // 마커·경로 파싱. 유효한 위치를 냈으면 그대로, 못 냈거나 무효면 _인박스로 폴백
+            // (빠른 모델이 마커를 종종 누락 — 2026-07-07 스모크 결정: 실패 대신 폴백).
+            let auto = WikiIngestModels.extractAutoPage(from: stdout)
+            let validated = auto.flatMap {
+                WikiIngestModels.validatedAutoPageURL(relativePath: $0.relativePath,
+                                                      wikiFolder: wikiFolder)
             }
-            guard !FileManager.default.fileExists(atPath: pageURL.path) else {
-                throw WikiIngestError.autoPathOccupied(relPath)
+            let pageURL: URL
+            let rawBody: String
+            if let validated {
+                // Claude가 유효 경로 제안 — 점유돼 있으면 여전히 별도 에러(사용자가 .existing 선택 유도).
+                guard !FileManager.default.fileExists(atPath: validated.path) else {
+                    throw WikiIngestError.autoPathOccupied(auto?.relativePath ?? validated.lastPathComponent)
+                }
+                pageURL = validated
+                rawBody = auto?.body ?? stdout
+            } else {
+                pageURL = WikiIngestModels.inboxFallbackURL(
+                    sourceName: source.lastPathComponent, wikiFolder: wikiFolder)
+                // 마커가 있었으면 그 줄은 뗀 본문, 없었으면 응답 전체. 단 마커가 10줄 창 밖(frontmatter
+                // 뒤)이라 못 잡힌 경우 stdout에 마커가 남으므로 위치 무관 제거.
+                rawBody = WikiIngestModels.strippingPageMarkerLines(auto?.body ?? stdout)
             }
             guard let newBody = WikiIngestModels.extractMarkdown(from: rawBody,
                                                                  oldBodyLength: 0) else {

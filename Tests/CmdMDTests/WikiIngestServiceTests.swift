@@ -164,30 +164,58 @@ final class WikiIngestServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: p.pageURL.path))  // 무쓰기
     }
 
-    func testProposeAutoThrowsWithoutMarker() async {
-        let fake = FakeClaude(response: "# 마커 없음\n본문")
+    func testProposeAutoWithoutMarkerFallsBackToInbox() async throws {
+        // 마커를 못 낸 경우(빠른 모델 등)에도 실패하지 않고 _인박스로 폴백(2026-07-07 스모크 결정).
+        let fake = FakeClaude(response: "# 미디어 리터러시\n\n본문본문본문 충분히 긴 내용")
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
-        do {
-            _ = try await service.propose(source: makeSource(), target: .auto,
+        let p = try await service.propose(source: makeSource("자료.md"), target: .auto,
                                           wikiFolder: wikiDir, rulesSummary: "규칙",
                                           today: "2026-07-06")
-            XCTFail("에러여야 함")
-        } catch let e as WikiIngestError {
-            XCTAssertEqual(e, .autoPathInvalid)
-        } catch { XCTFail("다른 에러: \(error)") }
+        XCTAssertTrue(p.isNewPage)
+        // pages/ 없는 위키 → 루트 _인박스, 소스 이름 기반.
+        XCTAssertEqual(p.pageURL, wikiDir.appendingPathComponent("_인박스/자료.md"))
+        XCTAssertTrue(p.newBody.contains("본문본문본문"))   // 마커가 없었으니 전체가 본문
+        XCTAssertFalse(FileManager.default.fileExists(atPath: p.pageURL.path))  // 무쓰기
     }
 
-    func testProposeAutoThrowsOnEscapePath() async {
-        let fake = FakeClaude(response: "<!-- page: ../밖.md -->\n# x\n본문")
+    func testProposeAutoInvalidPathFallsBackToInboxStrippingMarker() async throws {
+        // 마커는 있으나 경로가 무효(탈출)면 폴백 — 마커 줄은 뗀 본문을 쓴다.
+        let fake = FakeClaude(response: "<!-- page: ../밖.md -->\n# 안전한 제목\n본문본문본문 충분")
         let service = WikiIngestService(claude: fake, kordoc: KordocService())
-        do {
-            _ = try await service.propose(source: makeSource(), target: .auto,
+        let p = try await service.propose(source: makeSource("메모.md"), target: .auto,
                                           wikiFolder: wikiDir, rulesSummary: nil,
                                           today: "2026-07-06")
-            XCTFail("에러여야 함")
-        } catch let e as WikiIngestError {
-            XCTAssertEqual(e, .autoPathInvalid)
-        } catch { XCTFail("다른 에러: \(error)") }
+        XCTAssertEqual(p.pageURL, wikiDir.appendingPathComponent("_인박스/메모.md"))
+        XCTAssertFalse(p.newBody.contains("<!-- page:"))   // 마커 줄 제거됨
+        XCTAssertTrue(p.newBody.hasPrefix("# 안전한 제목"))
+    }
+
+    func testProposeAutoFallbackStripsBuriedMarker() async throws {
+        // 마커가 frontmatter 뒤(스캔 창 10줄 밖)에 있으면 extractAutoPage가 못 잡아 폴백하는데,
+        // 그때도 마커 주석이 페이지 본문에 남으면 안 된다(socwiki 스키마 실사례).
+        let fm = "---\ntype: reference\nyear: 2011\njournal: x\nthemes: [a]\n"
+            + "theories: [b]\nneeds_verification: false\nsources:\n  - x\nupdated: 2026\n---"
+        let resp = fm + "\n<!-- page: references/x.md -->\n# 제목\n본문본문본문 충분히 긴 내용"
+        let fake = FakeClaude(response: resp)
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        let p = try await service.propose(source: makeSource("자료.md"), target: .auto,
+                                          wikiFolder: wikiDir, rulesSummary: "규칙",
+                                          today: "2026-07-06")
+        XCTAssertEqual(p.pageURL, wikiDir.appendingPathComponent("_인박스/자료.md"))
+        XCTAssertFalse(p.newBody.contains("<!-- page:"), "폴백 본문에 마커 주석이 남으면 안 된다")
+        XCTAssertTrue(p.newBody.contains("type: reference"))   // frontmatter는 보존
+    }
+
+    func testProposeAutoFallbackUsesPagesInboxWhenPagesFolderExists() async throws {
+        // pages/ 구조 위키(notebox)면 pages/_인박스/ 아래로 폴백(auto가 냈을 경로와 일관).
+        try FileManager.default.createDirectory(at: wikiDir.appendingPathComponent("pages"),
+                                                withIntermediateDirectories: true)
+        let fake = FakeClaude(response: "# 마커 없음\n본문본문본문 충분히 긴 내용")
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        let p = try await service.propose(source: makeSource("자료.md"), target: .auto,
+                                          wikiFolder: wikiDir, rulesSummary: "규칙",
+                                          today: "2026-07-06")
+        XCTAssertEqual(p.pageURL, wikiDir.appendingPathComponent("pages/_인박스/자료.md"))
     }
 
     func testProposeAutoThrowsWhenPathOccupied() async throws {

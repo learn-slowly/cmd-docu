@@ -39,6 +39,26 @@ enum WikiIngestModels {
         return wikiFolder.appendingPathComponent(cleaned + ".md").uniquified()
     }
 
+    /// 자동 배치 폴백 URL — Claude가 마커를 못 냈거나 경로가 무효일 때, 소스 이름 기반으로
+    /// 위키의 `_인박스/` 아래 새 페이지 경로를 만든다(사용자가 나중에 분류). 항상 uniquified.
+    /// 위키에 `pages/` 디렉터리가 있으면 `pages/_인박스/`(auto가 냈을 경로와 일관), 없으면 루트 `_인박스/`.
+    /// 이름 정제(구분자·".." 제거)는 CleanupPlanner 정책 재사용, 정제 후 비면 "문서".
+    static func inboxFallbackURL(sourceName: String, wikiFolder: URL) -> URL {
+        let base = (sourceName as NSString).deletingPathExtension
+        var cleaned = CleanupPlanner.sanitizeBucketName(base)
+        // 선행 점 제거 — 점-접두 소스명(.foo)이 숨김 페이지(.foo.md)가 되면 트리·라이브러리
+        // (.skipsHiddenFiles)에서 사라진다(validatedAutoPageURL의 숨김 컴포넌트 거부와 정합).
+        while cleaned.hasPrefix(".") { cleaned.removeFirst() }
+        let meaningful = cleaned.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let stem = meaningful.isEmpty ? "문서" : cleaned
+        var isDir: ObjCBool = false
+        let pagesDir = wikiFolder.appendingPathComponent("pages")
+        let parent = (FileManager.default.fileExists(atPath: pagesDir.path, isDirectory: &isDir)
+                      && isDir.boolValue) ? pagesDir : wikiFolder
+        return parent.appendingPathComponent("_인박스")
+            .appendingPathComponent(stem + ".md").uniquified()
+    }
+
     static func truncatedExcerpt(_ body: String) -> (text: String, truncated: Bool) {
         guard body.count > sourceExcerptLimit else { return (body, false) }
         return (String(body.prefix(sourceExcerptLimit)), true)
@@ -158,6 +178,19 @@ enum WikiIngestModels {
             return (String(path), body)
         }
         return nil
+    }
+
+    /// `<!-- page: … -->` 배치 마커 줄을 본문에서 제거한다(순수). extractAutoPage가 10줄 창
+    /// 밖의 마커를 못 잡아 폴백할 때, stdout 전체를 본문으로 쓰면 마커 주석이 페이지에 남으므로
+    /// 위치 무관하게 걷어낸다. 마커가 없으면 원문 그대로.
+    static func strippingPageMarkerLines(_ body: String) -> String {
+        let lines = body.components(separatedBy: "\n").filter { line in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard t.hasPrefix("<!--"), t.hasSuffix("-->") else { return true }
+            let inner = t.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+            return !inner.hasPrefix("page:")
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// 자동 배치 상대 경로 4중 검증 — 상대 경로만·탈출("..", 절대, "~") 차단·루트 하위 확인·
