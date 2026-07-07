@@ -12,6 +12,7 @@ struct WikiIngestView: View {
     @State private var entries: [WikiIngestLogEntry] = []
     @State private var appliedURL: URL? = nil
     @State private var applying = false                // 적용 이중 클릭(중복 기록) 방지
+    @State private var restoring = false               // 되돌리기 이중 클릭(중복 복원) 방지
     @State private var diffLines: [LineDiff.Line] = []
 
     private static let newMarker = "__NEW__"
@@ -78,6 +79,18 @@ struct WikiIngestView: View {
         .onChange(of: appState.wikiMergeProposal) { _, proposal in
             diffLines = proposal.map { LineDiff.diff(old: $0.oldBody, new: $0.newBody) } ?? []
         }
+        .onChange(of: appState.settings.wikiRulesSummary) { _, summary in
+            // 시트가 열린 채 다른 창(설정 Wiki 탭)에서 요약을 비우면 Picker의 "자동" 항목은
+            // 사라지는데 선택은 잔존한다 — 보기엔 무선택인데 생성 버튼만 활성인 스테일 방지.
+            if selection == Self.autoMarker,
+               summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                selection = ""
+            }
+        }
+        .onDisappear {
+            // 시트가 닫히면 제안을 표시할 곳이 없다 — 진행 중 병합을 중단해 크레딧을 아낀다.
+            appState.cancelWikiMerge()
+        }
     }
 
     // MARK: - 구획
@@ -121,13 +134,15 @@ struct WikiIngestView: View {
             Button("병합 생성") {
                 guard let target else { return }
                 appliedURL = nil   // 이전 병합의 "적용 완료" 배너가 새 병합 시트에 잔존하지 않도록.
-                Task { await appState.generateWikiMerge(source: request.url, target: target) }
+                appState.startWikiMerge(source: request.url, target: target)
             }
             .disabled(target == nil || appState.wikiIngestBusy)
             if appState.wikiIngestBusy {
                 ProgressView().controlSize(.small)
                 Text("Claude가 병합 중… (페이지 전문을 다시 쓰므로 몇 분 걸릴 수 있습니다)")
                     .foregroundStyle(.secondary).font(.callout)
+                Button("중단") { appState.cancelWikiMerge() }
+                    .font(.callout)
             }
         }
     }
@@ -139,17 +154,7 @@ struct WikiIngestView: View {
                  ? "새 페이지: \(relativeDisplayPath(proposal.pageURL))"
                  : "변경 미리보기: \(relativeDisplayPath(proposal.pageURL))")
                 .font(.subheadline).bold()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(diffLines.enumerated()), id: \.offset) { _, line in
-                        diffRow(line)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(minHeight: 180, maxHeight: 320)
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            WikiDiffListView(lines: diffLines)
 
             HStack {
                 Button("적용") {
@@ -171,18 +176,6 @@ struct WikiIngestView: View {
         }
     }
 
-    private func diffRow(_ line: LineDiff.Line) -> some View {
-        Text(line.text.isEmpty ? " " : line.text)
-            .font(.system(.caption, design: .monospaced))
-            .strikethrough(line.kind == .removed)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 6)
-            .background(
-                line.kind == .added ? Color.green.opacity(0.18)
-                : line.kind == .removed ? Color.red.opacity(0.15)
-                : Color.clear)
-    }
-
     private var historySection: some View {
         DisclosureGroup("인제스트 기록") {
             if entries.isEmpty {
@@ -197,11 +190,16 @@ struct WikiIngestView: View {
                         }
                         Spacer()
                         Button("되돌리기") {
+                            // 이중 클릭 재진입 가드 — 복원이 겹치면 "복원 전 자동 백업"이 중복 기록된다.
+                            guard !restoring else { return }
+                            restoring = true
                             Task {
                                 if await appState.restoreWikiIngest(entry) { reload() }
+                                restoring = false
                             }
                         }
                         .font(.caption)
+                        .disabled(restoring)
                     }
                     .padding(.vertical, 2)
                 }

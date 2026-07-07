@@ -98,15 +98,22 @@ actor ClaudeService: ClaudeAsking {
             try? stdinHandle.close()
         }
 
-        // 타임아웃 감시(협조적 폴링).
+        // 타임아웃·취소 감시(협조적 폴링). 취소는 감싼 Task의 cancel이 전달한다 —
+        // 위키 시트의 "중단"이 실제로 프로세스를 종료하는 경로(다른 호출자는 cancel 안 함).
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning {
+            if Task.isCancelled {
+                process.terminate()
+                throw CancellationError()
+            }
             if Date() > deadline {
                 process.terminate()
                 throw ClaudeError.timeout
             }
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
         }
+        // 프로세스가 정상 종료했어도 그 사이 취소됐으면 결과를 쓰지 않는다(중단 직후 완주 레이스).
+        try Task.checkCancellation()
 
         let out = String(data: await outData, encoding: .utf8) ?? ""
         let err = String(data: await errData, encoding: .utf8) ?? ""

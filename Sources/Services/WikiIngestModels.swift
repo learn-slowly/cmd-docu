@@ -162,7 +162,11 @@ enum WikiIngestModels {
 
     /// 자동 배치 상대 경로 4중 검증 — 상대 경로만·탈출("..", 절대, "~") 차단·루트 하위 확인·
     /// .md 강제(CleanupPlanner.destinationDir 전례). 존재 여부 검사는 하지 않는다(Service 몫).
-    static func validatedAutoPageURL(relativePath: String, wikiFolder: URL) -> URL? {
+    /// 선행 "./"는 스트립 후 검증(Claude가 관례적으로 붙이는 표기 관용) — 그 외 "."·숨김
+    /// 컴포넌트는 여전히 거부(보수).
+    static func validatedAutoPageURL(relativePath rawPath: String, wikiFolder: URL) -> URL? {
+        var relativePath = rawPath
+        if relativePath.hasPrefix("./") { relativePath.removeFirst(2) }
         let components = relativePath.components(separatedBy: "/")
         guard !relativePath.isEmpty,
               !relativePath.hasPrefix("/"), !relativePath.hasPrefix("~"),

@@ -246,4 +246,23 @@ final class WikiIngestModelsTests: XCTestCase {
                          "거부돼야 함: \(bad)")
         }
     }
+
+    func testValidatedAutoPageURLToleratesLeadingDotSlash() throws {
+        // Claude가 "./references/a.md"처럼 답하는 경우 — 선행 "./"만 관용(스트립 후 검증).
+        let url = try XCTUnwrap(WikiIngestModels.validatedAutoPageURL(
+            relativePath: "./references/a.md", wikiFolder: tempDir))
+        XCTAssertEqual(url.lastPathComponent, "a.md")
+        XCTAssertTrue(url.standardizedFileURL.path.hasPrefix(tempDir.standardizedFileURL.path + "/"))
+        // 선행 이외의 "." 컴포넌트·숨김 컴포넌트는 여전히 거부(보수).
+        XCTAssertNil(WikiIngestModels.validatedAutoPageURL(relativePath: "references/./a.md",
+                                                           wikiFolder: tempDir))
+        XCTAssertNil(WikiIngestModels.validatedAutoPageURL(relativePath: "./.hidden/a.md",
+                                                           wikiFolder: tempDir))
+        // 선행 "./"는 딱 1회만 벗긴다 — "././x.md"는 남은 "./"가 "." 컴포넌트로 거부(전량 스트립 뮤턴트 방지).
+        XCTAssertNil(WikiIngestModels.validatedAutoPageURL(relativePath: "././x.md",
+                                                           wikiFolder: tempDir))
+        // "./" 단독은 스트립 후 빈 문자열 → 거부.
+        XCTAssertNil(WikiIngestModels.validatedAutoPageURL(relativePath: "./",
+                                                           wikiFolder: tempDir))
+    }
 }

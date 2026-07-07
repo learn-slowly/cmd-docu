@@ -47,7 +47,8 @@ final class WikiRulesServiceTests: XCTestCase {
                   templates: ["b_concept.md": "개념 템플릿", "a_paper.md": "논문 템플릿"])
         let src = WikiRulesService.collectRuleSources(wikiFolder: wikiDir)
         XCTAssertNotNil(src)
-        let s = src!
+        let s = src!.text
+        XCTAssertFalse(src!.truncated)
         XCTAssertTrue(s.contains("루트 규칙"))
         // 템플릿은 이름순(a_paper 먼저), 파일별 헤더 포함.
         let aPos = s.range(of: "a_paper.md")!.lowerBound
@@ -108,7 +109,19 @@ final class WikiRulesServiceTests: XCTestCase {
         seedRules(claudeMd: String(repeating: "가", count: WikiRulesService.sourceInputLimit + 1000))
         let src = WikiRulesService.collectRuleSources(wikiFolder: wikiDir)
         XCTAssertNotNil(src)
-        XCTAssertLessThanOrEqual(src!.count, WikiRulesService.sourceInputLimit)
+        XCTAssertLessThanOrEqual(src!.text.count, WikiRulesService.sourceInputLimit)
+        XCTAssertTrue(src!.truncated)
+    }
+
+    /// 합계가 정확히 한도(40k)면 잘린 게 아니다 — 구현이 길이 재계산(>=)으로 오탐하지 않고
+    /// 잘림 사실 자체를 튜플로 전달하는지(경계 고지 오탐 회귀 방지).
+    func testCollectExactLimitIsNotReportedTruncated() {
+        let header = "## 파일: CLAUDE.md\n\n"
+        seedRules(claudeMd: String(repeating: "가",
+                                   count: WikiRulesService.sourceInputLimit - header.count))
+        let src = WikiRulesService.collectRuleSources(wikiFolder: wikiDir)
+        XCTAssertEqual(src?.text.count, WikiRulesService.sourceInputLimit)
+        XCTAssertEqual(src?.truncated, false, "정확히 한도 길이는 잘림이 아니다")
     }
 
     /// 규칙 파악도 위키 전용 타임아웃을 호출별로 지정하는지(입력 40k) — 2026-07-07 수정 회귀 방지.

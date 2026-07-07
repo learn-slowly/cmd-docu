@@ -59,4 +59,29 @@ final class WikiPageListerTests: XCTestCase {
         XCTAssertEqual(WikiPageLister.relativePages(
             under: root.appendingPathComponent("없는폴더")), [])
     }
+
+    func testExcludesRuleFilesFromTargets() {
+        // 루트 CLAUDE.md·templates/는 "규칙 소스"(규칙 파악이 읽는 파일)지 병합 대상이 아니다 —
+        // Picker에 노출되면 규칙 파일에 실수로 병합하는 사고를 유인한다.
+        touch("CLAUDE.md")
+        touch("templates/summary.md")
+        touch("templates/concept.md")
+        touch("pages/주제/문서.md")
+        touch("sub/CLAUDE.md")                   // 루트가 아닌 CLAUDE.md는 일반 페이지 취급
+        touch("sub/templates/x.md")              // 루트가 아닌 templates도 일반 폴더 취급
+        let pages = WikiPageLister.relativePages(under: root)
+        // 혼합 문자 정렬은 로캘 종속이라 순서 대신 집합으로 비교(T2 로캘 함정 회피).
+        XCTAssertEqual(Set(pages), ["pages/주제/문서.md", "sub/CLAUDE.md", "sub/templates/x.md"])
+        XCTAssertEqual(pages.count, 3)
+    }
+
+    func testExcludesRuleFilesCaseInsensitively() {
+        // collectRuleSources는 파일시스템 대소문자 무시 해석으로 소문자 규칙파일도 규칙 소스로
+        // 읽는다 — 제외도 같은 시맨틱이어야 Picker에 새지 않는다(case-insensitive FS 방어).
+        touch("claude.md")               // 소문자 CLAUDE.md
+        touch("Templates/summary.md")    // 대문자 templates/
+        touch("pages/문서.md")
+        let pages = WikiPageLister.relativePages(under: root)
+        XCTAssertEqual(pages, ["pages/문서.md"])
+    }
 }

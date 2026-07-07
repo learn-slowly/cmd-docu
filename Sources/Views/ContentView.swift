@@ -120,6 +120,9 @@ struct ContentView: View {
         .sheet(item: $state.wikiIngestRequest) { request in
             WikiIngestView(request: request)
         }
+        .sheet(item: $state.wikiBatchRequest) { request in
+            WikiBatchIngestView(request: request)
+        }
         .sheet(isPresented: $state.showFileOpsHistory) {
             FileOpsHistoryView()
         }

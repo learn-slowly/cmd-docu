@@ -185,6 +185,7 @@ final class AppState {
 
     // MARK: - 위키 인제스트 (LLM-Wiki Ingest)
     var wikiIngestRequest: WikiIngestRequest? = nil
+    var wikiBatchRequest: WikiBatchIngestRequest? = nil
     var wikiIngestBusy: Bool = false
     var wikiMergeProposal: WikiMergeProposal? = nil
     var wikiIngestError: String? = nil
@@ -3407,6 +3408,27 @@ final class AppState {
         return isTabDirty(tab)
     }
 
+    /// 진행 중인 병합 생성 태스크 — 시트의 "중단"·닫기가 실제로 취소할 수 있게 핸들을 쥔다.
+    private var wikiMergeTask: Task<Void, Never>? = nil
+
+    /// 병합 생성을 취소 가능한 태스크로 시작한다(시트 진입점). 완주·취소 모두 핸들을 비운다.
+    @MainActor
+    func startWikiMerge(source: URL, target: WikiIngestTarget) {
+        wikiMergeTask?.cancel()
+        wikiMergeTask = Task { @MainActor [weak self] in
+            await self?.generateWikiMerge(source: source, target: target)
+            self?.wikiMergeTask = nil
+        }
+    }
+
+    /// 진행 중인 병합 생성 중단 — ClaudeService 폴링 루프가 취소를 보고 프로세스를 종료한다.
+    /// 유휴 상태면 무동작(시트 닫기에서 무조건 불러도 안전).
+    @MainActor
+    func cancelWikiMerge() {
+        wikiMergeTask?.cancel()
+        wikiMergeTask = nil
+    }
+
     /// 인제스트 시트 열기 — 이전 제안·에러를 비우고 소스를 지정한다.
     func requestWikiIngest(source: URL) {
         guard !wikiIngestBusy else {
@@ -3419,6 +3441,19 @@ final class AppState {
         wikiIngestRequest = WikiIngestRequest(url: source)
     }
 
+    /// 일괄 인제스트 시트 열기(다중 선택 진입점) — 파일만 남긴다(폴더 제외, 문서 단위 기능).
+    /// 남는 파일이 없으면 토스트 안내 후 무동작.
+    func requestWikiBatchIngest(sources: [URL]) {
+        let files = sources.filter { !isDirectoryPath($0) }
+        guard !files.isEmpty else {
+            if !sources.isEmpty { showToast("인제스트할 파일이 없습니다(폴더 제외)") }
+            return
+        }
+        if !wikiIngestBusy { wikiMergeProposal = nil }
+        wikiIngestError = nil
+        wikiBatchRequest = WikiBatchIngestRequest(files: files)
+    }
+
     /// 병합 제안 생성 — busy 가드, 에러는 한국어 메시지로 시트에 표시.
     @MainActor
     func generateWikiMerge(source: URL, target: WikiIngestTarget) async {
@@ -3427,8 +3462,25 @@ final class AppState {
             wikiIngestError = "위키 폴더가 설정되지 않았습니다."
             return
         }
-        if case .existing(let url) = target, wikiTargetHasDirtyTab(url) {
-            wikiIngestError = "이 페이지가 탭에서 저장 안 된 편집 상태입니다 — 저장 후 다시 시도하세요."
+        if case .existing(let url) = target {
+            // 자기 자신 인제스트 거부 — 소스=대상이면 병합이 무의미하고 자료 유실 위험만 있다
+            // (kordoc fill isSameFile 전례). 심링크·경로 표기 차이는 실경로로 정규화해 비교.
+            if url.resolvingSymlinksInPath().standardizedFileURL.path
+                == source.resolvingSymlinksInPath().standardizedFileURL.path {
+                wikiIngestError = "소스와 대상이 같은 페이지입니다 — 다른 대상을 선택하세요."
+                return
+            }
+            if wikiTargetHasDirtyTab(url) {
+                wikiIngestError = "이 페이지가 탭에서 저장 안 된 편집 상태입니다 — 저장 후 다시 시도하세요."
+                return
+            }
+        }
+        let trimmedRules = settings.wikiRulesSummary?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if case .auto = target, trimmedRules?.isEmpty != false {
+            // 자동 배치는 규칙 요약이 전제 — 시트가 열린 채 다른 창에서 요약을 비운
+            // 스테일 .auto 선택도 여기서 걸린다(뷰의 선택 리셋과 이중 방어).
+            wikiIngestError = "규칙 요약이 없습니다 — 설정 Wiki 탭에서 먼저 위키 규칙을 파악하세요."
             return
         }
         wikiIngestBusy = true
@@ -3437,15 +3489,19 @@ final class AppState {
         defer { wikiIngestBusy = false }
         do {
             let today = Self.wikiTodayFormatter.string(from: Date())
-            let trimmedRules = settings.wikiRulesSummary?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            wikiMergeProposal = try await wikiIngestService.propose(
+            let proposal = try await wikiIngestService.propose(
                 source: source, target: target,
                 wikiFolder: URL(fileURLWithPath: folderPath),
                 rulesSummary: (trimmedRules?.isEmpty == false) ? trimmedRules : nil,
                 today: today)
+            // propose가 프로세스 정상 종료 직후 취소 검사를 통과해 제안을 만든 경우에도(수 ms
+            // 레이스), 대입 직전 한 번 더 취소를 본다 — "중단"이 stale 제안을 실제로 억제하도록.
+            try Task.checkCancellation()
+            wikiMergeProposal = proposal
         } catch let e as WikiIngestError {
             wikiIngestError = Self.wikiErrorMessage(e)
+        } catch is CancellationError {
+            // 사용자 중단(시트 "중단"·닫기) — 에러가 아니므로 조용히 끝낸다(무쓰기).
         } catch {
             wikiIngestError = Self.claudeErrorMessage(error)
         }
@@ -3476,7 +3532,13 @@ final class AppState {
                 at: dest.deletingLastPathComponent(),
                 withIntermediateDirectories: true)
             try proposal.newBody.write(to: dest, atomically: true, encoding: .utf8)
-            showToast("위키 페이지에 병합했습니다")
+            if dest.standardizedFileURL.path != proposal.pageURL.standardizedFileURL.path {
+                // 재uniquify로 비켜 갔으면 diff 승인 화면의 경로와 다르다 — 실제 파일명 안내.
+                showToast("위키 페이지에 병합했습니다 — \(dest.lastPathComponent)(이름이 바뀌었습니다)")
+            } else {
+                showToast("위키 페이지에 병합했습니다")
+            }
+            completeFileOperation()   // 새 페이지·중간 폴더가 트리/라이브러리에 반영되도록.
             return dest
         } catch {
             wikiIngestError = "적용에 실패했습니다: \(error.localizedDescription)"
@@ -3494,6 +3556,7 @@ final class AppState {
         do {
             try await wikiBackupStore.restore(entry)
             showToast("되돌렸습니다")
+            completeFileOperation()   // 복원(새 페이지 복원=휴지통 이동 포함)도 갱신 트리거.
             return true
         } catch {
             wikiIngestError = "되돌리기에 실패했습니다: \(error.localizedDescription)"

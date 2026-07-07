@@ -260,4 +260,176 @@ final class AppWikiIngestStateTests: XCTestCase {
         XCTAssertNil(decoded.wikiRulesSummary)
         XCTAssertNil(decoded.wikiRulesCapturedAt)
     }
+
+    // MARK: - 트리아지 픽스(2026-07-07): 세대 토큰·자기 인제스트·규칙 없는 자동·재uniquify 안내
+
+    /// 적용(특히 새 페이지 생성)은 트리·라이브러리에 보여야 한다 — 세대 토큰 증가
+    /// (F1a createNewFile 공백과 동류였던 트리아지 항목).
+    func testApplyWikiMergeBumpsFileOpsGeneration() async {
+        let page = wikiDir.appendingPathComponent("새주제.md")
+        let proposal = WikiMergeProposal(pageURL: page, isNewPage: true,
+                                         oldBody: "", newBody: "# 새주제", sourceURL: makeSource())
+        let before = app.fileOpsGeneration
+        _ = await app.applyWikiMerge(proposal)
+        XCTAssertGreaterThan(app.fileOpsGeneration, before)
+    }
+
+    /// 실패한 적용(더티 탭 거부)은 아무것도 안 바꿨으므로 세대 토큰도 불변.
+    func testRefusedApplyDoesNotBumpFileOpsGeneration() async throws {
+        let page = wikiDir.appendingPathComponent("주제.md")
+        try "# 이전".write(to: page, atomically: true, encoding: .utf8)
+        let document = MarkdownDocument(content: "편집 중")
+        let tab = EditorTab(documentId: document.id, fileURL: page)
+        app.tabs = [tab]
+        app.documents[document.id] = document
+        app.originalContents[document.id] = "저장본"
+        let proposal = WikiMergeProposal(pageURL: page, isNewPage: false,
+                                         oldBody: "# 이전", newBody: "# 후", sourceURL: makeSource())
+        let before = app.fileOpsGeneration
+        let dest = await app.applyWikiMerge(proposal)
+        XCTAssertNil(dest)
+        XCTAssertEqual(app.fileOpsGeneration, before)
+    }
+
+    /// 복원도 파일 내용을 바꾼다(새 페이지 복원은 휴지통 이동) — 세대 토큰 증가.
+    func testRestoreWikiIngestBumpsFileOpsGeneration() async throws {
+        let page = wikiDir.appendingPathComponent("주제.md")
+        try "# 이전".write(to: page, atomically: true, encoding: .utf8)
+        let proposal = WikiMergeProposal(pageURL: page, isNewPage: false,
+                                         oldBody: "# 이전", newBody: "# 후", sourceURL: makeSource())
+        _ = await app.applyWikiMerge(proposal)
+        let entry = await app.wikiBackupStore.allEntries().first!
+        let before = app.fileOpsGeneration
+        let ok = await app.restoreWikiIngest(entry)
+        XCTAssertTrue(ok)
+        XCTAssertGreaterThan(app.fileOpsGeneration, before)
+    }
+
+    /// 자기 자신 인제스트 거부 — 위키 페이지를 소스로 골라 같은 페이지에 병합하면
+    /// (소스=대상) Claude 호출 전에 막는다(kordoc fill isSameFile 전례).
+    func testGenerateRefusesSelfIngest() async throws {
+        let page = wikiDir.appendingPathComponent("자기.md")
+        try "# 자기\n본문".write(to: page, atomically: true, encoding: .utf8)
+        let claude = RecordingClaude(response: "호출되면 안 됨")
+        app.wikiIngestService = WikiIngestService(claude: claude, kordoc: KordocService())
+
+        await app.generateWikiMerge(source: page, target: .existing(page))
+
+        XCTAssertNil(app.wikiMergeProposal)
+        XCTAssertNotNil(app.wikiIngestError)
+        let called = await claude.lastPrompt()
+        XCTAssertNil(called, "Claude를 호출하기 전에 거부해야 한다")
+    }
+
+    /// 자동(규칙에 따름)은 규칙 요약이 전제 — 요약이 없거나 공백이면 Claude 호출 전에 안내
+    /// (시트가 열린 채 다른 창에서 요약을 비운 스테일 .auto 선택 방어의 AppState 층).
+    func testGenerateAutoWithoutRulesSetsError() async {
+        for empty in [nil, "", "  \n "] as [String?] {
+            app.settings.wikiRulesSummary = empty
+            app.wikiIngestError = nil
+            let claude = RecordingClaude(response: "호출되면 안 됨")
+            app.wikiIngestService = WikiIngestService(claude: claude, kordoc: KordocService())
+
+            await app.generateWikiMerge(source: makeSource(), target: .auto)
+
+            XCTAssertNil(app.wikiMergeProposal)
+            XCTAssertNotNil(app.wikiIngestError, "요약 '\(empty ?? "nil")'에서 에러여야 함")
+            let called = await claude.lastPrompt()
+            XCTAssertNil(called)
+        }
+    }
+
+    /// 시트의 "중단"(또는 닫기)이 진행 중인 병합 생성을 실제로 멈춘다 — busy 해제·
+    /// 에러 없음(사용자 중단은 에러가 아니다)·제안 없음. Claude 프로세스 종료 자체는
+    /// ClaudeService 폴링 루프의 협조 취소가 담당(실기 검증 몫).
+    func testCancelWikiMergeStopsGenerationSilently() async throws {
+        app.wikiIngestService = WikiIngestService(claude: SlowClaude(), kordoc: KordocService())
+        app.startWikiMerge(source: makeSource(), target: .new(name: "느린병합"))
+
+        var tries = 0
+        while !app.wikiIngestBusy && tries < 200 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            tries += 1
+        }
+        XCTAssertTrue(app.wikiIngestBusy, "병합 생성이 시작돼야 함")
+
+        app.cancelWikiMerge()
+        tries = 0
+        while app.wikiIngestBusy && tries < 200 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            tries += 1
+        }
+        XCTAssertFalse(app.wikiIngestBusy)
+        XCTAssertNil(app.wikiIngestError, "사용자 중단은 에러 표시 없이 조용히 끝난다")
+        XCTAssertNil(app.wikiMergeProposal)
+    }
+
+    /// 중단 없이 완주하면 기존 generateWikiMerge와 동일하게 제안이 선다(시작 API 등가).
+    func testStartWikiMergeCompletesLikeGenerate() async throws {
+        app.wikiIngestService = WikiIngestService(
+            claude: StubClaude(response: "# 새주제\n\n요약"), kordoc: KordocService())
+        app.startWikiMerge(source: makeSource(), target: .new(name: "새주제"))
+        var tries = 0
+        while app.wikiMergeProposal == nil && app.wikiIngestError == nil && tries < 500 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            tries += 1
+        }
+        XCTAssertNotNil(app.wikiMergeProposal)
+        XCTAssertNil(app.wikiIngestError)
+        XCTAssertFalse(app.wikiIngestBusy)
+    }
+
+    /// 느린 가짜 Claude — Task.sleep은 취소 협조적이라 cancel 시 즉시 CancellationError.
+    private actor SlowClaude: ClaudeAsking {
+        func ask(prompt: String, context: String) async throws -> String {
+            try await Task.sleep(nanoseconds: 30_000_000_000)
+            return "너무 늦음"
+        }
+    }
+
+    // MARK: - 다중 문서 인제스트(일괄 처리) 요청 배선
+
+    func testRequestWikiBatchIngestOpensSheetWithCleanState() {
+        let a = makeSource(); let b = makeSource()
+        app.wikiIngestError = "이전 에러"
+        app.requestWikiBatchIngest(sources: [a, b])
+        XCTAssertEqual(app.wikiBatchRequest?.files, [a, b])
+        XCTAssertNil(app.wikiMergeProposal)
+        XCTAssertNil(app.wikiIngestError)
+    }
+
+    func testRequestWikiBatchIngestIgnoresEmptyAndFoldersOnly() throws {
+        let folder = wikiDir.appendingPathComponent("하위폴더")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        app.toastMessage = nil
+        app.requestWikiBatchIngest(sources: [])
+        XCTAssertNil(app.wikiBatchRequest)
+        XCTAssertNil(app.toastMessage, "빈 입력은 조용히 무동작(토스트 없음)")
+        app.requestWikiBatchIngest(sources: [folder])   // 폴더는 걸러져 빈 목록 → 안내 토스트
+        XCTAssertNil(app.wikiBatchRequest)
+        XCTAssertNotNil(app.toastMessage, "폴더만 준 경우는 안내 토스트")
+    }
+
+    func testRequestWikiBatchIngestFiltersFoldersKeepsFiles() throws {
+        let folder = wikiDir.appendingPathComponent("하위폴더2")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = makeSource()
+        app.requestWikiBatchIngest(sources: [folder, file])
+        XCTAssertEqual(app.wikiBatchRequest?.files, [file], "폴더는 제외, 파일만")
+    }
+
+    /// 새 페이지 재uniquify(TOCTOU 비켜 가기)가 일어나면 실제 쓴 파일명을 토스트로 알린다 —
+    /// diff 승인 화면의 경로와 최종 파일명이 달라지는 걸 조용히 넘기지 않는다.
+    func testApplyNewPageReuniquifyAnnouncesActualName() async throws {
+        let page = wikiDir.appendingPathComponent("충돌.md")
+        let proposal = WikiMergeProposal(pageURL: page, isNewPage: true,
+                                         oldBody: "", newBody: "# 충돌\n새 내용",
+                                         sourceURL: makeSource())
+        try "# 먼저 생긴 파일".write(to: page, atomically: true, encoding: .utf8)
+        let dest = await app.applyWikiMerge(proposal)
+        XCTAssertNotNil(dest)
+        XCTAssertNotEqual(dest, page)
+        XCTAssertTrue(app.toastMessage?.contains(dest!.lastPathComponent) == true,
+                      "재uniquify된 실제 파일명이 안내에 있어야 함: \(app.toastMessage ?? "nil")")
+    }
 }

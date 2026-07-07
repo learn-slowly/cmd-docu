@@ -20,10 +20,9 @@ actor WikiRulesService {
     }
 
     func captureRules(wikiFolder: URL) async throws -> String {
-        guard let raw = Self.collectRuleSources(wikiFolder: wikiFolder) else {
+        guard let (raw, truncated) = Self.collectRuleSources(wikiFolder: wikiFolder) else {
             throw WikiRulesError.noRuleSources
         }
-        let truncated = raw.count >= Self.sourceInputLimit
         let (prompt, context) = Self.capturePrompt(truncatedInput: truncated)
         let stdout = try await askWithRetry(prompt: prompt, context: context + raw)
         let summary = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,8 +32,9 @@ actor WikiRulesService {
     }
 
     /// 규칙 소스 수집 — CLAUDE.md + templates/*.md(이름순), 파일별 헤더로 연결.
-    /// 하나도 없으면 nil. 합계가 상한을 넘으면 앞에서부터 상한까지 truncate.
-    static func collectRuleSources(wikiFolder: URL) -> String? {
+    /// 하나도 없으면 nil. 합계가 상한을 넘으면 앞에서부터 상한까지 truncate하고, 잘림 사실을
+    /// 튜플로 함께 전달한다(호출부가 길이 재계산(>=)으로 판단하면 정확히 한도 길이에서 오탐).
+    static func collectRuleSources(wikiFolder: URL) -> (text: String, truncated: Bool)? {
         var parts: [String] = []
         let claudeMd = wikiFolder.appendingPathComponent("CLAUDE.md")
         if let body = try? String(contentsOf: claudeMd, encoding: .utf8) {
@@ -51,7 +51,8 @@ actor WikiRulesService {
         }
         guard !parts.isEmpty else { return nil }
         let joined = parts.joined(separator: "\n\n---\n\n")
-        return joined.count > sourceInputLimit ? String(joined.prefix(sourceInputLimit)) : joined
+        guard joined.count > sourceInputLimit else { return (joined, false) }
+        return (String(joined.prefix(sourceInputLimit)), true)
     }
 
     /// 추출 프롬프트 — 문서 생성 규칙만 추리고, 도구 실행이 필요한 워크플로우 규칙은 제외.

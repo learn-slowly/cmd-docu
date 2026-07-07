@@ -36,16 +36,16 @@ actor WikiBackupStore {
 
     /// 적용 직전 호출 — oldBody가 있으면 백업 파일로 저장하고 로그에 기록한다.
     func recordApply(pageURL: URL, oldBody: String?, sourceName: String) throws -> WikiIngestLogEntry {
+        let now = Date()   // 백업 파일명 stamp와 로그 date가 같은 시각을 가리키도록 한 번만 읽는다.
         var backupFile: String? = nil
         if let oldBody {
-            let stamp = Self.timestampFormatter.string(from: Date())
+            let stamp = Self.timestampFormatter.string(from: now)
             let base = pageURL.deletingPathExtension().lastPathComponent
             let file = backupsDir.appendingPathComponent("\(base)-\(stamp).md").uniquified()
             try oldBody.write(to: file, atomically: true, encoding: .utf8)
             backupFile = file.lastPathComponent
         }
         // Date를 초 단위로 반올림 — JSON 인코딩/디코딩 정밀도 맞춤
-        let now = Date()
         let roundedDate = Date(timeIntervalSinceReferenceDate: now.timeIntervalSinceReferenceDate.rounded())
         let entry = WikiIngestLogEntry(
             id: UUID(), pageURL: pageURL, backupFile: backupFile,

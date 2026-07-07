@@ -29,6 +29,12 @@ struct BatchSelectionMenu: View {
                 Label("이 폴더에 붙여넣기", systemImage: "doc.on.clipboard")
             }
         }
+        Button {
+            // 폴더는 requestWikiBatchIngest가 걸러낸다(문서 단위 기능) — 라벨은 선택 건수 기준.
+            appState.requestWikiBatchIngest(sources: targets)
+        } label: {
+            Label("\(count)개 항목 위키에 인제스트…", systemImage: "text.badge.plus")
+        }
         Divider()
         Button(role: .destructive) {
             appState.batchTrashWithConfirmation(targets)
