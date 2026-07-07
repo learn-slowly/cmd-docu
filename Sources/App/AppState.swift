@@ -2058,6 +2058,34 @@ final class AppState {
         return note
     }
 
+    /// 짝꿍 노트 frontmatter의 `media:` 필드를 실제 미디어 파일명에 맞춘다(정합 유지).
+    /// 읽기·교체 실패와 변경 불필요는 조용히 넘어간다 — 본체 작업(rename/이동/복사/undo)의
+    /// 성패와 무관한 부수 정합이고, 필드가 옛 이름이어도 기능엔 지장 없다(코스메틱).
+    static func syncCompanionMediaField(note: URL, mediaFileName: String) {
+        guard let content = try? String(contentsOf: note, encoding: .utf8),
+              let updated = CompanionNote.updatingMediaField(in: content, to: mediaFileName)
+        else { return }
+        try? updated.write(to: note, atomically: true, encoding: .utf8)
+    }
+
+    /// 복원(undo)된 경로 기준으로 미디어↔짝꿍 노트 쌍이 완성돼 있으면 media: 필드를 정합.
+    /// 미디어·노트 엔트리 어느 쪽이 나중에 복원되든(개별 undo 순서 무관) 쌍이 완성된
+    /// 시점의 호출이 잡는다 — 양방향 검사·멱등. 짝꿍 판별은 확장자 기반이라 미디어 확장자
+    /// 이름의 '폴더'도 미디어로 오인한다 — forward 경로의 isDirectory 가드와 대칭으로
+    /// 복원 대상·대응 미디어 둘 다 디렉터리를 배제한다(무관 수기 노트 변조 방지).
+    static func syncCompanionPairAfterRestore(_ restoredURL: URL) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: restoredURL.path, isDirectory: &isDir),
+              !isDir.boolValue else { return }
+        if let note = companionNoteForOperation(mediaURL: restoredURL) {
+            syncCompanionMediaField(note: note, mediaFileName: restoredURL.lastPathComponent)
+        } else if let media = CompanionNote.mediaURL(for: restoredURL),
+                  FileManager.default.fileExists(atPath: media.path, isDirectory: &isDir),
+                  !isDir.boolValue {
+            syncCompanionMediaField(note: restoredURL, mediaFileName: media.lastPathComponent)
+        }
+    }
+
     /// 이름 변경 + 로그 + 열린 탭·짝꿍 노트 정합. 성공 시 새 URL 반환.
     /// 검증 실패는 FileOperationError로 던진다 — 시트가 인라인 표시(전역 errorMessage 미사용).
     @discardableResult
@@ -2080,6 +2108,9 @@ final class AppState {
             let newNoteName = CompanionNote.noteURL(for: newURL).lastPathComponent
             do {
                 let movedNote = try FileOperations.rename(at: companion, to: newNoteName)
+                // frontmatter media: 정합 — 다음 suspension(로그 append) 전에 동기로 마쳐야
+                // 재조준된 미디어 뷰의 재로드(.task(id: url))가 항상 갱신본을 읽는다.
+                Self.syncCompanionMediaField(note: movedNote, mediaFileName: newURL.lastPathComponent)
                 await fileOpsLogStore.append(
                     FileOpEntry(kind: .rename, originalURL: companion, resultURL: movedNote))
                 retargetOpenTabs(from: companion, to: movedNote, isDirectory: false)
@@ -2169,6 +2200,9 @@ final class AppState {
                 let isDirectory = (try? entry.originalURL
                     .resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 retargetOpenTabs(from: entry.resultURL, to: entry.originalURL, isDirectory: isDirectory)
+                // 복원으로 미디어↔짝꿍 노트 쌍이 다시 완성되면 frontmatter media: 도 원복.
+                // 쌍의 두 엔트리는 개별 undo라 순서를 모른다 — 나중에 복원되는 쪽이 잡는다.
+                Self.syncCompanionPairAfterRestore(entry.originalURL)
             }
             completeFileOperation()
         }
@@ -2291,6 +2325,9 @@ final class AppState {
                         let finalNote = try relocateCompanion(companion, mode: .move,
                                                               to: destStd, alongside: moved,
                                                               failures: &failures)
+                        // 본체가 uniquify로 개명됐으면 frontmatter media: 도 맞춘다(무변경이면 no-op).
+                        Self.syncCompanionMediaField(note: finalNote,
+                                                     mediaFileName: moved.lastPathComponent)
                         entries.append(FileOpEntry(kind: .move, originalURL: companion,
                                                    resultURL: finalNote, batchId: batchId))
                         retargetOpenTabs(from: companion, to: finalNote, isDirectory: false)
@@ -2338,6 +2375,9 @@ final class AppState {
                         let finalNote = try relocateCompanion(companion, mode: .copy,
                                                               to: destStd, alongside: copied,
                                                               failures: &failures)
+                        // 사본 노트만 사본 이름으로 정합 — 원본 노트는 불변(무변경이면 no-op).
+                        Self.syncCompanionMediaField(note: finalNote,
+                                                     mediaFileName: copied.lastPathComponent)
                         entries.append(FileOpEntry(kind: .copy, originalURL: companion,
                                                    resultURL: finalNote, batchId: batchId))
                         handled.insert(companion.standardizedFileURL.path)
@@ -2397,6 +2437,8 @@ final class AppState {
             // 복원 = resultURL → originalURL. 그 경로를 보던 탭 재조준(F1a undo 함정의 동형 방지).
             retargetOpenTabs(from: entry.resultURL, to: entry.originalURL,
                              isDirectory: isDirectoryPath(entry.originalURL))
+            // 이 루프는 전체 복원 뒤에 돌므로 미디어·노트 어느 엔트리든 쌍 완성 상태에서 정합된다.
+            Self.syncCompanionPairAfterRestore(entry.originalURL)
         }
         completeFileOperation()
         return result.failed.isEmpty

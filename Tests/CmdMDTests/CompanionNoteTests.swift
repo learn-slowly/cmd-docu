@@ -152,4 +152,118 @@ final class CompanionNoteTests: XCTestCase {
         let content = "---\nsummary: s\n--- \n본문"
         XCTAssertEqual(CompanionNote.bodyStrippingFrontmatter(content), "본문")
     }
+
+    // MARK: - media 필드 정합(updatingMediaField — co-rename 후 frontmatter 갱신)
+
+    func testUpdatingMediaFieldReplacesValueAndKeepsRest() {
+        let content = "---\nmedia: \"노래.mp3\"\nduration: \"3:41\"\nsummary: \"메모\"\ntags: []\n---\n\n# 노래\n\n본문\n"
+        XCTAssertEqual(CompanionNote.updatingMediaField(in: content, to: "새노래.mp3"),
+                       "---\nmedia: \"새노래.mp3\"\nduration: \"3:41\"\nsummary: \"메모\"\ntags: []\n---\n\n# 노래\n\n본문\n")
+    }
+
+    func testUpdatingMediaFieldNilWithoutFrontmatter() {
+        // frontmatter가 없으면 본문에 media: 줄이 있어도 손대지 않는다.
+        XCTAssertNil(CompanionNote.updatingMediaField(in: "# 제목\nmedia: 옛날.mp3\n", to: "새.mp3"))
+        XCTAssertNil(CompanionNote.updatingMediaField(in: "", to: "새.mp3"))
+    }
+
+    func testUpdatingMediaFieldNilWithoutMediaKey() {
+        XCTAssertNil(CompanionNote.updatingMediaField(in: "---\nsummary: \"s\"\n---\n본문", to: "새.mp3"))
+    }
+
+    func testUpdatingMediaFieldNilWhenBrokenFence() {
+        // 닫는 펜스 없음 = 깨진 frontmatter → 불가침(splitFrontmatter와 동일 판정).
+        XCTAssertNil(CompanionNote.updatingMediaField(in: "---\nmedia: \"a.mp3\"\n본문", to: "새.mp3"))
+    }
+
+    func testUpdatingMediaFieldNilWhenAlreadyCurrent() {
+        XCTAssertNil(CompanionNote.updatingMediaField(in: "---\nmedia: \"a.mp3\"\n---\n본문", to: "a.mp3"))
+    }
+
+    func testUpdatingMediaFieldPreservesDotsClosingFence() {
+        let content = "---\nmedia: \"a.mp3\"\nsummary: \"s\"\n...\n본문"
+        XCTAssertEqual(CompanionNote.updatingMediaField(in: content, to: "b.mp3"),
+                       "---\nmedia: \"b.mp3\"\nsummary: \"s\"\n...\n본문")
+    }
+
+    func testUpdatingMediaFieldQuotesAndEscapes() {
+        let content = "---\nmedia: \"a.mp3\"\n---\n본문"
+        XCTAssertEqual(CompanionNote.updatingMediaField(in: content, to: "인용\"쿼트\".mp3"),
+                       "---\nmedia: \"인용\\\"쿼트\\\".mp3\"\n---\n본문")
+    }
+
+    func testUpdatingMediaFieldReplacesOnlyFirstTopLevelKey() {
+        // 중복 키는 첫 줄만, 들여쓴 중첩 키·본문 줄은 불가침.
+        let content = "---\nmedia: \"a.mp3\"\nmedia: \"b.mp3\"\nnested:\n  media: \"c.mp3\"\n---\nmedia: 본문줄\n"
+        XCTAssertEqual(CompanionNote.updatingMediaField(in: content, to: "새.mp3"),
+                       "---\nmedia: \"새.mp3\"\nmedia: \"b.mp3\"\nnested:\n  media: \"c.mp3\"\n---\nmedia: 본문줄\n")
+    }
+
+    func testUpdatingMediaFieldIgnoresIndentedKeyOnly() {
+        // 최상위 media 키가 없고 중첩만 있으면 변경 없음.
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nnested:\n  media: \"c.mp3\"\n---\n본문", to: "새.mp3"))
+    }
+
+    func testUpdatingMediaFieldPreservesBOM() {
+        let content = "\u{FEFF}---\nmedia: \"a.mp3\"\n---\n본문"
+        XCTAssertEqual(CompanionNote.updatingMediaField(in: content, to: "b.mp3"),
+                       "\u{FEFF}---\nmedia: \"b.mp3\"\n---\n본문")
+    }
+
+    func testUpdatingMediaFieldOnInitialContentKeepsSummaryParsing() {
+        let meta = MediaMetadata(durationSeconds: 222, embeddedTitle: "제목", format: "mp3", createdAt: nil)
+        let content = CompanionNote.initialContent(mediaFileName: "a.mp3", metadata: meta)
+            .replacingOccurrences(of: "summary: \"\"", with: "summary: \"요약\"")
+        let updated = CompanionNote.updatingMediaField(in: content, to: "b.mp3")
+        XCTAssertNotNil(updated)
+        XCTAssertTrue(updated?.contains("media: \"b.mp3\"") == true)
+        XCTAssertEqual(CompanionNote.summary(fromNoteContent: updated ?? ""), "요약")
+    }
+
+    func testUpdatingMediaFieldNeverTouchesBodyMediaLine() {
+        // frontmatter는 유효하되 media 키는 본문에만 — 경계를 넘어 본문 줄을 잡으면 안 된다
+        // (적대적 리뷰: 탐색 범위를 lines[1...]로 넓힌 뮤턴트가 기존 스위트를 전부 통과했음).
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nsummary: \"s\"\n---\nmedia: 본문줄", to: "새.mp3"))
+    }
+
+    func testUpdatingMediaFieldNilWithoutOpeningFence() {
+        // 여는 펜스 없이 본문 중간에 media: 줄 + 뒤쪽 "---" 수평선 — frontmatter 아님.
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "머리말\nmedia: a.mp3\n---\n본문", to: "새.mp3"))
+    }
+
+    func testUpdatingMediaFieldKeepsHandFormattingWhenValueUnchanged() {
+        // 값이 이미 같으면 서식(무인용·인라인 주석)이 정규형과 달라도 재작성하지 않는다 —
+        // 이름 불변 이동/복사·undo에서 수기 편집 노트의 주석·인용 스타일·mtime을 보존.
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nmedia: a.mp3\n---\n본문", to: "a.mp3"))
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nmedia: \"a.mp3\" # 원본 위치 메모\n---\n본문", to: "a.mp3"))
+    }
+
+    func testUpdatingMediaFieldRewritesCommentedLineWhenValueChanged() {
+        // 값이 실제로 바뀌면 정규형으로 재작성 — 인라인 주석 소실은 문서화된 트레이드오프.
+        XCTAssertEqual(CompanionNote.updatingMediaField(
+            in: "---\nmedia: \"a.mp3\" # 메모\n---\n본문", to: "b.mp3"),
+            "---\nmedia: \"b.mp3\"\n---\n본문")
+    }
+
+    func testUpdatingMediaFieldLeavesBlockScalarUntouched() {
+        // 블록 스칼라(>-·|)는 값이 다음 줄로 이어진다 — 첫 줄만 바꾸면 고아 들여쓰기 줄이
+        // 남아 invalid YAML(summary 파싱 파손). 수기 구조는 불가침(nil).
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nmedia: >-\n  a.mp3\nsummary: \"s\"\n---\n본문", to: "b.mp3"))
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nmedia: |\n  a.mp3\n---\n본문", to: "b.mp3"))
+    }
+
+    func testUpdatingMediaFieldLeavesNestedOrContinuedValueUntouched() {
+        // 값 없는 키(중첩 매핑)·다줄 plain 스칼라도 동일 — 불가침(nil).
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nmedia:\n  name: a.mp3\n---\n본문", to: "b.mp3"))
+        XCTAssertNil(CompanionNote.updatingMediaField(
+            in: "---\nmedia: 노래\n  이어짐.mp3\n---\n본문", to: "b.mp3"))
+    }
 }

@@ -190,4 +190,113 @@ final class AppBatchFileOpsTests: XCTestCase {
         XCTAssertEqual(appState.tabs.count, before - 1, "사본 탭 선닫기 후 사본 휴지통")
         XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
     }
+
+    // MARK: 짝꿍 노트 media: 필드 정합(F1b 배치 — uniquify 개명·사본)
+
+    /// frontmatter media: 필드가 현재 미디어 이름을 가리키는 짝꿍 노트를 만든다.
+    private func makeCompanionNote(for media: URL) throws -> URL {
+        let note = CompanionNote.noteURL(for: media)
+        let content = "---\nmedia: \(CompanionNote.yamlQuoted(media.lastPathComponent))\n"
+            + "duration: \"3:41\"\nsummary: \"메모\"\ntags: []\n---\n\n# 제목\n\n본문\n"
+        try Data(content.utf8).write(to: note)
+        return note
+    }
+
+    func testBatchMoveUniquifySyncsCompanionMediaField() async throws {
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+        let dest = try makeFolder("대상")
+        _ = try makeFile("대상/노래.mp3")   // 선점 → 이동 시 본체 uniquify 개명
+
+        _ = await appState.performBatchMove(urls: [media], to: dest)
+
+        let entries = await appState.fileOpsLogStore.load()
+        let movedMedia = try XCTUnwrap(entries.first {
+            $0.kind == .move && $0.originalURL.lastPathComponent == "노래.mp3"
+        }).resultURL
+        XCTAssertNotEqual(movedMedia.lastPathComponent, "노래.mp3", "선점으로 개명돼야 전제 성립")
+        let content = try String(contentsOf: CompanionNote.noteURL(for: movedMedia),
+                                 encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \(CompanionNote.yamlQuoted(movedMedia.lastPathComponent))"),
+                      "media: 필드가 개명된 이름: \(content)")
+    }
+
+    func testBatchCopySyncsCopiedNoteAndKeepsOriginal() async throws {
+        let media = try makeFile("노래.mp3")
+        let note = try makeCompanionNote(for: media)
+
+        // 같은 폴더 복사 = 사본(본체 uniquify 개명)
+        _ = await appState.performBatchCopy(urls: [media], to: work)
+
+        let entries = await appState.fileOpsLogStore.load()
+        let copiedMedia = try XCTUnwrap(entries.first {
+            $0.kind == .copy && $0.originalURL.lastPathComponent == "노래.mp3"
+        }).resultURL
+        XCTAssertNotEqual(copiedMedia.lastPathComponent, "노래.mp3")
+        let copiedContent = try String(contentsOf: CompanionNote.noteURL(for: copiedMedia),
+                                       encoding: .utf8)
+        XCTAssertTrue(copiedContent.contains("media: \(CompanionNote.yamlQuoted(copiedMedia.lastPathComponent))"),
+                      "사본 노트는 사본 이름: \(copiedContent)")
+        let originalContent = try String(contentsOf: note, encoding: .utf8)
+        XCTAssertTrue(originalContent.contains("media: \"노래.mp3\""), "원본 노트 불변")
+    }
+
+    func testUndoBatchMoveRestoresMediaField() async throws {
+        // uniquify 개명 이동 배치를 통째로 되돌리면 media: 필드도 원 이름으로 복귀
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+        let dest = try makeFolder("대상")
+        _ = try makeFile("대상/노래.mp3")
+        _ = await appState.performBatchMove(urls: [media], to: dest)
+        let logged = await appState.fileOpsLogStore.load()
+        let batchId = try XCTUnwrap(logged.first?.batchId)
+
+        let ok = await appState.undoFileOpBatch(batchId: batchId)
+        XCTAssertTrue(ok)
+
+        let content = try String(contentsOf: work.appendingPathComponent("노래.mp3.md"),
+                                 encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"노래.mp3\""), "배치 undo 후 media: 원복: \(content)")
+    }
+
+    func testBatchMoveNoteAlignFailureKeepsBodyNameInField() async throws {
+        // 파생 노트 이름이 목적지에 선점돼 이름 정렬이 실패하면 노트는 uniquify 이름으로
+        // 남고, media: 필드는 본체(미디어) 실제 이름을 가리킨다 — 파일명 규칙상 고아가 된
+        // 노트가 원 미디어를 되찾을 단서로서 의도된 시맨틱(스펙 §4.3 연결 끊김 기록과 짝).
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+        let dest = try makeFolder("대상")
+        _ = try makeFile("대상/노래.mp3.md")   // 노트 파생명만 선점(미디어는 미선점)
+
+        _ = await appState.performBatchMove(urls: [media], to: dest)
+
+        let entries = await appState.fileOpsLogStore.load()
+        let movedNote = try XCTUnwrap(entries.first {
+            $0.kind == .move && $0.originalURL.lastPathComponent == "노래.mp3.md"
+        }).resultURL
+        XCTAssertNotEqual(movedNote.lastPathComponent, "노래.mp3.md", "정렬 실패로 uniquify 이름 잔존")
+        let content = try String(contentsOf: movedNote, encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"노래.mp3\""),
+                      "필드는 본체 실제 이름 유지: \(content)")
+    }
+
+    func testUndoBatchPartialFailureKeepsNoteContent() async throws {
+        // 배치 undo 부분 실패: 미디어 원경로가 선점돼 미디어 복원만 실패해도, 복원된
+        // 노트의 내용은 변조되지 않는다(쌍 미완성 — 훅이 잘못된 이름을 쓰면 안 된다).
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+        let dest = try makeFolder("대상")
+        _ = await appState.performBatchMove(urls: [media], to: dest)
+        let logged = await appState.fileOpsLogStore.load()
+        let batchId = try XCTUnwrap(logged.first?.batchId)
+        _ = try makeFile("노래.mp3")   // 미디어 원경로 선점 → 미디어 복원 실패 유도
+
+        let ok = await appState.undoFileOpBatch(batchId: batchId)
+        XCTAssertFalse(ok, "미디어 복원 실패 → 부분 실패")
+
+        let content = try String(contentsOf: work.appendingPathComponent("노래.mp3.md"),
+                                 encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"노래.mp3\""), "복원된 노트 내용 불변: \(content)")
+        XCTAssertTrue(content.contains("summary: \"메모\""))
+    }
 }

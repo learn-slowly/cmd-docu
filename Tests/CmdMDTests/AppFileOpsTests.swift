@@ -274,4 +274,115 @@ final class AppFileOpsTests: XCTestCase {
         appState.showFileInfoForCurrentContext()
         XCTAssertEqual(appState.fileInfoRequest?.url, sub)
     }
+
+    // MARK: 짝꿍 노트 media: 필드 정합(co-rename 후 frontmatter 갱신)
+
+    /// frontmatter media: 필드가 현재 미디어 이름을 가리키는 짝꿍 노트를 만든다.
+    private func makeCompanionNote(for media: URL) throws -> URL {
+        let note = CompanionNote.noteURL(for: media)
+        let content = "---\nmedia: \(CompanionNote.yamlQuoted(media.lastPathComponent))\n"
+            + "duration: \"3:41\"\nsummary: \"메모\"\ntags: []\n---\n\n# 제목\n\n본문\n"
+        try Data(content.utf8).write(to: note)
+        return note
+    }
+
+    func testPerformRenameSyncsCompanionMediaField() async throws {
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+
+        _ = try await appState.performRename(at: media, to: "새노래.mp3")
+
+        let content = try String(contentsOf: work.appendingPathComponent("새노래.mp3.md"),
+                                 encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"새노래.mp3\""), "media: 필드가 새 이름: \(content)")
+        XCTAssertFalse(content.contains("media: \"노래.mp3\""))
+        XCTAssertTrue(content.contains("summary: \"메모\""), "다른 필드는 보존")
+    }
+
+    func testUndoMediaRenameRestoresMediaFieldNewestFirst() async throws {
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+        _ = try await appState.performRename(at: media, to: "새노래.mp3")
+
+        // 기록 시트 관례(최신부터): 노트 엔트리 → 미디어 엔트리 순
+        let entries = await appState.fileOpsLogStore.load()
+        let noteEntry = try XCTUnwrap(entries.first { $0.originalURL.lastPathComponent == "노래.mp3.md" })
+        let mediaEntry = try XCTUnwrap(entries.first { $0.originalURL.lastPathComponent == "노래.mp3" })
+        let noteOk = await appState.undoFileOp(noteEntry)
+        let mediaOk = await appState.undoFileOp(mediaEntry)
+        XCTAssertTrue(noteOk && mediaOk)
+
+        let content = try String(contentsOf: work.appendingPathComponent("노래.mp3.md"),
+                                 encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"노래.mp3\""), "undo 후 media: 원복: \(content)")
+    }
+
+    func testUndoMediaRenameRestoresMediaFieldMediaFirst() async throws {
+        // 역순(미디어 먼저)이라도 쌍이 완성되는 나중 undo가 정합을 잡는다.
+        let media = try makeFile("노래.mp3")
+        _ = try makeCompanionNote(for: media)
+        _ = try await appState.performRename(at: media, to: "새노래.mp3")
+
+        let entries = await appState.fileOpsLogStore.load()
+        let noteEntry = try XCTUnwrap(entries.first { $0.originalURL.lastPathComponent == "노래.mp3.md" })
+        let mediaEntry = try XCTUnwrap(entries.first { $0.originalURL.lastPathComponent == "노래.mp3" })
+        let mediaOk = await appState.undoFileOp(mediaEntry)
+        let noteOk = await appState.undoFileOp(noteEntry)
+        XCTAssertTrue(mediaOk && noteOk)
+
+        let content = try String(contentsOf: work.appendingPathComponent("노래.mp3.md"),
+                                 encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"노래.mp3\""), "undo 후 media: 원복: \(content)")
+    }
+
+    func testUndoFolderRenameDoesNotTouchLookalikeNote() async throws {
+        // 미디어 확장자 이름의 '폴더'를 rename→undo 해도, 옆의 동명 수기 노트는 불가침 —
+        // undo 훅의 짝꿍 판별이 확장자만 보면 폴더를 미디어로 오인한다(적대적 리뷰 실행 재현).
+        let folder = work.appendingPathComponent("데모.mp3")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let note = work.appendingPathComponent("데모.mp3.md")
+        let original = "---\nmedia: \"다른것.mp3\"\n---\n수기 메모\n"
+        try Data(original.utf8).write(to: note)
+
+        _ = try await appState.performRename(at: folder, to: "새데모.mp3")
+        let logged = await appState.fileOpsLogStore.load()
+        let entry = try XCTUnwrap(logged.first)
+        let ok = await appState.undoFileOp(entry)
+        XCTAssertTrue(ok)
+
+        XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), original,
+                       "작업에 포함되지 않은 수기 노트가 변조되면 안 된다")
+    }
+
+    func testUndoOrphanNoteRenameKeepsContent() async throws {
+        // 고아 노트(대응 미디어 없음)=일반 노트 불가침 — rename→undo가 media: 필드를
+        // 파일명 파생값으로 무단 교체하면 안 된다(undo 훅의 미디어 실재 검사 고정).
+        let note = work.appendingPathComponent("외톨이.mp3.md")
+        let original = "---\nmedia: \"다른곳/외톨이.mp3\"\n---\n고아 메모\n"
+        try Data(original.utf8).write(to: note)
+
+        _ = try await appState.performRename(at: note, to: "새외톨이.mp3.md")
+        let logged = await appState.fileOpsLogStore.load()
+        let entry = try XCTUnwrap(logged.first)
+        let ok = await appState.undoFileOp(entry)
+        XCTAssertTrue(ok)
+
+        XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), original,
+                       "고아 노트 내용이 그대로여야 한다")
+    }
+
+    func testPerformRenameCompanionFailureLeavesOldNoteFieldIntact() async throws {
+        // 파생 노트 이름이 선점돼 짝꿍 rename이 실패하면 옛 노트는 이름·내용 모두 그대로
+        // (성공 경로에만 sync — 실패 경로에서 필드를 미리 바꾸면 옛 이름 노트가 새 이름을 가리킴).
+        let media = try makeFile("노래.mp3")
+        let note = try makeCompanionNote(for: media)
+        _ = try makeFile("새노래.mp3.md")   // 짝꿍 rename 목적지 선점
+
+        _ = try await appState.performRename(at: media, to: "새노래.mp3")
+
+        let content = try String(contentsOf: note, encoding: .utf8)
+        XCTAssertTrue(content.contains("media: \"노래.mp3\""), "실패한 동반 rename에서 필드 불변: \(content)")
+        let entries = await appState.fileOpsLogStore.load()
+        XCTAssertEqual(entries.count, 1, "실패한 짝꿍 rename은 로그되지 않는다")
+    }
 }
