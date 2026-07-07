@@ -76,9 +76,13 @@ actor WikiRulesService {
         return (prompt, "")
     }
 
-    /// 타임아웃 1회 재시도(CleanupService 전례).
+    /// 타임아웃 1회 재시도(CleanupService 전례). 입력이 40k까지 실릴 수 있어
+    /// 위키 전용 한도(300s)를 호출별로 지정한다(WikiIngestModels.claudeTimeout 공유).
     private func askWithRetry(prompt: String, context: String) async throws -> String {
-        do { return try await claude.ask(prompt: prompt, context: context) }
-        catch ClaudeError.timeout { return try await claude.ask(prompt: prompt, context: context) }
+        let limit = WikiIngestModels.claudeTimeout
+        do { return try await claude.ask(prompt: prompt, context: context, timeout: limit) }
+        catch ClaudeError.timeout {
+            return try await claude.ask(prompt: prompt, context: context, timeout: limit)
+        }
     }
 }

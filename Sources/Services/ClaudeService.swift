@@ -12,12 +12,23 @@ enum ClaudeError: Error {
 /// 호출 횟수·분할을 테스트할 수 있게 좁힌다(2026-07-05 배정 청크 회귀 테스트용).
 protocol ClaudeAsking: Sendable {
     func ask(prompt: String, context: String) async throws -> String
+    /// 호출별 타임아웃 지정 — 출력이 긴 작업(위키 병합=페이지 전문 재생성)이 기본 120s를
+    /// 구조적으로 초과해 도입(2026-07-07 실측: 138행 페이지 병합 6연속 타임아웃).
+    func ask(prompt: String, context: String, timeout: TimeInterval) async throws -> String
+}
+
+extension ClaudeAsking {
+    /// 기본 구현: timeout을 무시하고 기존 ask로 위임 — 기존 준수 타입(테스트 가짜)의
+    /// 소스 호환 유지. 실제 시간 제한은 ClaudeService의 구체 구현만 갖는다.
+    func ask(prompt: String, context: String, timeout: TimeInterval) async throws -> String {
+        try await ask(prompt: prompt, context: context)
+    }
 }
 
 /// claude CLI를 Process로 호출해 열린 문서를 질의한다.
 /// claude 자체는 구현하지 않는다(외부 도구). 실패는 throw로만 — 크래시 금지.
 actor ClaudeService: ClaudeAsking {
-    // Task 2의 ask() Process 타임아웃으로 사용한다.
+    // ask()/askStream()의 기본 Process 타임아웃. 출력이 긴 호출은 ask(…timeout:)으로 상향.
     private let timeout: TimeInterval = 120
 
     /// claude CLI 종료코드/stderr를 사용자 분기 에러로 분류한다(순수 함수).
@@ -43,6 +54,12 @@ actor ClaudeService: ClaudeAsking {
 
     /// 열린 문서 컨텍스트와 프롬프트를 claude -p로 보내고 stdout 응답을 반환한다.
     func ask(prompt: String, context: String) async throws -> String {
+        try await ask(prompt: prompt, context: context, timeout: timeout)
+    }
+
+    /// ask의 호출별 타임아웃 변형 — 위키 병합처럼 출력이 페이지 전문이라 오래 걸리는
+    /// 호출이 기본 120s 대신 자기 한도를 지정한다. 그 외 동작은 ask와 동일.
+    func ask(prompt: String, context: String, timeout: TimeInterval) async throws -> String {
         guard let claudePath = Self.resolveClaudePath() else { throw ClaudeError.toolNotFound }
         let (arguments, stdin) = Self.makeInput(prompt: prompt, context: context)
 

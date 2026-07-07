@@ -24,6 +24,10 @@ enum WikiIngestModels {
     static let sourceExcerptLimit = 60_000
     /// 대상 페이지 한도 — 출력=페이지 전문이라 이 값이 곧 출력 상한(타임아웃 방어, 폴더 정리 교훈).
     static let pageBodyLimit = 24_000
+    /// Claude 호출 타임아웃 — 출력=페이지 전문 재생성이라 생성 시간이 페이지 크기에 비례.
+    /// 기본 120s로는 실물 페이지(138행·7.2k자) 병합이 재시도 포함 6연속 타임아웃(2026-07-07 실측,
+    /// 시도당 실제 생성 시간 ~2분대). 규칙 파악(입력 40k)도 같은 한도를 쓴다.
+    static let claudeTimeout: TimeInterval = 300
 
     /// 새 페이지 파일 URL. 이름 정제(구분자·".." 제거)는 CleanupPlanner 정책 재사용,
     /// 충돌은 uniquified(). 정제 결과가 비거나 의미 있는 문자가 없으면 nil — 항상 wikiFolder 직속(경로탈출 불가).

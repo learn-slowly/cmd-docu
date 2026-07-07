@@ -218,4 +218,45 @@ final class WikiIngestServiceTests: XCTestCase {
         let calls = await fake.calls
         XCTAssertTrue(calls.last?.prompt.contains("반말로 쓴다") == true)
     }
+
+    // MARK: - 호출별 타임아웃(2026-07-07 스모크 발견 — 실물 페이지 병합이 120s 구조 초과)
+
+    /// 타임아웃 변형 호출만 기록하는 가짜 — 기본 ask로 새면 -1이 남는다.
+    private actor TimeoutRecordingClaude: ClaudeAsking {
+        let response: String
+        private(set) var timeouts: [TimeInterval] = []
+        init(response: String) { self.response = response }
+        func ask(prompt: String, context: String) async throws -> String {
+            timeouts.append(-1)
+            return response
+        }
+        func ask(prompt: String, context: String, timeout: TimeInterval) async throws -> String {
+            timeouts.append(timeout)
+            return response
+        }
+        func recorded() -> [TimeInterval] { timeouts }
+    }
+
+    /// 병합 호출이 기본 120s가 아닌 위키 전용 한도를 호출별로 지정하는지 — 회귀 방지.
+    func testProposeUsesWikiTimeoutPerCall() async throws {
+        let page = wikiDir.appendingPathComponent("주제.md")
+        try "# 주제\n\n기존 본문".write(to: page, atomically: true, encoding: .utf8)
+        let fake = TimeoutRecordingClaude(response: "# 주제\n\n기존 본문\n\n추가")
+        let service = WikiIngestService(claude: fake, kordoc: KordocService())
+        _ = try await service.propose(source: makeSource(), target: .existing(page),
+                                      wikiFolder: wikiDir, rulesSummary: nil,
+                                      today: "2026-07-07")
+        let recorded = await fake.recorded()
+        XCTAssertEqual(recorded, [WikiIngestModels.claudeTimeout])
+    }
+
+    /// 프로토콜 확장 기본 구현 계약 — timeout 변형이 기존 ask로 위임된다(가짜 소스 호환의 근거).
+    func testTimeoutOverloadDefaultDelegatesToBaseAsk() async throws {
+        let fake = FakeClaude(response: "위임 응답")
+        let claude: any ClaudeAsking = fake
+        let out = try await claude.ask(prompt: "p", context: "c", timeout: 999)
+        XCTAssertEqual(out, "위임 응답")
+        let count = await fake.callCount()
+        XCTAssertEqual(count, 1)
+    }
 }

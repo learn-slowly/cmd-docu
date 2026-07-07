@@ -110,4 +110,30 @@ final class WikiRulesServiceTests: XCTestCase {
         XCTAssertNotNil(src)
         XCTAssertLessThanOrEqual(src!.count, WikiRulesService.sourceInputLimit)
     }
+
+    /// 규칙 파악도 위키 전용 타임아웃을 호출별로 지정하는지(입력 40k) — 2026-07-07 수정 회귀 방지.
+    func testCaptureUsesWikiTimeoutPerCall() async throws {
+        seedRules()
+        let fake = TimeoutRecordingClaude(response: "요약 규칙")
+        let service = WikiRulesService(claude: fake)
+        _ = try await service.captureRules(wikiFolder: wikiDir)
+        let recorded = await fake.recorded()
+        XCTAssertEqual(recorded, [WikiIngestModels.claudeTimeout])
+    }
+
+    /// 타임아웃 변형 호출만 기록하는 가짜 — 기본 ask로 새면 -1이 남는다.
+    private actor TimeoutRecordingClaude: ClaudeAsking {
+        let response: String
+        private(set) var timeouts: [TimeInterval] = []
+        init(response: String) { self.response = response }
+        func ask(prompt: String, context: String) async throws -> String {
+            timeouts.append(-1)
+            return response
+        }
+        func ask(prompt: String, context: String, timeout: TimeInterval) async throws -> String {
+            timeouts.append(timeout)
+            return response
+        }
+        func recorded() -> [TimeInterval] { timeouts }
+    }
 }

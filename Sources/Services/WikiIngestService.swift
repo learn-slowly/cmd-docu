@@ -93,8 +93,12 @@ actor WikiIngestService {
     }
 
     /// 타임아웃 1회 재시도 — 경계선 방어(CleanupService 전례). 다른 에러는 전파.
+    /// 출력=페이지 전문이라 기본 120s 대신 위키 전용 한도(300s)를 호출별로 지정한다.
     private func askWithRetry(prompt: String, context: String) async throws -> String {
-        do { return try await claude.ask(prompt: prompt, context: context) }
-        catch ClaudeError.timeout { return try await claude.ask(prompt: prompt, context: context) }
+        let limit = WikiIngestModels.claudeTimeout
+        do { return try await claude.ask(prompt: prompt, context: context, timeout: limit) }
+        catch ClaudeError.timeout {
+            return try await claude.ask(prompt: prompt, context: context, timeout: limit)
+        }
     }
 }

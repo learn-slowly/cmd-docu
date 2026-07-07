@@ -126,7 +126,8 @@ struct WikiIngestView: View {
             .disabled(target == nil || appState.wikiIngestBusy)
             if appState.wikiIngestBusy {
                 ProgressView().controlSize(.small)
-                Text("Claude가 병합 중…").foregroundStyle(.secondary).font(.callout)
+                Text("Claude가 병합 중… (페이지 전문을 다시 쓰므로 몇 분 걸릴 수 있습니다)")
+                    .foregroundStyle(.secondary).font(.callout)
             }
         }
     }
