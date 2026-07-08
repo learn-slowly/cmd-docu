@@ -54,6 +54,13 @@ final class ImageZoomMathTests: XCTestCase {
         XCTAssertEqual(ImageZoomMath.percentLabel(0.333), "33%")
     }
 
+    func testWheelFactorAndClamp() {
+        XCTAssertEqual(ImageZoomMath.wheelFactor, 1.1, accuracy: 0.0001)
+        // 최대 배율에서 휠 한 틱 더 확대해도 max로 클램프.
+        XCTAssertEqual(ImageZoomMath.clamp(ImageZoomMath.maxMagnification * ImageZoomMath.wheelFactor),
+                       ImageZoomMath.maxMagnification, accuracy: 0.0001)
+    }
+
     func testShouldZoomTruthTable() {
         // 휠 마우스(저정밀) → 줌
         XCTAssertTrue(ImageZoomMath.shouldZoom(hasPreciseDeltas: false, commandHeld: false))

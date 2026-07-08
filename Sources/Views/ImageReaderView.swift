@@ -56,6 +56,7 @@ struct ImageReaderView: NSViewRepresentable {
             imageView.imageScaling = .scaleNone
             imageView.animates = true
             imageView.coordinator = self
+            imageView.focusRingType = .none
             scrollView.documentView = imageView
 
             self.scrollView = scrollView
@@ -202,7 +203,7 @@ struct ImageReaderView: NSViewRepresentable {
         func fitToWindow() {
             guard let scrollView, let image = imageView?.image else { return }
             let viewSize = scrollView.contentView.bounds.size
-            let scale = ImageZoomMath.fit(imageSize: image.size, in: viewSize)
+            let scale = ImageZoomMath.clamp(ImageZoomMath.fit(imageSize: image.size, in: viewSize))
             fitMagnification = scale
             scrollView.magnification = scale
             updatePercentLabel()
@@ -284,6 +285,8 @@ final class PannableImageView: NSImageView {
     private var isPanning = false
     private var lastDragPoint = NSPoint.zero
 
+    override var acceptsFirstResponder: Bool { true }
+
     override func scrollWheel(with event: NSEvent) {
         let commandHeld = event.modifierFlags.contains(.command)
         guard ImageZoomMath.shouldZoom(hasPreciseDeltas: event.hasPreciseScrollingDeltas,
@@ -295,14 +298,18 @@ final class PannableImageView: NSImageView {
         let delta = event.scrollingDeltaY
         guard delta != 0 else { return }
         // 위로 스크롤(delta>0) = 확대.
-        let factor: CGFloat = delta > 0 ? 1.1 : (1.0 / 1.1)
+        let factor: CGFloat = delta > 0 ? ImageZoomMath.wheelFactor : (1.0 / ImageZoomMath.wheelFactor)
         let target = ImageZoomMath.clamp(scrollView.magnification * factor)
+        // 이미 한계(min/max)면 아무 것도 하지 않는다 — 커서 중심 재센터링으로 인한
+        // 시각적 "점프"를 방지(한계에서 배율은 그대로인데 뷰포트만 이동하는 문제).
+        guard target != scrollView.magnification else { return }
         let point = convert(event.locationInWindow, from: nil)   // 문서 뷰 좌표(커서 위치)
         scrollView.setMagnification(target, centeredAt: point)
         coordinator?.updatePercentLabel()
     }
 
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         if event.clickCount == 2 {
             coordinator?.toggleZoom(at: convert(event.locationInWindow, from: nil))
             return

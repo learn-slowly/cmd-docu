@@ -4,6 +4,8 @@ import CoreGraphics
 /// ImageReaderView가 사용하며, 여기 로직만 단위 테스트한다.
 enum ImageZoomMath {
     static let factor: CGFloat = 1.25
+    /// 마우스 휠 한 틱당 배율 — 버튼/키보드 factor(1.25)보다 세밀.
+    static let wheelFactor: CGFloat = 1.1
     static let minMagnification: CGFloat = 0.1
     static let maxMagnification: CGFloat = 16
 
