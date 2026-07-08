@@ -245,8 +245,8 @@ struct ImageReaderView: NSViewRepresentable {
 
         // MARK: 회전(표시 전용·원본 불변)
 
-        @objc func rotateLeft() { rotate(by: 270) }
-        @objc func rotateRight() { rotate(by: 90) }
+        @objc func rotateLeft() { rotate(by: 90) }
+        @objc func rotateRight() { rotate(by: 270) }
 
         private func rotate(by delta: Int) {
             guard originalImage != nil else { return }
