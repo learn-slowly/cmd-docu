@@ -236,7 +236,9 @@ struct ImageReaderView: NSViewRepresentable {
             var origin = clip.bounds.origin
             origin.x += CGFloat(dx) * step
             origin.y += CGFloat(dy) * step
-            clip.scroll(to: origin)
+            // 문서 경계 밖으로 나가지 않도록 클램프(AppKit 표준 방식).
+            let constrained = clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin
+            clip.scroll(to: constrained)
             scrollView.reflectScrolledClipView(clip)
         }
 
@@ -321,7 +323,9 @@ final class PannableImageView: NSImageView {
         var origin = clip.bounds.origin
         origin.x -= dx / scrollView.magnification
         origin.y -= dy / scrollView.magnification
-        clip.scroll(to: origin)
+        // 문서 경계 밖으로 나가지 않도록 클램프(AppKit 표준 방식).
+        let constrained = clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin
+        clip.scroll(to: constrained)
         scrollView.reflectScrolledClipView(clip)
     }
 
@@ -338,13 +342,21 @@ final class PannableImageView: NSImageView {
 
 // MARK: - ZoomableScrollView (⌘ 단축키)
 
-/// 이미지 탭이 키 윈도우에 있을 때 ⌘ 줌/이동 단축키를 responder chain에서 처리.
-/// 이미지 탭이 없으면 super로 위임해 다른 화면과 충돌하지 않는다.
+/// 이미지 탭이 마운트돼 있고, 텍스트 입력·자체 편집 뷰(사이드바 검색·WKWebView·PDFView 등)가
+/// 포커스가 아닐 때만 ⌘ 줌/이동 단축키를 처리한다(`AppState.responderYieldsFileKeys`로 판정).
+/// performKeyEquivalent는 창 전체 뷰 계층으로 전달되므로 first-responder 확인 없이는 다른 화면의
+/// 단축키를 가로챌 수 있어, 양보 대상이거나 처리하지 않는 키는 super로 위임한다.
 final class ZoomableScrollView: NSScrollView {
     weak var coordinator: ImageReaderView.Coordinator?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.modifierFlags.contains(.command), let coordinator else {
+            return super.performKeyEquivalent(with: event)
+        }
+        // 텍스트 입력·자체 편집 뷰(사이드바 검색·미리보기 등)가 포커스면 표준 단축키를 양보한다.
+        // performKeyEquivalent는 창 전체 뷰 계층으로 전달되므로 first-responder를 확인하지 않으면
+        // 이미지 탭이 활성이기만 해도 다른 텍스트필드의 ⌘←/→ 등을 가로챈다.
+        if AppState.responderYieldsFileKeys(window?.firstResponder) {
             return super.performKeyEquivalent(with: event)
         }
         // ⌘+화살표: 이미지 이동(팬). 화살표는 keyCode로 판정(IME 무관).
